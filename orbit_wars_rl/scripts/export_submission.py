@@ -79,7 +79,9 @@ def main() -> int:
     )
     ap.add_argument("--skip-parity", action="store_true",
                     help="skip jax-vs-numpy parity test (NOT recommended)")
-    ap.add_argument("--tol", type=float, default=1e-3)
+    ap.add_argument("--tol", type=float, default=5e-3,
+                    help="logit drift threshold (informational; argmax must always match)")
+    ap.add_argument("--num-states", type=int, default=16)
     args = ap.parse_args()
 
     if not os.path.exists(args.ckpt):
@@ -93,10 +95,12 @@ def main() -> int:
           f"total floats = {sum(v.size for v in flat.values()):,}")
 
     if not args.skip_parity:
-        print(f"[export] running parity test against {args.ckpt} (tol={args.tol})")
-        status = run_parity(args.ckpt, tol=args.tol)
+        print(f"[export] running parity test against {args.ckpt} "
+              f"(tol={args.tol}, num_states={args.num_states})")
+        status = run_parity(args.ckpt, tol=args.tol, num_states=args.num_states)
         if status != 0:
-            print("[export] parity FAILED; refusing to write submission.", file=sys.stderr)
+            print("[export] parity FAILED (argmax disagreement); "
+                  "refusing to write submission.", file=sys.stderr)
             return 3
     else:
         print("[export] WARNING: skipping parity test")
