@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import time
 
-from orbit_wars_rl.ppo.runner import TrainConfig, train
+from orbit_wars_rl.ppo.runner import SelfPlayConfig, TrainConfig, train
 from orbit_wars_rl.ppo.update import PPOConfig
 
 
@@ -21,7 +21,19 @@ def main() -> int:
     ap.add_argument("--num-updates", type=int, default=10)
     ap.add_argument("--episode-steps", type=int, default=60)
     ap.add_argument("--num-groups", type=int, default=4)
+    ap.add_argument("--selfplay", action="store_true",
+                    help="exercise the frozen-opponent rollout path too")
     args = ap.parse_args()
+
+    sp = SelfPlayConfig(
+        enabled=args.selfplay,
+        # short schedule so smoke actually hits the frozen path
+        warmup_updates=2 if args.selfplay else 1000,
+        snapshot_every=2,
+        pool_capacity=3,
+        frozen_ratio=0.5,
+        eval_vs_frozen=args.selfplay,
+    )
 
     cfg = TrainConfig(
         num_envs=args.num_envs,
@@ -40,6 +52,7 @@ def main() -> int:
             update_epochs=2,
             num_minibatches=2,
         ),
+        selfplay=sp,
     )
 
     t0 = time.time()

@@ -1,0 +1,51 @@
+# Self-play training config. Inherits mvp.yaml shape; enables frozen-pool opponent.
+#
+# Schedule (per the runner doc):
+#   updates [0, warmup_updates)         -> vs random       (warm start)
+#   updates [warmup_updates, num_updates) -> mix random/frozen by frozen_ratio
+#
+# Snapshots are pushed into a FIFO ring buffer of size pool_capacity every
+# snapshot_every updates. Opponent for self-play updates is sampled uniformly
+# from the current pool, so the learner sees a mix of recent strengths.
+
+train:
+  num_envs: 32          # GPU should comfortably handle 64; bumped vs mvp
+  rollout_length: 128
+  num_updates: 300
+  num_groups: 5
+  episode_steps: 200
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_selfplay
+  ckpt_every: 25         # more frequent than mvp so we can roll back if a run sours
+  log_every: 1
+  seed: 42
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 50
+  lr_decay_steps: 250
+  lr_floor: 0.00001
+  clip_eps: 0.2
+  value_clip_eps: 0.2
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.01
+  ent_coef_pct: 0.02
+  max_grad_norm: 0.5
+  gamma: 0.997
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 30      # ~60K env steps vs random first; gets WR above 0.5
+  snapshot_every: 10      # one new pool entry every ~20K env steps
+  pool_capacity: 5
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

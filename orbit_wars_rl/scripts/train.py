@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from orbit_wars_rl.ppo.runner import TrainConfig, train
+from orbit_wars_rl.ppo.runner import SelfPlayConfig, TrainConfig, train
 from orbit_wars_rl.ppo.update import PPOConfig
 
 
@@ -38,12 +38,14 @@ def main() -> int:
     cfg_dict = _load_yaml(args.config)
     train_cfg_dict = cfg_dict.get("train", {})
     ppo_cfg_dict = cfg_dict.get("ppo", {})
+    selfplay_cfg_dict = cfg_dict.get("selfplay", {})
 
     if args.num_updates is not None:
         train_cfg_dict["num_updates"] = args.num_updates
 
     ppo_cfg = PPOConfig(**ppo_cfg_dict)
-    train_cfg = TrainConfig(**train_cfg_dict, ppo=ppo_cfg)
+    selfplay_cfg = SelfPlayConfig(**selfplay_cfg_dict)
+    train_cfg = TrainConfig(**train_cfg_dict, ppo=ppo_cfg, selfplay=selfplay_cfg)
 
     log_dir = args.log_dir
     if log_dir is not None:

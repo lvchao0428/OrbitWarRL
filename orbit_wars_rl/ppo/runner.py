@@ -1,4 +1,18 @@
-"""Train loop: roll out, update, log, ckpt. Pure-Python wrapper around jit'd pieces."""
+"""Train loop: roll out, update, log, ckpt. Pure-Python wrapper around jit'd pieces.
+
+Self-play (optional, see ``SelfPlayConfig``):
+
+* For the first ``warmup_updates`` updates the opponent is always ``random``,
+  so the policy can climb out of the trivial basin against an easy enemy.
+* After warmup, each update flips a coin (``frozen_ratio``) deciding whether
+  the whole batch rolls vs ``random`` or vs a snapshot sampled from the pool.
+  The pool is refreshed every ``snapshot_every`` updates with the current
+  ``params``; the latest snapshot is used as the bootstrap if the pool was
+  still empty.
+* The same flax model serves both the learner and the opponent; only the
+  parameter pytree differs, and ``make_rollout_fn_with_frozen_opp`` ensures
+  both share the same jit cache regardless of which snapshot is chosen.
+"""
 
 from __future__ import annotations
 
@@ -14,9 +28,24 @@ import jax.numpy as jnp
 from orbit_wars_rl.env import OrbitWarsEnv, constants
 from orbit_wars_rl.features import encode
 from orbit_wars_rl.net.model import ActorCritic
-from orbit_wars_rl.ppo.rollout import make_rollout_fn
+from orbit_wars_rl.ppo.rollout import make_rollout_fn, make_rollout_fn_with_frozen_opp
 from orbit_wars_rl.ppo.update import PPOConfig, make_optimizer, make_train_step
-from orbit_wars_rl.selfplay.eval import play_vs_random
+from orbit_wars_rl.selfplay.eval import play_vs_random, play_vs_frozen
+from orbit_wars_rl.selfplay.pool import FrozenAgentPool
+
+
+@dataclass
+class SelfPlayConfig:
+    """Settings for mixing frozen-opponent rollouts into training.
+
+    Defaults are all-off so existing runs are unchanged unless explicitly enabled.
+    """
+    enabled: bool = False
+    warmup_updates: int = 30          # updates spent vs random before any self-play
+    snapshot_every: int = 10          # how often to push current params into the pool
+    pool_capacity: int = 5            # FIFO ring buffer size
+    frozen_ratio: float = 0.5         # fraction of post-warmup updates spent vs frozen
+    eval_vs_frozen: bool = True       # additionally compute WR vs latest snapshot
 
 
 @dataclass
@@ -38,6 +67,7 @@ class TrainConfig:
     ff_dim: int = 128
 
     ppo: PPOConfig = field(default_factory=PPOConfig)
+    selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)
 
 
 def save_checkpoint(path: str, params, opt_state, step: int) -> None:
@@ -111,6 +141,17 @@ def train(cfg: TrainConfig, log_dir: Optional[str] = None) -> dict:
         num_envs=cfg.num_envs,
         episode_steps=cfg.episode_steps,
     )
+    selfplay_rollout_fn = None
+    pool: Optional[FrozenAgentPool] = None
+    if cfg.selfplay.enabled:
+        selfplay_rollout_fn = make_rollout_fn_with_frozen_opp(
+            env, model,
+            rollout_length=cfg.rollout_length,
+            num_envs=cfg.num_envs,
+            episode_steps=cfg.episode_steps,
+        )
+        pool = FrozenAgentPool(capacity=cfg.selfplay.pool_capacity)
+
     train_step = make_train_step(model, cfg.ppo, optimizer)
 
     logger = Logger(log_dir=log_dir)
@@ -119,11 +160,24 @@ def train(cfg: TrainConfig, log_dir: Optional[str] = None) -> dict:
     rng_iter = rng_train
     total_env_steps = 0
     t_start = time.time()
+    sp_warmup = cfg.selfplay.warmup_updates if cfg.selfplay.enabled else cfg.num_updates + 1
+    sp_ratio = float(cfg.selfplay.frozen_ratio) if cfg.selfplay.enabled else 0.0
 
     for update in range(cfg.num_updates):
-        rng_iter, r_step = jax.random.split(rng_iter)
+        rng_iter, r_step, r_opp_pick, r_pool_sample = jax.random.split(rng_iter, 4)
 
-        states, env_rngs, rollout = rollout_fn(params, states, env_rngs)
+        used_frozen = False
+        if cfg.selfplay.enabled and update >= sp_warmup and pool is not None and len(pool) > 0:
+            roll = float(jax.random.uniform(r_opp_pick, ()))
+            if roll < sp_ratio:
+                frozen_params = pool.sample(r_pool_sample)
+                states, env_rngs, rollout = selfplay_rollout_fn(
+                    params, frozen_params, states, env_rngs,
+                )
+                used_frozen = True
+        if not used_frozen:
+            states, env_rngs, rollout = rollout_fn(params, states, env_rngs)
+
         params, opt_state, metrics = train_step(params, opt_state, rollout, r_step)
         params = jax.tree_util.tree_map(jnp.asarray, params)
         metrics_py = {k: float(v) for k, v in metrics.items()}
@@ -132,6 +186,12 @@ def train(cfg: TrainConfig, log_dir: Optional[str] = None) -> dict:
         metrics_py["sps"] = total_env_steps / max(elapsed, 1e-6)
         metrics_py["update"] = update
         metrics_py["total_env_steps"] = total_env_steps
+        metrics_py["opp_frozen"] = 1.0 if used_frozen else 0.0
+        if cfg.selfplay.enabled and pool is not None:
+            metrics_py["pool_size"] = float(len(pool))
+
+        if cfg.selfplay.enabled and (update + 1) % cfg.selfplay.snapshot_every == 0:
+            pool.snapshot(params)  # type: ignore[union-attr]
 
         if cfg.eval_every > 0 and (update + 1) % cfg.eval_every == 0:
             eval_metrics = play_vs_random(
@@ -142,15 +202,34 @@ def train(cfg: TrainConfig, log_dir: Optional[str] = None) -> dict:
             )
             for k, v in eval_metrics.items():
                 metrics_py[f"eval/{k}"] = v
+            if (cfg.selfplay.enabled and cfg.selfplay.eval_vs_frozen
+                and pool is not None and len(pool) > 0):
+                frozen_eval = play_vs_frozen(
+                    model, params, pool.latest(),
+                    jax.random.PRNGKey(2000 + update),
+                    num_envs=cfg.eval_num_envs,
+                    num_groups=cfg.num_groups,
+                    max_episode_steps=cfg.episode_steps,
+                )
+                for k, v in frozen_eval.items():
+                    metrics_py[f"eval_vs_frozen/{k}"] = v
 
         if update % cfg.log_every == 0:
+            opp_tag = "frzn" if used_frozen else "rand"
+            wr_rand = metrics_py.get("eval/win_rate")
+            wr_frzn = metrics_py.get("eval_vs_frozen/win_rate")
+            wr_str = ""
+            if wr_rand is not None:
+                wr_str += f" WRr {wr_rand:.2f}"
+            if wr_frzn is not None:
+                wr_str += f" WRf {wr_frzn:.2f}"
             print(
                 f"upd {update:4d}  steps {total_env_steps:7d}  sps {metrics_py['sps']:.0f}  "
-                f"loss {metrics_py['loss']:+.3f}  pg {metrics_py['pg_loss']:+.3f}  v {metrics_py['v_loss']:.3f}  "
+                f"opp {opp_tag}  loss {metrics_py['loss']:+.3f}  "
+                f"pg {metrics_py['pg_loss']:+.3f}  v {metrics_py['v_loss']:.3f}  "
                 f"ent[s/d/p] {metrics_py['ent_src']:.2f}/{metrics_py['ent_dst']:.2f}/{metrics_py['ent_pct']:.2f}  "
-                f"clip {metrics_py['clip_frac']:.2f}  kl {metrics_py['approx_kl']:+.3f}  "
-                + (f"WR {metrics_py.get('eval/win_rate', float('nan')):.2f}"
-                   if 'eval/win_rate' in metrics_py else "")
+                f"clip {metrics_py['clip_frac']:.2f}  kl {metrics_py['approx_kl']:+.3f}"
+                + wr_str
             )
 
         logger.log(metrics_py, update)

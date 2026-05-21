@@ -1,9 +1,20 @@
 """Rollout collection for PPO. Single-jit over scan + vmap over envs.
 
-Player 0 is the learning agent; player 1 is an opponent policy supplied as a
-pure function ``opponent_action_fn(rng, obs) -> PlayerAction``. For MVP we
-ship a "random valid src/dst" opponent; later we will swap in a frozen
-snapshot of the learner.
+Player 0 is the learning agent; player 1 is an opponent policy.
+
+Two rollout variants are exposed:
+
+* ``make_rollout_fn(..., opponent_fn=random_opponent_action)`` -- the original
+  fixed-opponent rollout. ``opponent_fn`` is a pure jax function with the
+  signature ``(rng, obs) -> PlayerAction``; the closure is baked into the jit
+  cache.
+* ``make_rollout_fn_with_frozen_opp(model, ...)`` -- self-play variant where
+  the opponent is the current learning ``ActorCritic`` evaluated against a set
+  of frozen parameters passed in at call time. This lets the runner cycle
+  multiple snapshots through the same jit'd rollout without recompiling.
+
+Both return a closure with signature
+``rollout_fn(params, states, rngs[, frozen_params]) -> (states, rngs, Rollout)``.
 """
 
 from __future__ import annotations
@@ -160,6 +171,111 @@ def make_rollout_fn(
             reward=traj_swapped["reward"],
             done=traj_swapped["done"],
             last_value=last_values_T,
+        )
+
+        out_rngs = jax.vmap(lambda r: jax.random.fold_in(r, rollout_length + 7))(rngs)
+        return final_states, out_rngs, rollout
+
+    return jax.jit(rollout_fn)
+
+
+def make_rollout_fn_with_frozen_opp(
+    env: OrbitWarsEnv,
+    model: ActorCritic,
+    rollout_length: int,
+    num_envs: int,
+    episode_steps: int = constants.DEFAULT_EPISODE_STEPS,
+):
+    """Build a self-play rollout where opponent uses a frozen snapshot of ``model``.
+
+    Returns a jit'd closure
+    ``rollout_fn(params, frozen_params, states, rngs) -> (states, rngs, Rollout)``.
+
+    ``frozen_params`` must share the same pytree structure as ``params`` (which
+    is automatically true when both come from the same ``model.init``). The
+    opponent samples stochastically -- using ``deterministic=False`` -- so the
+    learner sees diverse trajectories even against a single snapshot.
+    """
+
+    def _one_env_step(carry, _):
+        state, rng, params, fparams = carry
+        rng, r_act, r_opp, r_reset = jax.random.split(rng, 4)
+
+        obs0 = encode(state, 0, episode_steps)
+        obs1 = encode(state, 1, episode_steps)
+
+        sampled = model.apply(params, obs0, r_act)
+        action_0 = PlayerAction(
+            src_idx=sampled.src_idx,
+            dst_idx=sampled.dst_idx,
+            pct_bin=sampled.pct_bin,
+        )
+        opp_sampled = model.apply(fparams, obs1, r_opp)
+        action_1 = PlayerAction(
+            src_idx=opp_sampled.src_idx,
+            dst_idx=opp_sampled.dst_idx,
+            pct_bin=opp_sampled.pct_bin,
+        )
+
+        next_state, out = env.step_and_autoreset(state, (action_0, action_1), r_reset)
+
+        per_step = dict(
+            obs_planet_feats=obs0.planet_feats,
+            obs_planet_mask=obs0.planet_mask,
+            obs_fleet_feats=obs0.fleet_feats,
+            obs_fleet_mask=obs0.fleet_mask,
+            obs_global_feats=obs0.global_feats,
+            obs_my_planet_mask=obs0.my_planet_mask,
+            src_idx=sampled.src_idx,
+            dst_idx=sampled.dst_idx,
+            pct_bin=sampled.pct_bin,
+            src_logp=sampled.src_logp,
+            dst_logp=sampled.dst_logp,
+            pct_logp=sampled.pct_logp,
+            value=sampled.value,
+            reward=out.reward,
+            done=out.done,
+        )
+        new_carry = (next_state, rng, params, fparams)
+        return new_carry, per_step
+
+    def _scan_one_env(state, rng, params, fparams):
+        (final_state, rng_out, _, _), traj = jax.lax.scan(
+            _one_env_step, (state, rng, params, fparams), xs=None, length=rollout_length
+        )
+        final_obs0 = encode(final_state, 0, episode_steps)
+        sampled_final = model.apply(params, final_obs0, jax.random.fold_in(rng_out, 1))
+        return final_state, traj, sampled_final.value
+
+    def rollout_fn(
+        params,
+        frozen_params,
+        states: EnvState,
+        rngs: jnp.ndarray,
+    ) -> tuple[EnvState, jnp.ndarray, Rollout]:
+        final_states, trajs, last_values = jax.vmap(
+            _scan_one_env, in_axes=(0, 0, None, None)
+        )(states, rngs, params, frozen_params)
+
+        traj_swapped = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), trajs)
+
+        rollout = Rollout(
+            obs_planet_feats=traj_swapped["obs_planet_feats"],
+            obs_planet_mask=traj_swapped["obs_planet_mask"],
+            obs_fleet_feats=traj_swapped["obs_fleet_feats"],
+            obs_fleet_mask=traj_swapped["obs_fleet_mask"],
+            obs_global_feats=traj_swapped["obs_global_feats"],
+            obs_my_planet_mask=traj_swapped["obs_my_planet_mask"],
+            src_idx=traj_swapped["src_idx"],
+            dst_idx=traj_swapped["dst_idx"],
+            pct_bin=traj_swapped["pct_bin"],
+            src_logp=traj_swapped["src_logp"],
+            dst_logp=traj_swapped["dst_logp"],
+            pct_logp=traj_swapped["pct_logp"],
+            value=traj_swapped["value"],
+            reward=traj_swapped["reward"],
+            done=traj_swapped["done"],
+            last_value=last_values,
         )
 
         out_rngs = jax.vmap(lambda r: jax.random.fold_in(r, rollout_length + 7))(rngs)
