@@ -1,0 +1,20 @@
+# Orbit Wars JAX-RL MVP dependencies.
+# Install on top of an existing Python 3.10+ env:
+#   pip install -r requirements-rl.txt
+#
+# The CPU jax build is the default; on a GPU box swap in the matching jaxlib
+# build per https://github.com/google/jax#installation .
+
+jax>=0.4.20
+jaxlib>=0.4.20
+flax>=0.8.0
+optax>=0.1.7
+chex>=0.1.85
+numpy>=1.26
+pyyaml>=6.0
+
+# Local parity check vs kaggle_environments. Optional but recommended.
+kaggle-environments>=1.28.0
+
+# Optional logging. The runner will fall back to stdout if missing.
+tensorboard>=2.15  ; python_version >= "3.10"

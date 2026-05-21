@@ -1,0 +1,328 @@
+Skip to
+content
+
+Create
+Home
+
+Competitions
+
+Benchmarks
+
+Game Arena
+
+Data Hub
+
+More
+
+
+View Active Events
+
+Search
+
+Kaggle · Featured Simulation Competition · a month to go
+
+Play in Browser
+
+Submit Agent
+Orbit Wars
+Conquer planets rotating around a sun in continuous 2D space. A real-time strategy game for 2 or 4 players.
+
+
+Bovard Doerschuk-Tiberi · Posted 15 days ago
+·
+Kaggle Staff
+Orbit Wars top-10% daily episode replay datasets
+I've published a per-day series of replay datasets covering Orbit Wars, one dataset per UTC day from 2026-04-16 through 2026-05-04. Each dataset contains the highest-quality matchups of that day - useful for opponent analysis, imitation learning, or just spectating top-of-leaderboard play.
+
+Methodology
+For each UTC day:
+
+Query for every Orbit Wars episode created that day.
+For each episode, sum both agents' post-episode rating (UpdatedScore). This biases toward matchups where strong bots played strong bots.
+Keep the top 10% of episodes by that summed rating.
+Download replay JSONs in priority order (highest sum first).
+Stop as soon as the next replay would push the total over 20 GiB (most days are well under).
+Bundle the chosen replays and publish.
+Each dataset contains:
+
+episodes.tar.gz — the replay JSONs, extracts to episodes/{episode_id}.json
+manifest.csv — episode_id, create_time, sum_score, min_score, avg_score, scores, submission_ids, size_bytes (in priority order)
+Datasets
+Date	Dataset
+2026-04-16	bovard/orbit-wars-top10-episodes-2026-04-16
+2026-04-17	bovard/orbit-wars-top10-episodes-2026-04-17
+2026-04-18	bovard/orbit-wars-top10-episodes-2026-04-18
+2026-04-19	bovard/orbit-wars-top10-episodes-2026-04-19
+2026-04-20	bovard/orbit-wars-top10-episodes-2026-04-20
+2026-04-21	bovard/orbit-wars-top10-episodes-2026-04-21
+2026-04-22	bovard/orbit-wars-top10-episodes-2026-04-22
+2026-04-23	bovard/orbit-wars-top10-episodes-2026-04-23
+2026-04-24	bovard/orbit-wars-top10-episodes-2026-04-24
+2026-04-25	bovard/orbit-wars-top10-episodes-2026-04-25
+2026-04-26	bovard/orbit-wars-top10-episodes-2026-04-26
+2026-04-27	bovard/orbit-wars-top10-episodes-2026-04-27
+2026-04-28	bovard/orbit-wars-top10-episodes-2026-04-28
+2026-04-29	bovard/orbit-wars-top10-episodes-2026-04-29
+2026-04-30	bovard/orbit-wars-top10-episodes-2026-04-30
+2026-05-01	bovard/orbit-wars-top10-episodes-2026-05-01
+2026-05-02	bovard/orbit-wars-top10-episodes-2026-05-02
+2026-05-03	bovard/orbit-wars-top10-episodes-2026-05-03
+2026-05-04	bovard/orbit-wars-top10-episodes-2026-05-04
+Use it in a Kaggle notebook
+Add the dataset(s) you want via + Add Data → search orbit-wars-top10-episodes. Each one mounts at /kaggle/input/<dataset-slug>/.
+
+import csv, json, tarfile
+from pathlib import Path
+
+DAY = "2026-05-04"
+ROOT = Path(f"/kaggle/input/orbit-wars-top10-episodes-{DAY}")
+
+# Manifest: one row per episode, in priority (highest sum_score first)
+with (ROOT / "manifest.csv").open() as f:
+    manifest = list(csv.DictReader(f))
+print(f"{len(manifest)} episodes; top sum_score = {manifest[0]['sum_score']}")
+
+# Stream replays straight out of the tarball — no need to fully extract
+with tarfile.open(ROOT / "episodes.tar.gz", "r:gz") as tar:
+    for row in manifest[:5]:
+        member = tar.getmember(f"episodes/{row['episode_id']}.json")
+        replay = json.load(tar.extractfile(member))
+        # ... do something with `replay` ...
+Download with the Kaggle CLI
+pip install kaggle  # if needed; ensure ~/.kaggle/kaggle.json is set up
+
+kaggle datasets download bovard/orbit-wars-top10-episodes-2026-05-04 --unzip
+tar -xzf episodes.tar.gz   # extracts to episodes/{episode_id}.json
+Or grab the whole series:
+
+for d in 2026-04-{16..30} 2026-05-{01..04}; do
+  kaggle datasets download "bovard/orbit-wars-top10-episodes-$d" --unzip -p "$d"
+done
+License: CC0-1.0. Replay JSON schema follows the standard Kaggle Environments format.
+
+
+8
+
+5
+13 Comments
+3 appreciation comments
+Hotness
+ 
+Comment here. Be patient, be friendly, and focus on ideas. We're all here to learn and improve!
+This comment will be made public once posted.
+
+
+Post Comment
+Bovard Doerschuk-Tiberi
+Kaggle Staff
+Posted 9 days ago
+
+I'm out this week but I'll redo these and get the dataset caught up (with 2p and 4p) when I get back next week!
+
+
+Reply
+
+2
+
+5
+Son Pham
+Posted 15 days ago
+
+· 75th in this Competition
+
+This is very welcome especially for RL Training :)). Thank you!
+
+
+Reply
+
+3
+Slawek Biel
+Posted 15 days ago
+
+· 57th in this Competition
+
+It looks like some of them only have two actual json files in it? https://www.kaggle.com/datasets/bovard/orbit-wars-top10-episodes-2026-04-20
+
+
+Reply
+
+React
+greySnow
+Posted 14 days ago
+
+· 868th in this Competition
+
+Actually, most of them are only handful of episodes so it seems. @bovard please look into it. The idea is great but the bug should be fixed.
+
+
+Reply
+
+React
+Harui-ig
+Posted 12 days ago
+
+· 1577th in this Competition
+
+I really want bovard's help about this problem.
+
+In addition, as far as i(and codex) know, there is no 2-player replay jsons, even though there are 2p game rows in manifest.csv, but the replay doesn't exist)
+
+
+Reply
+
+React
+Harui-ig
+Posted 10 days ago
+
+· 1577th in this Competition
+
+Extra detail here:
+
+@bovrd Could you please look into this problem? there's so many excluded episodes than manifest.csv claims.
+
+date        2p present  2p missing  4p present  4p missing
+2026-04-16           0           0          11           0
+2026-04-17           0           0         261           0
+2026-04-18           0           0         604           0
+2026-04-19           0           0           2         890
+2026-04-20           0           5           2        1108
+2026-04-21           0          52           2        1499
+2026-04-22           0          23           2        1983
+2026-04-23           0          11           2        2268
+2026-04-24           0          33           2        2504
+2026-04-25           0           5           2        2614
+2026-04-26           0          10           2        2548
+2026-04-27           0           3           2        2672
+2026-04-28           0           0           2        2612
+2026-04-29           0           0           2        2751
+2026-04-30           0           0           2        2719
+2026-05-01           0           0           2        2608
+2026-05-02           0           0           2        2637
+2026-05-03           0           0           2        2669
+2026-05-04           0           0        2630           0
+Totals:
+
+2p present:      0
+2p missing:    142
+4p present:   3536
+4p missing:  34082
+In other words, the manifest contains 37,760 expected episodes, but only 3,536 replay JSON files are present. The missing files are not only 2-player episodes; most of the missing entries are 4-player episodes from 2026-04-19 through 2026-05-03.
+
+
+Reply
+
+1
+Bovard Doerschuk-Tiberi
+Kaggle Staff
+Posted a day ago
+
+https://www.kaggle.com/competitions/orbit-wars/discussion/701894
+
+
+Reply
+
+React
+Wasiq Ali
+Posted 15 days ago
+
+· 1106th in this Competition
+
+ok thats great and thanks for saring the intrested information to us it can help us a lot and it is best for visualizaing and analyzing the results to make it accordingly in organized and well structured way
+
+
+Reply
+
+React
+faizan
+Posted 11 days ago
+
+ok thats great and thanks for saring the intrested information to us it can help us a lot
+
+
+Reply
+
+React
+Aniket Kumar
+Posted 14 days ago
+
+· 782nd in this Competition
+
+Thanks for this. Will check if it works well.
+
+
+Reply
+
+React
+Giacomo Piatelli
+Posted 15 days ago
+
+· 654th in this Competition
+
+It seems like in some folders what is written in the manifest doesn't coincide with the amount of logs.
+
+
+Reply
+
+React
+Bovard Doerschuk-Tiberi
+Kaggle Staff
+Posted 15 days ago
+
+I'm working on make this an automatic daily process for sims comps, but until they I'll update this list every few days
+
+
+Reply
+
+3
+Son Pham
+Posted 2 days ago
+
+· 75th in this Competition
+
+How is the progress on this? Do we get the latest games from after 05-04 too?
+
+
+Reply
+
+React
+Bovard Doerschuk-Tiberi
+Kaggle Staff
+Posted 2 days ago
+
+should have an update on this tomorrow!
+
+
+Reply
+
+React
+Bovard Doerschuk-Tiberi
+Kaggle Staff
+Posted a day ago
+
+Update version here: https://www.kaggle.com/competitions/orbit-wars/discussion/701894
+
+
+Reply
+
+1
+
+Appreciation (3)
+Russell Kirk
+Posted 15 days ago
+
+· 898th in this Competition
+
+Very helpful! Thanks!! (I keep meaning to do a regular reply, and it does this… I mean, it's appropriate, but not intended)
+
+Janek Đào
+Posted 6 days ago
+
+· 843rd in this Competition
+
+woah this would helpful, thank you !!!!
+
+Alexis Akanson
+Posted 13 days ago
+
+Thanks for this. Godbless
+

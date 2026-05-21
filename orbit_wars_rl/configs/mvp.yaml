@@ -1,0 +1,37 @@
+# MVP training config. Override at the CLI with --config-set.
+# All hyperparams are conservative defaults that should give a stable run on
+# a Mac CPU in < 1h while still showing reward going up vs random.
+
+train:
+  num_envs: 16
+  rollout_length: 128
+  num_updates: 300
+  num_groups: 5
+  episode_steps: 200
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_mvp
+  ckpt_every: 50
+  log_every: 1
+  seed: 42
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 50
+  lr_decay_steps: 250
+  lr_floor: 0.00001
+  clip_eps: 0.2
+  value_clip_eps: 0.2
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.01
+  ent_coef_pct: 0.02
+  max_grad_norm: 0.5
+  gamma: 0.997
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4

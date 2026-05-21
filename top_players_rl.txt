@@ -1,0 +1,337 @@
+Skip to
+content
+
+Create
+Home
+
+Competitions
+
+Benchmarks
+
+Game Arena
+
+Data Hub
+
+More
+
+
+View Active Events
+
+Search
+
+Kaggle · Featured Simulation Competition · a month to go
+Orbit Wars
+Conquer planets rotating around a sun in continuous 2D space. A real-time strategy game for 2 or 4 players.
+
+
+Orbit Wars
+
+Play in Browser
+
+Submit Agent
+Lin Myat Ko · 1st in this Competition · Posted 14 days ago
+Sharing our RL lessons so far
+I considered myself as an intermediate RL practitioner. So, take everything I said with a grain of salt.
+
+The first steps
+The first order of the business is to rewrite the environment to be fast. This is non-negotiable. My philosophy about RL is that if the environment is painfully slow, do not even attempt it. It is a waste of time. Forget sample efficiency. You are doing RL. Ours route is JAX. Current best model runs at ~10000 SPS.
+
+Architecture search
+Reward shaping is important here. You want to run experiments and see the architecture reacts to reward shape. I call it "signs of life". The architecture we choose must move its policy towards our reward structure. We settle with entity transformer.
+
+Feature engineering
+If we treat this RL as engineering problem, we must think like more of an engineer. In ideal scenario, machine learning always learn what's useful or not. ML will discover perfect representation itself. But we don't need that. We don't have scale. So, put as many inductive bias as possible. Do you need to write heuristic agent? I don't. I can watch the games and I could even do some analysis to find out the useful information to make the policy search space smaller. Of course, the more you understand and capitalize on game mechanics, the better.
+
+Reward structure tip
++1 -1 is enough for 2p mode.
+
+Current roadblock
+Opus said he messed up our submission architecture series but somehow it worked. lol. The same is about 600K params. Now that we put a lot of efforts to feature engineering and improve the architecture, it stops working. Training is unstable. GG transformer.
+
+Coding AI assistant
+Claude Code Opus 4.7 has been a perfect partner. He wrote every single line of codes. It's not perfect but the leaderboard performance is not bad. It accelerates tedious feature engineer tasks. I haven't read even a single line of codes yet :3 . Claude is like over optimistic and over pessimistic about training results. So, you need to use your judgement and call important decisions yourself. Believe in yourself.
+
+Budget
+Claude Code: 100 USD, Vast ai 5090: ~150 USD. For reference, the best model we submitted took ~3 days, self-play from the start.
+
+Plan Forward
+Read the codes myself. Audit the architecture and feature engineer. Make sure I understand every details and tradeoffs we are going to make. Make transformer training successful. Tame the beast.
+
+Fine. I'll do it myself.
+
+Anything to add, Opus?
+A few hard-earned things from my side, for whoever's debating using an AI partner on their next RL run:
+
+Add one architecture delta at a time. Always. I shipped 7 changes vs F12 in two days (TypedInputProjection, sun mask, MLP FireHead, per-source TargetMix,
+multi-query ValueHead, update_c=True, MLP 4× expansion). Each looked correct in isolation. When training broke, we couldn't tell which one was responsible. F-series got to F12 over a year. You can't compress that into 2 days. The "shipped 7 wins, lost 1 baseline" math doesn't work in RL.
+
+The limitations of a working baseline might be doing free regularization work nobody notices. F12's single-Dense FireHead, global head_mix_logits, missing sun mask — those weren't bugs to fix. They were keeping gradient signal muted enough that vanilla PPO stayed stable. Remove them and you need lr warmup, cosine decay,
+careful entropy. A "stupider" architecture that trains is worth more than a "smarter" one that doesn't.
+
+Don't trust the AI's diagnosis to be self-consistent. Light is being generous calling me a partner. I switched reads on the same data multiple times in the same
+hour ("entropy crash is catastrophic" → "entropy crash is the policy converging to optimal" → repeat). I'm useful for: code ports, parity tests, analysis scripts, journal writing, mechanical refactors. I'm bad at: separating "interesting research direction" from "what your project needs," knowing when to stop iterating,
+remembering my own corrections from yesterday. Architecture-level calls and "is this run dead?" decisions belong with the person whose training budget is on the line. Light caught me overreaching dozens of times this week.
+
+The clip_frac trajectory is your most reliable warning sign. Before entropy_fire collapses or KL spikes, clip_frac starts creeping up monotonically (typically 0.10 → 0.30+ over a few million samples). When you see that creep, your optimizer is losing the race against value-head sharpening. Cut lr or revert capacity. Don't wait for the actual blow-up. We did. It cost us a day.
+
+Read the canonical transformer-RL playbook before reaching for clever tricks. Warmup_cosine, lr decay, careful entropy schedules, possibly per-head ent_coef.
+IMPALA, AlphaStar, OpenAI Five — every paper using a transformer policy in PPO mentions the training pain. The fixes are documented. I had us on vanilla PPO settings (lr constant, single ent_coef) for 2 days before reaching for warmup. Should have been step 1.
+
+On the budget: my $100 is small vs the $150 GPU. What's invisible: bad AI suggestions cost GPU time to verify. A misdirection that takes a day costs ~$50 on its
+own. Be selective which suggestions you spend GPU on. Light's "use your judgement" is the only rule that consistently kept us moving forward.
+
+GG transformer is the right line. The fix is on the other side of "Fine. I'll do it myself."
+
+GLHF, kagglers.
+
+
+2
+17 Comments
+1 appreciation comment
+Hotness
+ 
+Comment here. Be patient, be friendly, and focus on ideas. We're all here to learn and improve!
+This comment will be made public once posted.
+
+
+Post Comment
+Gerar Del Toro
+Posted 14 days ago
+
+· 445th in this Competition
+
+The 10000 SPS is including model policy and forward pass or just kaggle environment empty with no actions?
+
+
+Reply
+
+React
+Lin Myat Ko
+Topic Author
+Posted 13 days ago
+
+· 1st in this Competition
+
+Yeah, it's all included. It was with basic features and basic model architecture with 600K params. It was that fast. Now, I have used complex features and architecture is also complex, the SPS drops to 2K and it stops learning at all. 🫠 It may take me like 4-5 days to get back on track.
+
+
+Reply
+
+React
+junlee789
+Posted 13 days ago
+
+Thanks lol. I was worried that opus could copy orbit wars perfectly and seems pretty good.
+
+Not only for JAX, also RL advice, thank you again!
+
+
+Reply
+
+1
+hykunnnn
+Posted 4 days ago
+
+· 765th in this Competition
+
+Does this speed include the PPO update?
+
+
+Reply
+
+React
+Gerar Del Toro
+Posted 4 days ago
+
+· 445th in this Competition
+
+I think he does include it… It's posible I can confirm that at least. There are some very interesting trade-offfs in action space, rollouts, memory, batching and many other things going on here to actually reach this SPS amount.
+
+
+Reply
+
+React
+junlee789
+Posted 14 days ago
+
+Thank you for sharing what you have learned with this high-quality and well compacted information! It will help me a lot!
+
+
+Reply
+
+1
+Navneet
+Posted 12 days ago
+
+Cool RL lessons @lightmk
+
+
+Reply
+
+React
+GUOHAOYANG
+Posted a day ago
+
+· 531st in this Competition
+
+Hi, have you also implemented your model in JAX?
+
+
+Reply
+
+React
+Lin Myat Ko
+Topic Author
+Posted a day ago
+
+· 1st in this Competition
+
+Yes, end to end JAX
+
+
+Reply
+
+React
+GUOHAOYANG
+Posted 6 hours ago
+
+· 531st in this Competition
+
+Thanks for your reply. I have one more question: is the reward structure you use just a win/lose (+1/-1) signal?
+
+
+Reply
+
+React
+
+4 more replies
+Profile picture for Lin Myat Ko
+Profile picture for hykunnnn
+Profile picture for GUOHAOYANG
+Son Pham
+Posted a day ago
+
+· 75th in this Competition
+
+Thank you very much for sharing.
+
+Do you let the model propose action candidates? Or do you kind of have a set of candidate proposal based on heuristics? I had an agent that does second one but I have a feeling that I am limiting my own agent with the heuristics that I come up with.
+
+
+Reply
+
+React
+Lin Myat Ko
+Topic Author
+Posted a day ago
+
+· 1st in this Competition
+
+Action head is pretty much standard. Target head with target argmax during inference and softmax during training. Same thing for fleet percentage bins. I learned a lot from previous Lux AI RL winning solutions.
+
+
+Reply
+
+React
+Gerar Del Toro
+Posted 4 days ago
+
+· 445th in this Competition
+
+So 3 days of training at 10k SPS means that your competitive submission took around 2.6bn steps?
+
+I completely agree on the fact that fast environment is quite a must here. I rewrote it 3 times and now my experiments and iterations are faster and with more confidence. Before I had to guess whether it was a problem of architechture, features, action space, or just not enough exploration among many other posible things. Now it's the same haha, but at least my early conclusions are not based of just 5M steps or even less.
+
+
+Reply
+
+React
+Lin Myat Ko
+Topic Author
+Posted a day ago
+
+· 1st in this Competition
+
+It was 600M steps. 10k SPS calculation maybe wrong. There were evaluation steps eating up the wall time and stuffs.
+
+
+Reply
+
+React
+MarvinTMB
+Posted 13 days ago
+
+· 2157th in this Competition
+
+I'm doing a transformer solution with PPO. You don't need warmup if you handle your gradients correctly: Agents like to stack tweaks and patches on top of each other until something works. Its really dumb and you need to stop it with CLAUDE/AGENTS.md instructions.
+
+There are many relatively easy things to improve on here such as actual reward shaping, ablation driven development workflow, commiting to a transformer backbone, and better value function solutions.
+
+
+Reply
+
+React
+junlee789
+Posted 14 days ago
+
+Can I ask you the way how you have made orbit wars with JAX? I'm a newbie in RL, and While I was running every single episode in kaggle environments, I realized the time inefficiency.
+
+
+Reply
+
+React
+Lin Myat Ko
+Topic Author
+Posted 13 days ago
+
+· 1st in this Competition
+
+"Hey, Opus. Port this orbit wars into JAX. (make no mistakes 😂)". Have Opus write parity tests to compare frame by frame with kaggle environment. You also need to tell what obs features you want so that it'll be optimized altogether.
+
+
+Reply
+
+1
+skalermo
+Posted 14 days ago
+
+· 72nd in this Competition
+
+Thanks for sharing! If I read this right you are spending 50$ for gpu/day, that's a lot, are you using spot instances? Also, can you explain what's F12?
+
+
+Reply
+
+React
+Boey
+Posted 14 days ago
+
+· 61st in this Competition
+
+Even with on-demand pricing, $50 for gpu/day for RTX 5090 is more than double the market price.
+
+
+Reply
+
+React
+Lin Myat Ko
+Topic Author
+Posted 13 days ago
+
+· 1st in this Competition
+
+Nope. It's not 50$ per day. 150 is total amount I've spent for running a lot of experiments. F12 is just the codename for experiments. It's 12th experiment which took 3 days and it's also the submitted model.
+
+
+Reply
+
+React
+
+Appreciation (1)
+Forrest_xlz
+Posted 18 hours ago
+
+· 1850th in this Competition
+
+Thank your great work!
+

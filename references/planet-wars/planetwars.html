@@ -1,0 +1,188 @@
+<!--
+      https://www.benzedrine.ch/planetwars.html
+
+      I get up at 5 in the morning, I fight traffic, I bust my hump all day,
+      then I fight traffic again, then I pay my taxes - The End
+              - Jack Arnold, The Wonder Years
+//-->
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+
+  <head>
+
+    <meta name="description" content="Google AI challenge 2010: Planet Wars">
+    <meta name="keywords" content="planet wars, google, ai, challenge, contest, programming, 2010">
+    <meta name="author" content="Daniel Hartmeier">
+    <meta name="robots" content="index, follow">
+    <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+    <link rel="canonical" href="https://www.benzedrine.ch/planetwars.html">
+
+    <title>Google AI challenge 2010: Planet Wars</title>
+
+  </head>
+
+  <body text="#000000" bgcolor="#FFFFFF" link="#1919C0" vlink="#101030" alink="#FE0000">
+
+    <table width="100%"><tr><td>
+
+      <table><tr><td valign=top height="62">
+
+        <img src="logo.jpg" alt="[benzedrine.ch logo]"><br>
+
+      </td></tr></table>
+
+    </td></tr><tr><td>
+
+      <table>
+        <tr><td valign=top>
+
+          <table cellspacing=2 cellpadding=1 border=0 width=175>
+            <tr><td bgcolor="#C8C8FF" align=center><b>Contents</b></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/index.html">Home</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/dhartmei.html">Daniel Hartmeier</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/pf.html">Packet Filter</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/pfstat.html">pfstat</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/mailinglist.html">Mailing list</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/relaydb.html">Annoying spammers</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/ackpri.html">Prioritizing ACKs</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/transquid.html">Transparent squid</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/icbirc.html">Proxy ICB/IRC</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/milter-regex.html">milter-regex</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/milter-spamd.html">milter-spamd</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/milter-checkrcpt.html">milter-checkrcpt</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/yubikey.html">login_yubikey</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/dorabella.html">Dorabella</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/tron.html">Tron</a></td></tr>
+            <tr><td bgcolor="#E0E0FF"><a href="/planetwars.html">Planet Wars</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/hexiom.html">Hexiom solver</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/3D-ODRPP.html">3D-ODRPP</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/polygon-partition.html">Polygon partition</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/grid-puzzle.html">Mikero's grid puzzle</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/darkstar.html">Dark Star</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/misc.html">Misc</a></td></tr>
+            <tr><td bgcolor="#F0F0FF"><a href="/statistics.html">Statistics</a></td></tr>
+          </table><br>
+
+        </td><td valign=top>
+
+          <table width=25><tr><td><br></td></tr></table>
+
+        </td><td valign=top bgcolor="#F0F0FF" width="100%">
+
+          <!--------------------------------------------------------------- -->
+    <h2>Google AI challenge 2010: Planet Wars</h2>
+
+    <i>
+    The <a href="http://planetwars.aichallenge.org/">Google AI Challenge 2010</a>
+    was hosted by the <a href="http://csclub.uwaterloo.ca/">
+    Computer Science Club of the University of Waterloo</a> 
+    from September to December 2010.<br>
+    <a href="http://planetwars.aichallenge.org/rankings.php">Final rankings</a>
+    were published December 2nd 2010.
+    Congratulations to all participants, especially to the winner
+    <a href="http://quotenil.com/Planet-Wars-Post-Mortem.html">
+    Gábor Melis (bocsimacko)</a>, and to the contest organizers!<br><br>
+
+    Like for the <a href="/tron.html">previous contest</a>, I ran an
+    unofficial TCP server, to <a href="http://forums.aichallenge.org/viewtopic.php?f=18&amp;t=424">aid in testing bots</a>. Here are some statistics:<br>
+    </i>
+
+    <ul>
+      <li>70 days of uptime<br>
+      <li>1,131 hours of CPU time of the server process<br>
+      <li>1,267,439 games played<br>
+      <li>805 users registered<br>
+      <li>record of 70 parallel games<br>
+    </ul>
+
+    <hr>
+
+    You can connect your unmodified bot to this server using
+    <a href="/planetwars/tcp.c">tcp.c</a> (for a Windows binary see
+    <a href="http://forums.aichallenge.org/viewtopic.php?f=18&amp;t=424&amp;start=40#p3786">this forum post</a>).<p>
+
+    <pre>
+      gcc -o tcp tcp.c
+      ./tcp 72.44.46.68 995 username -p password ./MyBot
+    </pre>
+
+    This engine will connect to the server over TCP/IP to fetch maps
+    and issue orders. You will be running your bot yourself, and neither
+    your source code nor executable ever leave your machine.<br>
+    This can be useful for several reasons:<br>
+    <ul>
+      <li>You can print debug messages, write log files, dump cores,
+          run inside a debugger, etc.<br>
+      <li>You play against opponents stronger than the examples
+          provided with the starter kit.<br>
+      <li>If your program violates the time limit, you'll see that
+          first hand. Same if your program crashes.<br>
+      <li>You get more games faster, about one every three minutes.
+    </ul><p>
+
+    The <a href="/planetwars/server.tar.gz">server code</a> is open source,
+    too.<p>
+
+    Matching of players is based on Elo points, you'll play against the
+    available opponent with the Elo points closest to yours.<br>
+    Maps are chosen randomly from a pool which
+    consists of all maps from the
+    most recent starter package, plus some new maps suggested in the
+    forums.<br>
+    Timing rules are slightly relaxed, due to network latency. You're still
+    expected to produce a reply as per the official rules.<br>
+    Your machine's speed may affect the ranking. If your machine is
+    significantly faster or slower than the official tournament server,
+    consider the effect.<p>
+
+    See <a href="http://remi.coulom.free.fr/Bayesian-Elo/">Bayesian-Elo</a>
+    for details about the ratings below.
+    Output is produced with command sequence: <i>readpgn</i>, <i>mm</i>,
+    <i>advantage 0</i>, <i>exactdist</i>, <i>ratings</i>.<br>
+    Updated once a minute.
+    This server is run by Daniel Hartmeier (dhartmei), contact
+    <a href="mailto:daniel@benzedrine.ch">daniel@benzedrine.ch</a>
+    if you have questions.<p>
+
+    <b>THE SERVER IS NOW SHUT DOWN, THANK YOU FOR PLAYING, AND SEE YOU IN THE NEXT CONTEST!</b><p>
+
+    <img src="planetwars.png" width="640" height="640" alt="[screenshot of game]"><p>
+
+    <hr>
+
+    More reading:<br>
+    <ul>
+      <li><a href="http://quotenil.com/Planet-Wars-Post-Mortem.html">Planet Wars Post-Mortem</a> on Gábor Melis' blog (rank 1, Lisp)<br>
+      <li><a href="http://iouri-khramtsov.blogspot.com/2010/11/google-ai-challenge-planet-wars-entry.html">Google AI Challenge (Planet Wars) Entry</a> on Iouri Khramtsov's blog (rank 2, C++)<br>
+      <li><a href="http://forums.aichallenge.org/viewtopic.php?f=17&amp;t=1136">space.invader</a>'s description of their genetic programming approach (rank 277)<br>
+      <li><a href="http://planetwars.aichallenge.org/rankings.php">Final Rankings</a> (I made rank <a href="http://planetwars.aichallenge.org/profile.php?user_id=3990">334</a> out of 4600, with
+        <a href="/planetwars/MyBot.cc">MyBot.cc</a>,
+        <a href="/planetwars/board.h">board.h</a>,
+        <a href="/planetwars/board.cc">board.cc</a>)<br>
+      <li><a href="http://forums.aichallenge.org/viewforum.php?f=16">Official forum</a><br>
+      <li><a href="http://www.zdnet.com/blog/burnette/its-youth-vs-experience-in-the-google-ai-challenge-and-the-kids-are-winning/2123">It's youth vs. experience in the Google AI challenge, and the kids are winning</a> by Ed Burnette on Dev Connection<br>
+    </ul>
+
+          <!--------------------------------------------------------------- -->
+
+        </td></tr>
+
+      </table>
+
+    </td></tr><tr><td>
+
+      <center>
+        <small>
+          Last updated on Tue Sep 26 08:57:43 2017 by
+          <a href="mailto:daniel@benzedrine.ch">daniel@benzedrine.ch</a><a href="/crawlertrap/index.html?no-prefetch">.</a><br><br>
+        </small>
+      </center>
+
+    </td></tr>
+
+    </table>
+
+  </body>
+
+</html>
