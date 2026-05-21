@@ -1,0 +1,52 @@
+# Self-play training at full episode length (500 steps).
+#
+# Hypothesis: the 200-step training cap teaches the policy a "short game"
+# strategy that collapses when stretched to the 500-step Kaggle game. This
+# config keeps everything else identical to selfplay.yaml so any improvement
+# is attributable to episode length alone.
+#
+# Schedule (CPU, num_envs=32, rollout_length=128):
+#   120 updates ≈ 492K env steps. At ~5K SPS that is ~100 seconds plus jit
+#   warmup -- expect ~2-3 minutes total wall time on the 5090 box.
+
+train:
+  num_envs: 32
+  rollout_length: 128
+  num_updates: 120
+  num_groups: 5
+  episode_steps: 500       # <-- the only material change vs selfplay.yaml
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_selfplay_ep500
+  ckpt_every: 20
+  log_every: 1
+  seed: 43                 # different seed so the run is independent of selfplay.yaml
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 40
+  lr_decay_steps: 120
+  lr_floor: 0.00001
+  clip_eps: 0.2
+  value_clip_eps: 0.2
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.01
+  ent_coef_pct: 0.02
+  max_grad_norm: 0.5
+  gamma: 0.997
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 20       # shorter warmup -- 120 total is small
+  snapshot_every: 8
+  pool_capacity: 5
+  frozen_ratio: 0.5
+  eval_vs_frozen: true
