@@ -1,3 +1,15 @@
+# 忽略所有__pycache__目录（无论在哪个层级）
+__pycache__/
 
-ckpt_selfplay/*
-logs/*
+# 忽略所有ckpt目录和文件
+ckpt_selfplay/
+
+# 忽略日志
+logs/
+
+# 可选：添加Python项目通用忽略项
+*.py[cod]
+*$py.class
+.venv/
+.env
+*.pkl
