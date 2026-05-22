@@ -1,0 +1,67 @@
+# v6.1 - emergency rollback config if v6 trips the clip_frac warning.
+#
+# Only use if v6 logs show ``clip_frac`` creeping above 0.25 for 5+
+# consecutive updates. The published F12 wisdom (top_players_rl.txt §75) is:
+#   "clip_frac trajectory is your most reliable warning sign... 0.10 -> 0.30+
+#    over a few million samples. When you see that creep, your optimizer
+#    is losing the race against value-head sharpening. Cut lr or revert."
+#
+# v6 launched at lr_peak=1.5e-4. v6p1 cuts that in half to 7.5e-5 -- the
+# canonical "half the lr and try again" remediation. Everything else is
+# IDENTICAL to v6 so we can directly attribute any improvement to the lr.
+#
+# Launch (kill v6 first):
+#   pkill -f multi_action_v6
+#   ORBITWARS_SHAPING_SCALE=0.0 \
+#       nohup python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v6p1.yaml \
+#       --log-dir logs/multi_action_v6p1 \
+#       > logs/multi_action_v6p1.log 2>&1 &
+#
+# Do NOT use --resume-from a v6 checkpoint: if v6 blew up its policy from
+# excessive clip, the ckpt is contaminated. Train from scratch with the
+# halved lr.
+
+train:
+  num_envs: 128
+  rollout_length: 128
+  num_updates: 5000
+  num_groups: 5
+  episode_steps: 80
+  eval_every: 25
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v6p1
+  ckpt_every: 50
+  log_every: 1
+  seed: 61
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.000075         # KEY: 1.5e-4 -> 7.5e-5 (halved per §75 remediation)
+  lr_warmup_steps: 200       # KEY: longer warmup to reduce initial clip
+  lr_decay_steps: 6000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.0001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.97
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 200
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.5
+  eval_vs_frozen: true
