@@ -1,0 +1,89 @@
+# v5.3 - same as v5p2 with the value-head fix.
+#
+# v5p2 RESULT (upd 0-95):
+#   upd 0-29  : adv_std 0.20-0.32, pg_loss -0.0015 to -0.0032, clip 0.03-0.12,
+#               ent_pct dropped 1.21 -> 1.05 (LEARNING!)
+#               WRr peaked 0.72 at upd 49
+#   upd 30-95 : adv_std fell to 0.13-0.23, pg_loss dropped to -0.0003 magnitude,
+#               clip went to 0.00, ent_pct REBOUNDED 1.05 -> 1.16
+#               mean_emits fell 1.90 -> 1.37, WRr dropped back to ~0.5
+#
+# Root cause (DAY2 §11):
+#   value_loss ran 0.022-0.051 at upd 0-4 but stabilised at 0.009-0.025 by
+#   upd 40+. Value head FIT THE RETURNS while policy was still learning.
+#   After that A(s,a) = R - V ~= 0 for all (s,a) so advantage collapses,
+#   pg_loss -> 0, policy stops improving and entropy bonus pushes it back
+#   towards uniform. This is the canonical "value head outrunning policy"
+#   failure (top_players_rl.txt §75: clip_frac monotone signal).
+#
+# Fix in v5p3 (single-variable from v5p2):
+#   * value_coef 0.5 -> 0.20  (slow value head; advantage stays informative)
+#   * lr_decay_steps 800 -> 2400 (3x: stay near peak the whole run; the run
+#                                 is much shorter -- 800 updates -- so cosine
+#                                 decay over 2400 is basically lr = peak)
+#   Everything else identical to v5p2 so we can directly attribute change.
+#
+# Launch:
+#   ORBITWARS_SHAPING_SCALE=0.0 \
+#       python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v5p3.yaml \
+#       --log-dir logs/multi_action_v5p3 \
+#       2>&1 | tee logs/multi_action_v5p3.log
+#
+# Sign-of-life (vs v5p2 collapse at upd 30+):
+#   upd 30  : adv_std STAYS > 0.25 (vs v5p2's drop to 0.18)
+#             pg_loss STAYS > 0.0015 (vs v5p2's drop to 0.0005)
+#             clip_frac STAYS > 0.03 (vs v5p2's drop to 0.00)
+#             v_loss DROPS SLOWER -- expect 0.020-0.035 at upd 30
+#                                  (v5p2 was 0.013-0.027 by then)
+#   upd 100 : ent_pct < 0.95, mean_emits > 2.0, WRr > 0.80
+#   upd 400 : WRr > 0.85, ent_pct < 0.7, mean_emits 2.5+
+#
+# Kill triggers:
+#   * adv_std < 0.15 at upd 30  -> value_coef still too high, halve again
+#   * pg_loss > 0.005 magnitude after upd 50 -> unstable, lower lr_peak
+#   * clip_frac > 0.30 sustained -> classic top-players warning sign, halve lr
+
+train:
+  num_envs: 128
+  rollout_length: 128
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 80
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v5p3
+  ckpt_every: 25
+  log_every: 1
+  seed: 53
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 60
+  lr_decay_steps: 2400         # KEY: 3x num_updates so lr stays near peak whole run
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20             # KEY: 0.5 -> 0.20 to slow down value head
+  ent_coef_src: 0.002
+  ent_coef_dst: 0.0001
+  ent_coef_pct: 0.001
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.97
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 80
+  snapshot_every: 20
+  pool_capacity: 6
+  frozen_ratio: 0.5
+  eval_vs_frozen: true
