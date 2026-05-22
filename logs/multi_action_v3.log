@@ -1,0 +1,401 @@
+upd    0  steps    4096  sps 163  opp rand  loss -0.076  pg -0.0005  v 0.007  adv_std 0.106  tR +0.00  ent[s/d/p/e] 0.89/2.95/1.35/0.58  emits 2.43  clip 0.00  kl +0.000
+upd    1  steps    8192  sps 322  opp rand  loss -0.050  pg -0.0002  v 0.058  adv_std 0.317  tR -0.50  ent[s/d/p/e] 1.19/2.96/1.35/0.53  emits 2.86  clip 0.02  kl +0.002
+upd    2  steps   12288  sps 479  opp rand  loss -0.077  pg -0.0010  v 0.012  adv_std 0.149  tR -0.20  ent[s/d/p/e] 1.55/2.95/1.35/0.59  emits 2.77  clip 0.06  kl +0.002
+upd    3  steps   16384  sps 634  opp rand  loss -0.069  pg -0.0013  v 0.027  adv_std 0.233  tR -0.33  ent[s/d/p/e] 1.04/2.95/1.35/0.63  emits 2.23  clip 0.09  kl +0.005
+upd    4  steps   20480  sps 786  opp rand  loss -0.066  pg -0.0015  v 0.033  adv_std 0.267  tR -0.19  ent[s/d/p/e] 1.24/2.96/1.35/0.61  emits 2.24  clip 0.05  kl +0.004
+upd    5  steps   24576  sps 935  opp rand  loss -0.079  pg -0.0004  v 0.008  adv_std 0.127  tR +0.00  ent[s/d/p/e] 1.35/2.96/1.36/0.65  emits 2.10  clip 0.09  kl +0.004
+upd    6  steps   28672  sps 1082  opp rand  loss -0.074  pg -0.0026  v 0.021  adv_std 0.215  tR -0.07  ent[s/d/p/e] 1.09/2.96/1.36/0.67  emits 1.84  clip 0.03  kl +0.003
+upd    7  steps   32768  sps 1226  opp rand  loss -0.074  pg -0.0014  v 0.022  adv_std 0.222  tR -0.03  ent[s/d/p/e] 1.42/2.97/1.36/0.66  emits 1.98  clip 0.07  kl +0.003
+upd    8  steps   36864  sps 1369  opp rand  loss -0.082  pg -0.0026  v 0.007  adv_std 0.122  tR -0.50  ent[s/d/p/e] 1.33/2.96/1.36/0.66  emits 1.84  clip 0.05  kl +0.001
+upd    9  steps   40960  sps 1508  opp rand  loss -0.074  pg -0.0014  v 0.017  adv_std 0.189  tR -0.43  ent[s/d/p/e] 1.00/2.97/1.35/0.65  emits 1.75  clip 0.04  kl +0.002 WRr 0.12 WRf 0.03
+upd   10  steps   45056  sps 1219  opp rand  loss -0.075  pg -0.0009  v 0.019  adv_std 0.206  tR +0.09  ent[s/d/p/e] 1.39/2.96/1.35/0.66  emits 1.94  clip 0.07  kl +0.007
+upd   11  steps   49152  sps 1322  opp rand  loss -0.077  pg +0.0006  v 0.010  adv_std 0.144  tR +0.50  ent[s/d/p/e] 1.25/2.96/1.35/0.67  emits 1.64  clip 0.08  kl +0.001
+upd   12  steps   53248  sps 1424  opp rand  loss -0.075  pg -0.0015  v 0.017  adv_std 0.187  tR +0.00  ent[s/d/p/e] 1.15/2.97/1.36/0.66  emits 1.78  clip 0.09  kl +0.003
+upd   13  steps   57344  sps 1524  opp rand  loss -0.076  pg -0.0010  v 0.018  adv_std 0.190  tR -0.38  ent[s/d/p/e] 1.45/2.97/1.35/0.65  emits 1.85  clip 0.07  kl +0.004
+upd   14  steps   61440  sps 1624  opp rand  loss -0.076  pg -0.0011  v 0.013  adv_std 0.166  tR +0.11  ent[s/d/p/e] 1.11/2.97/1.35/0.65  emits 1.52  clip 0.10  kl +0.008
+upd   15  steps   65536  sps 1722  opp rand  loss -0.070  pg +0.0014  v 0.022  adv_std 0.211  tR +0.07  ent[s/d/p/e] 1.21/2.98/1.34/0.64  emits 1.71  clip 0.11  kl +0.006
+upd   16  steps   69632  sps 1820  opp rand  loss -0.075  pg +0.0006  v 0.015  adv_std 0.174  tR +0.17  ent[s/d/p/e] 1.48/2.98/1.35/0.64  emits 1.75  clip 0.06  kl +0.002
+upd   17  steps   73728  sps 1916  opp rand  loss -0.074  pg -0.0008  v 0.017  adv_std 0.185  tR -0.04  ent[s/d/p/e] 1.04/2.98/1.35/0.64  emits 1.60  clip 0.05  kl +0.004
+upd   18  steps   77824  sps 2011  opp rand  loss -0.074  pg -0.0011  v 0.020  adv_std 0.199  tR +0.10  ent[s/d/p/e] 1.36/2.98/1.35/0.64  emits 1.70  clip 0.03  kl +0.002
+upd   19  steps   81920  sps 2105  opp rand  loss -0.076  pg -0.0020  v 0.018  adv_std 0.188  tR -0.09  ent[s/d/p/e] 1.36/2.98/1.35/0.64  emits 1.61  clip 0.03  kl +0.002 WRr 0.34 WRf 0.34
+upd   20  steps   86016  sps 1826  opp rand  loss -0.073  pg -0.0019  v 0.020  adv_std 0.201  tR -0.42  ent[s/d/p/e] 1.00/2.98/1.35/0.63  emits 1.47  clip 0.02  kl +0.001
+upd   21  steps   90112  sps 1904  opp rand  loss -0.075  pg -0.0016  v 0.017  adv_std 0.189  tR -0.24  ent[s/d/p/e] 1.19/2.98/1.35/0.64  emits 1.58  clip 0.02  kl +0.003
+upd   22  steps   94208  sps 1982  opp rand  loss -0.075  pg -0.0014  v 0.018  adv_std 0.190  tR +0.00  ent[s/d/p/e] 1.38/2.98/1.35/0.62  emits 1.59  clip 0.04  kl +0.002
+upd   23  steps   98304  sps 2058  opp rand  loss -0.073  pg -0.0001  v 0.017  adv_std 0.186  tR -0.09  ent[s/d/p/e] 1.24/2.98/1.35/0.62  emits 1.45  clip 0.02  kl +0.002
+upd   24  steps  102400  sps 2135  opp rand  loss -0.072  pg +0.0007  v 0.019  adv_std 0.195  tR +0.03  ent[s/d/p/e] 1.31/2.98/1.36/0.63  emits 1.54  clip 0.05  kl +0.003
+upd   25  steps  106496  sps 2210  opp rand  loss -0.077  pg -0.0007  v 0.014  adv_std 0.168  tR -0.33  ent[s/d/p/e] 1.39/2.98/1.36/0.63  emits 1.44  clip 0.02  kl +0.002
+upd   26  steps  110592  sps 2284  opp rand  loss -0.075  pg -0.0019  v 0.021  adv_std 0.203  tR +0.04  ent[s/d/p/e] 1.46/2.98/1.36/0.63  emits 1.54  clip 0.04  kl +0.001
+upd   27  steps  114688  sps 2358  opp rand  loss -0.076  pg -0.0014  v 0.017  adv_std 0.185  tR +0.05  ent[s/d/p/e] 1.55/2.98/1.35/0.63  emits 1.55  clip 0.02  kl +0.001
+upd   28  steps  118784  sps 2432  opp rand  loss -0.074  pg -0.0010  v 0.015  adv_std 0.173  tR -0.31  ent[s/d/p/e] 1.13/2.98/1.35/0.62  emits 1.43  clip 0.02  kl +0.001
+upd   29  steps  122880  sps 2505  opp rand  loss -0.071  pg -0.0012  v 0.023  adv_std 0.215  tR +0.04  ent[s/d/p/e] 1.21/2.98/1.35/0.63  emits 1.45  clip 0.01  kl +0.001 WRr 0.34 WRf 0.28
+upd   30  steps  126976  sps 2216  opp rand  loss -0.074  pg -0.0016  v 0.018  adv_std 0.188  tR +0.16  ent[s/d/p/e] 1.19/2.98/1.35/0.63  emits 1.42  clip 0.01  kl +0.001
+upd   31  steps  131072  sps 2279  opp rand  loss -0.072  pg -0.0012  v 0.020  adv_std 0.202  tR -0.26  ent[s/d/p/e] 1.19/2.97/1.34/0.63  emits 1.40  clip 0.02  kl +0.000
+upd   32  steps  135168  sps 2342  opp rand  loss -0.073  pg -0.0017  v 0.020  adv_std 0.200  tR +0.07  ent[s/d/p/e] 1.29/2.97/1.33/0.63  emits 1.43  clip 0.01  kl +0.002
+upd   33  steps  139264  sps 2404  opp rand  loss -0.073  pg +0.0002  v 0.020  adv_std 0.201  tR +0.12  ent[s/d/p/e] 1.58/2.97/1.32/0.63  emits 1.45  clip 0.00  kl +0.000
+upd   34  steps  143360  sps 2465  opp rand  loss -0.074  pg -0.0008  v 0.016  adv_std 0.180  tR +0.11  ent[s/d/p/e] 1.21/2.97/1.33/0.64  emits 1.47  clip 0.00  kl +0.000
+upd   35  steps  147456  sps 2526  opp rand  loss -0.075  pg -0.0014  v 0.018  adv_std 0.186  tR +0.07  ent[s/d/p/e] 1.24/2.97/1.34/0.64  emits 1.48  clip 0.01  kl +0.001
+upd   36  steps  151552  sps 2586  opp rand  loss -0.075  pg -0.0003  v 0.016  adv_std 0.178  tR +0.41  ent[s/d/p/e] 1.43/2.97/1.34/0.64  emits 1.49  clip 0.01  kl +0.001
+upd   37  steps  155648  sps 2647  opp rand  loss -0.073  pg -0.0008  v 0.018  adv_std 0.193  tR -0.29  ent[s/d/p/e] 1.13/2.97/1.35/0.65  emits 1.44  clip 0.01  kl +0.000
+upd   38  steps  159744  sps 2706  opp rand  loss -0.074  pg -0.0008  v 0.021  adv_std 0.208  tR +0.23  ent[s/d/p/e] 1.48/2.97/1.35/0.66  emits 1.59  clip 0.00  kl +0.000
+upd   39  steps  163840  sps 2765  opp rand  loss -0.075  pg -0.0007  v 0.018  adv_std 0.194  tR +0.22  ent[s/d/p/e] 1.37/2.97/1.35/0.66  emits 1.56  clip 0.00  kl +0.000 WRr 0.44 WRf 0.31
+upd   40  steps  167936  sps 2218  opp frzn  loss -0.070  pg -0.0011  v 0.025  adv_std 0.222  tR +0.32  ent[s/d/p/e] 1.03/2.97/1.35/0.66  emits 1.56  clip 0.01  kl +0.001
+upd   41  steps  172032  sps 2266  opp rand  loss -0.074  pg -0.0008  v 0.019  adv_std 0.195  tR -0.14  ent[s/d/p/e] 1.29/2.96/1.35/0.65  emits 1.55  clip 0.00  kl +0.000
+upd   42  steps  176128  sps 2312  opp frzn  loss -0.074  pg -0.0005  v 0.017  adv_std 0.184  tR -0.25  ent[s/d/p/e] 1.25/2.96/1.35/0.64  emits 1.48  clip 0.00  kl -0.000
+upd   43  steps  180224  sps 2358  opp frzn  loss -0.073  pg -0.0006  v 0.020  adv_std 0.197  tR +0.15  ent[s/d/p/e] 1.16/2.96/1.35/0.65  emits 1.46  clip 0.00  kl +0.000
+upd   44  steps  184320  sps 2405  opp rand  loss -0.073  pg +0.0000  v 0.020  adv_std 0.201  tR +0.10  ent[s/d/p/e] 1.32/2.96/1.35/0.66  emits 1.57  clip 0.00  kl -0.000
+upd   45  steps  188416  sps 2450  opp frzn  loss -0.075  pg -0.0001  v 0.018  adv_std 0.188  tR +0.25  ent[s/d/p/e] 1.43/2.96/1.35/0.65  emits 1.53  clip 0.00  kl +0.000
+upd   46  steps  192512  sps 2495  opp frzn  loss -0.075  pg -0.0004  v 0.016  adv_std 0.180  tR +0.21  ent[s/d/p/e] 1.25/2.96/1.35/0.66  emits 1.52  clip 0.00  kl +0.000
+upd   47  steps  196608  sps 2541  opp rand  loss -0.074  pg +0.0000  v 0.019  adv_std 0.194  tR +0.11  ent[s/d/p/e] 1.45/2.97/1.35/0.65  emits 1.53  clip 0.00  kl +0.000
+upd   48  steps  200704  sps 2585  opp frzn  loss -0.074  pg -0.0001  v 0.017  adv_std 0.186  tR +0.47  ent[s/d/p/e] 1.25/2.96/1.35/0.65  emits 1.45  clip 0.00  kl +0.000
+upd   49  steps  204800  sps 2631  opp rand  loss -0.071  pg -0.0002  v 0.024  adv_std 0.218  tR +0.11  ent[s/d/p/e] 1.34/2.96/1.35/0.64  emits 1.46  clip 0.00  kl -0.000 WRr 0.47 WRf 0.44
+upd   50  steps  208896  sps 2422  opp rand  loss -0.074  pg -0.0003  v 0.018  adv_std 0.190  tR +0.44  ent[s/d/p/e] 1.35/2.96/1.35/0.64  emits 1.42  clip 0.00  kl +0.000
+upd   51  steps  212992  sps 2464  opp rand  loss -0.075  pg -0.0004  v 0.015  adv_std 0.176  tR -0.11  ent[s/d/p/e] 1.27/2.96/1.35/0.65  emits 1.50  clip 0.00  kl +0.000
+upd   52  steps  217088  sps 2503  opp frzn  loss -0.072  pg -0.0004  v 0.023  adv_std 0.213  tR +0.45  ent[s/d/p/e] 1.32/2.96/1.35/0.65  emits 1.53  clip 0.00  kl +0.000
+upd   53  steps  221184  sps 2544  opp rand  loss -0.075  pg -0.0002  v 0.016  adv_std 0.177  tR +0.09  ent[s/d/p/e] 1.26/2.96/1.35/0.65  emits 1.47  clip 0.00  kl +0.000
+upd   54  steps  225280  sps 2584  opp frzn  loss -0.073  pg -0.0003  v 0.018  adv_std 0.192  tR +0.37  ent[s/d/p/e] 1.13/2.96/1.35/0.65  emits 1.49  clip 0.00  kl -0.000
+upd   55  steps  229376  sps 2623  opp frzn  loss -0.076  pg -0.0003  v 0.014  adv_std 0.169  tR +0.18  ent[s/d/p/e] 1.33/2.96/1.35/0.65  emits 1.47  clip 0.00  kl +0.000
+upd   56  steps  233472  sps 2662  opp frzn  loss -0.073  pg -0.0001  v 0.019  adv_std 0.196  tR +0.42  ent[s/d/p/e] 1.20/2.96/1.35/0.66  emits 1.53  clip 0.00  kl +0.000
+upd   57  steps  237568  sps 2702  opp rand  loss -0.074  pg -0.0002  v 0.017  adv_std 0.185  tR +0.00  ent[s/d/p/e] 1.33/2.96/1.34/0.64  emits 1.44  clip 0.00  kl +0.000
+upd   58  steps  241664  sps 2742  opp rand  loss -0.074  pg -0.0004  v 0.018  adv_std 0.189  tR +0.20  ent[s/d/p/e] 1.27/2.96/1.35/0.65  emits 1.52  clip 0.00  kl -0.000
+upd   59  steps  245760  sps 2780  opp frzn  loss -0.073  pg -0.0003  v 0.021  adv_std 0.204  tR +0.37  ent[s/d/p/e] 1.44/2.96/1.34/0.65  emits 1.51  clip 0.00  kl +0.000 WRr 0.44 WRf 0.41
+upd   60  steps  249856  sps 2591  opp frzn  loss -0.072  pg -0.0002  v 0.021  adv_std 0.202  tR +0.42  ent[s/d/p/e] 1.24/2.96/1.34/0.65  emits 1.51  clip 0.00  kl +0.000
+upd   61  steps  253952  sps 2627  opp frzn  loss -0.075  pg -0.0005  v 0.016  adv_std 0.180  tR +0.33  ent[s/d/p/e] 1.40/2.96/1.34/0.66  emits 1.53  clip 0.00  kl +0.000
+upd   62  steps  258048  sps 2663  opp rand  loss -0.075  pg -0.0002  v 0.016  adv_std 0.181  tR +0.22  ent[s/d/p/e] 1.30/2.96/1.34/0.66  emits 1.56  clip 0.00  kl +0.000
+upd   63  steps  262144  sps 2699  opp rand  loss -0.076  pg -0.0003  v 0.014  adv_std 0.164  tR +0.25  ent[s/d/p/e] 1.25/2.96/1.34/0.66  emits 1.57  clip 0.00  kl -0.000
+upd   64  steps  266240  sps 2734  opp frzn  loss -0.072  pg -0.0001  v 0.021  adv_std 0.204  tR +0.43  ent[s/d/p/e] 1.22/2.96/1.34/0.66  emits 1.59  clip 0.00  kl +0.000
+upd   65  steps  270336  sps 2770  opp rand  loss -0.074  pg -0.0007  v 0.017  adv_std 0.187  tR +0.00  ent[s/d/p/e] 1.23/2.96/1.34/0.65  emits 1.56  clip 0.00  kl +0.000
+upd   66  steps  274432  sps 2805  opp frzn  loss -0.072  pg -0.0006  v 0.022  adv_std 0.208  tR +0.05  ent[s/d/p/e] 1.32/2.96/1.34/0.65  emits 1.49  clip 0.00  kl +0.000
+upd   67  steps  278528  sps 2840  opp rand  loss -0.075  pg -0.0004  v 0.015  adv_std 0.175  tR +0.42  ent[s/d/p/e] 1.35/2.96/1.34/0.65  emits 1.43  clip 0.00  kl -0.000
+upd   68  steps  282624  sps 2876  opp rand  loss -0.074  pg -0.0004  v 0.018  adv_std 0.188  tR -0.10  ent[s/d/p/e] 1.25/2.96/1.34/0.65  emits 1.48  clip 0.00  kl -0.000
+upd   69  steps  286720  sps 2911  opp rand  loss -0.072  pg -0.0001  v 0.020  adv_std 0.202  tR +0.10  ent[s/d/p/e] 1.30/2.95/1.34/0.66  emits 1.56  clip 0.00  kl -0.000 WRr 0.44 WRf 0.56
+upd   70  steps  290816  sps 2730  opp frzn  loss -0.073  pg -0.0003  v 0.019  adv_std 0.196  tR +0.22  ent[s/d/p/e] 1.31/2.95/1.34/0.66  emits 1.58  clip 0.00  kl +0.000
+upd   71  steps  294912  sps 2763  opp rand  loss -0.073  pg -0.0003  v 0.021  adv_std 0.204  tR +0.10  ent[s/d/p/e] 1.36/2.95/1.34/0.65  emits 1.49  clip 0.00  kl +0.000
+upd   72  steps  299008  sps 2795  opp frzn  loss -0.074  pg -0.0005  v 0.018  adv_std 0.188  tR +0.40  ent[s/d/p/e] 1.35/2.95/1.34/0.66  emits 1.60  clip 0.00  kl +0.000
+upd   73  steps  303104  sps 2827  opp rand  loss -0.073  pg -0.0005  v 0.020  adv_std 0.198  tR +0.22  ent[s/d/p/e] 1.33/2.95/1.34/0.66  emits 1.59  clip 0.00  kl -0.000
+upd   74  steps  307200  sps 2860  opp rand  loss -0.075  pg -0.0002  v 0.016  adv_std 0.177  tR +0.05  ent[s/d/p/e] 1.29/2.95/1.34/0.65  emits 1.60  clip 0.00  kl +0.000
+upd   75  steps  311296  sps 2892  opp rand  loss -0.072  pg -0.0002  v 0.020  adv_std 0.198  tR +0.05  ent[s/d/p/e] 1.19/2.96/1.34/0.66  emits 1.51  clip 0.00  kl -0.000
+upd   76  steps  315392  sps 2923  opp frzn  loss -0.073  pg -0.0003  v 0.021  adv_std 0.207  tR +0.04  ent[s/d/p/e] 1.37/2.96/1.34/0.66  emits 1.59  clip 0.00  kl +0.000
+upd   77  steps  319488  sps 2954  opp frzn  loss -0.073  pg +0.0000  v 0.018  adv_std 0.192  tR -0.05  ent[s/d/p/e] 1.27/2.95/1.34/0.66  emits 1.57  clip 0.00  kl +0.000
+upd   78  steps  323584  sps 2985  opp frzn  loss -0.075  pg -0.0002  v 0.016  adv_std 0.177  tR +0.64  ent[s/d/p/e] 1.28/2.95/1.35/0.67  emits 1.60  clip 0.00  kl +0.000
+upd   79  steps  327680  sps 3015  opp frzn  loss -0.074  pg -0.0001  v 0.019  adv_std 0.194  tR +0.11  ent[s/d/p/e] 1.50/2.95/1.34/0.66  emits 1.60  clip 0.00  kl -0.000 WRr 0.47 WRf 0.56
+upd   80  steps  331776  sps 2834  opp rand  loss -0.075  pg -0.0004  v 0.017  adv_std 0.184  tR +0.33  ent[s/d/p/e] 1.38/2.95/1.34/0.66  emits 1.53  clip 0.00  kl +0.000
+upd   81  steps  335872  sps 2862  opp frzn  loss -0.073  pg -0.0002  v 0.019  adv_std 0.194  tR +0.19  ent[s/d/p/e] 1.26/2.95/1.35/0.66  emits 1.53  clip 0.00  kl +0.000
+upd   82  steps  339968  sps 2891  opp rand  loss -0.075  pg -0.0002  v 0.015  adv_std 0.172  tR +0.05  ent[s/d/p/e] 1.32/2.95/1.34/0.65  emits 1.52  clip 0.00  kl -0.000
+upd   83  steps  344064  sps 2920  opp frzn  loss -0.074  pg -0.0002  v 0.018  adv_std 0.191  tR +0.33  ent[s/d/p/e] 1.30/2.95/1.34/0.66  emits 1.56  clip 0.00  kl +0.000
+upd   84  steps  348160  sps 2949  opp rand  loss -0.075  pg -0.0003  v 0.016  adv_std 0.179  tR +0.00  ent[s/d/p/e] 1.31/2.95/1.34/0.66  emits 1.57  clip 0.00  kl +0.000
+upd   85  steps  352256  sps 2978  opp rand  loss -0.075  pg -0.0004  v 0.015  adv_std 0.171  tR +0.00  ent[s/d/p/e] 1.20/2.95/1.35/0.66  emits 1.48  clip 0.00  kl +0.000
+upd   86  steps  356352  sps 3007  opp frzn  loss -0.074  pg -0.0002  v 0.017  adv_std 0.185  tR -0.05  ent[s/d/p/e] 1.30/2.95/1.34/0.66  emits 1.49  clip 0.00  kl -0.000
+upd   87  steps  360448  sps 3034  opp frzn  loss -0.077  pg -0.0006  v 0.013  adv_std 0.162  tR +0.41  ent[s/d/p/e] 1.37/2.95/1.34/0.65  emits 1.53  clip 0.00  kl +0.000
+upd   88  steps  364544  sps 3063  opp rand  loss -0.074  pg -0.0002  v 0.018  adv_std 0.191  tR +0.05  ent[s/d/p/e] 1.41/2.95/1.34/0.66  emits 1.54  clip 0.00  kl +0.000
+upd   89  steps  368640  sps 3092  opp rand  loss -0.075  pg -0.0002  v 0.017  adv_std 0.184  tR +0.39  ent[s/d/p/e] 1.37/2.95/1.34/0.67  emits 1.62  clip 0.00  kl +0.000 WRr 0.50 WRf 0.47
+upd   90  steps  372736  sps 2930  opp rand  loss -0.074  pg -0.0000  v 0.017  adv_std 0.184  tR +0.67  ent[s/d/p/e] 1.32/2.94/1.34/0.66  emits 1.54  clip 0.00  kl +0.000
+upd   91  steps  376832  sps 2956  opp frzn  loss -0.073  pg -0.0003  v 0.020  adv_std 0.199  tR +0.20  ent[s/d/p/e] 1.28/2.94/1.35/0.66  emits 1.54  clip 0.00  kl -0.000
+upd   92  steps  380928  sps 2983  opp rand  loss -0.078  pg -0.0003  v 0.012  adv_std 0.154  tR +0.52  ent[s/d/p/e] 1.45/2.95/1.34/0.66  emits 1.53  clip 0.00  kl +0.000
+upd   93  steps  385024  sps 3009  opp frzn  loss -0.075  pg -0.0001  v 0.016  adv_std 0.180  tR +0.37  ent[s/d/p/e] 1.33/2.94/1.35/0.66  emits 1.51  clip 0.00  kl -0.000
+upd   94  steps  389120  sps 3035  opp frzn  loss -0.075  pg -0.0004  v 0.016  adv_std 0.177  tR +0.04  ent[s/d/p/e] 1.28/2.95/1.34/0.67  emits 1.56  clip 0.00  kl -0.000
+upd   95  steps  393216  sps 3061  opp frzn  loss -0.075  pg -0.0004  v 0.018  adv_std 0.188  tR +0.00  ent[s/d/p/e] 1.34/2.94/1.35/0.67  emits 1.58  clip 0.00  kl +0.000
+upd   96  steps  397312  sps 3088  opp rand  loss -0.077  pg -0.0004  v 0.014  adv_std 0.163  tR +0.05  ent[s/d/p/e] 1.30/2.94/1.35/0.67  emits 1.59  clip 0.00  kl +0.000
+upd   97  steps  401408  sps 3113  opp frzn  loss -0.073  pg -0.0002  v 0.019  adv_std 0.195  tR -0.12  ent[s/d/p/e] 1.16/2.94/1.35/0.67  emits 1.60  clip 0.00  kl -0.000
+upd   98  steps  405504  sps 3140  opp rand  loss -0.074  pg -0.0002  v 0.019  adv_std 0.194  tR +0.40  ent[s/d/p/e] 1.38/2.95/1.34/0.66  emits 1.53  clip 0.00  kl +0.000
+upd   99  steps  409600  sps 3165  opp frzn  loss -0.074  pg -0.0005  v 0.018  adv_std 0.191  tR -0.16  ent[s/d/p/e] 1.15/2.94/1.35/0.67  emits 1.48  clip 0.00  kl +0.000 WRr 0.47 WRf 0.44
+upd  100  steps  413696  sps 3000  opp rand  loss -0.075  pg -0.0005  v 0.016  adv_std 0.178  tR +0.09  ent[s/d/p/e] 1.14/2.95/1.35/0.66  emits 1.52  clip 0.00  kl +0.000
+upd  101  steps  417792  sps 3025  opp rand  loss -0.073  pg -0.0005  v 0.020  adv_std 0.200  tR -0.17  ent[s/d/p/e] 1.36/2.95/1.34/0.66  emits 1.52  clip 0.00  kl -0.000
+upd  102  steps  421888  sps 3050  opp rand  loss -0.075  pg -0.0003  v 0.016  adv_std 0.179  tR +0.47  ent[s/d/p/e] 1.33/2.94/1.34/0.66  emits 1.56  clip 0.00  kl +0.000
+upd  103  steps  425984  sps 3074  opp frzn  loss -0.073  pg +0.0000  v 0.020  adv_std 0.197  tR +0.17  ent[s/d/p/e] 1.21/2.94/1.35/0.67  emits 1.57  clip 0.00  kl +0.000
+upd  104  steps  430080  sps 3098  opp rand  loss -0.073  pg -0.0002  v 0.020  adv_std 0.200  tR +0.37  ent[s/d/p/e] 1.34/2.94/1.34/0.67  emits 1.56  clip 0.00  kl +0.000
+upd  105  steps  434176  sps 3123  opp rand  loss -0.075  pg -0.0003  v 0.017  adv_std 0.181  tR +0.18  ent[s/d/p/e] 1.22/2.94/1.35/0.67  emits 1.61  clip 0.00  kl +0.000
+upd  106  steps  438272  sps 3146  opp frzn  loss -0.075  pg -0.0003  v 0.017  adv_std 0.182  tR +0.10  ent[s/d/p/e] 1.24/2.94/1.35/0.67  emits 1.60  clip 0.00  kl +0.000
+upd  107  steps  442368  sps 3170  opp frzn  loss -0.075  pg -0.0002  v 0.018  adv_std 0.187  tR -0.16  ent[s/d/p/e] 1.37/2.94/1.35/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  108  steps  446464  sps 3194  opp rand  loss -0.074  pg -0.0003  v 0.018  adv_std 0.188  tR +0.00  ent[s/d/p/e] 1.33/2.94/1.34/0.67  emits 1.53  clip 0.00  kl -0.000
+upd  109  steps  450560  sps 3218  opp frzn  loss -0.076  pg -0.0005  v 0.015  adv_std 0.175  tR +0.18  ent[s/d/p/e] 1.33/2.94/1.35/0.67  emits 1.55  clip 0.00  kl -0.000 WRr 0.66 WRf 0.53
+upd  110  steps  454656  sps 3072  opp rand  loss -0.074  pg -0.0001  v 0.018  adv_std 0.188  tR +0.25  ent[s/d/p/e] 1.38/2.94/1.35/0.66  emits 1.51  clip 0.00  kl +0.000
+upd  111  steps  458752  sps 3095  opp rand  loss -0.075  pg -0.0003  v 0.016  adv_std 0.181  tR +0.43  ent[s/d/p/e] 1.28/2.94/1.35/0.66  emits 1.54  clip 0.00  kl +0.000
+upd  112  steps  462848  sps 3118  opp rand  loss -0.075  pg -0.0005  v 0.016  adv_std 0.180  tR +0.15  ent[s/d/p/e] 1.35/2.95/1.35/0.66  emits 1.53  clip 0.00  kl +0.000
+upd  113  steps  466944  sps 3141  opp rand  loss -0.072  pg -0.0002  v 0.024  adv_std 0.218  tR +0.20  ent[s/d/p/e] 1.43/2.94/1.35/0.66  emits 1.52  clip 0.00  kl +0.000
+upd  114  steps  471040  sps 3163  opp frzn  loss -0.074  pg -0.0004  v 0.018  adv_std 0.188  tR +0.18  ent[s/d/p/e] 1.35/2.94/1.35/0.66  emits 1.50  clip 0.00  kl +0.000
+upd  115  steps  475136  sps 3186  opp rand  loss -0.075  pg -0.0001  v 0.016  adv_std 0.178  tR +0.36  ent[s/d/p/e] 1.31/2.95/1.35/0.65  emits 1.50  clip 0.00  kl +0.000
+upd  116  steps  479232  sps 3209  opp rand  loss -0.073  pg -0.0001  v 0.018  adv_std 0.192  tR +0.16  ent[s/d/p/e] 1.12/2.94/1.35/0.65  emits 1.41  clip 0.00  kl +0.000
+upd  117  steps  483328  sps 3232  opp rand  loss -0.073  pg -0.0001  v 0.019  adv_std 0.193  tR +0.14  ent[s/d/p/e] 1.14/2.94/1.35/0.65  emits 1.42  clip 0.00  kl +0.000
+upd  118  steps  487424  sps 3254  opp rand  loss -0.077  pg -0.0004  v 0.013  adv_std 0.161  tR -0.04  ent[s/d/p/e] 1.44/2.94/1.35/0.66  emits 1.48  clip 0.00  kl +0.000
+upd  119  steps  491520  sps 3277  opp rand  loss -0.074  pg -0.0005  v 0.018  adv_std 0.190  tR +0.56  ent[s/d/p/e] 1.35/2.94/1.35/0.66  emits 1.48  clip 0.00  kl +0.000 WRr 0.44 WRf 0.50
+upd  120  steps  495616  sps 3137  opp frzn  loss -0.074  pg -0.0001  v 0.019  adv_std 0.190  tR +0.12  ent[s/d/p/e] 1.33/2.94/1.34/0.66  emits 1.52  clip 0.00  kl +0.000
+upd  121  steps  499712  sps 3159  opp rand  loss -0.076  pg -0.0003  v 0.015  adv_std 0.171  tR -0.37  ent[s/d/p/e] 1.41/2.94/1.34/0.67  emits 1.58  clip 0.00  kl +0.000
+upd  122  steps  503808  sps 3179  opp frzn  loss -0.072  pg -0.0003  v 0.024  adv_std 0.218  tR +0.11  ent[s/d/p/e] 1.34/2.94/1.34/0.67  emits 1.67  clip 0.00  kl +0.000
+upd  123  steps  507904  sps 3200  opp frzn  loss -0.074  pg -0.0001  v 0.019  adv_std 0.192  tR -0.15  ent[s/d/p/e] 1.30/2.94/1.34/0.67  emits 1.59  clip 0.00  kl +0.000
+upd  124  steps  512000  sps 3221  opp frzn  loss -0.076  pg -0.0004  v 0.015  adv_std 0.173  tR +0.00  ent[s/d/p/e] 1.28/2.94/1.34/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  125  steps  516096  sps 3241  opp frzn  loss -0.074  pg -0.0003  v 0.020  adv_std 0.198  tR +0.16  ent[s/d/p/e] 1.35/2.94/1.34/0.67  emits 1.62  clip 0.00  kl -0.000
+upd  126  steps  520192  sps 3262  opp rand  loss -0.076  pg -0.0002  v 0.015  adv_std 0.175  tR +0.36  ent[s/d/p/e] 1.46/2.95/1.33/0.67  emits 1.57  clip 0.00  kl -0.000
+upd  127  steps  524288  sps 3283  opp frzn  loss -0.075  pg -0.0003  v 0.016  adv_std 0.180  tR +0.33  ent[s/d/p/e] 1.30/2.94/1.33/0.67  emits 1.58  clip 0.00  kl -0.000
+upd  128  steps  528384  sps 3304  opp rand  loss -0.074  pg -0.0002  v 0.018  adv_std 0.191  tR +0.26  ent[s/d/p/e] 1.37/2.94/1.34/0.67  emits 1.59  clip 0.00  kl -0.000
+upd  129  steps  532480  sps 3324  opp frzn  loss -0.076  pg -0.0002  v 0.016  adv_std 0.179  tR +0.45  ent[s/d/p/e] 1.42/2.94/1.33/0.67  emits 1.63  clip 0.00  kl +0.000 WRr 0.50 WRf 0.75
+upd  130  steps  536576  sps 3180  opp rand  loss -0.074  pg -0.0001  v 0.018  adv_std 0.192  tR +0.48  ent[s/d/p/e] 1.38/2.94/1.33/0.67  emits 1.63  clip 0.00  kl +0.000
+upd  131  steps  540672  sps 3200  opp frzn  loss -0.076  pg -0.0002  v 0.014  adv_std 0.169  tR +0.58  ent[s/d/p/e] 1.22/2.94/1.34/0.67  emits 1.57  clip 0.00  kl +0.000
+upd  132  steps  544768  sps 3219  opp frzn  loss -0.073  pg -0.0002  v 0.019  adv_std 0.196  tR +0.22  ent[s/d/p/e] 1.26/2.94/1.33/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  133  steps  548864  sps 3238  opp frzn  loss -0.077  pg -0.0003  v 0.012  adv_std 0.156  tR +0.40  ent[s/d/p/e] 1.42/2.94/1.33/0.67  emits 1.58  clip 0.00  kl +0.000
+upd  134  steps  552960  sps 3258  opp frzn  loss -0.075  pg -0.0002  v 0.017  adv_std 0.182  tR +0.20  ent[s/d/p/e] 1.32/2.94/1.33/0.67  emits 1.59  clip 0.00  kl -0.000
+upd  135  steps  557056  sps 3277  opp frzn  loss -0.076  pg -0.0003  v 0.015  adv_std 0.175  tR +0.17  ent[s/d/p/e] 1.35/2.94/1.33/0.68  emits 1.64  clip 0.00  kl -0.000
+upd  136  steps  561152  sps 3297  opp rand  loss -0.077  pg -0.0003  v 0.013  adv_std 0.163  tR +0.52  ent[s/d/p/e] 1.41/2.94/1.33/0.67  emits 1.64  clip 0.00  kl -0.000
+upd  137  steps  565248  sps 3316  opp rand  loss -0.075  pg -0.0004  v 0.017  adv_std 0.182  tR +0.20  ent[s/d/p/e] 1.34/2.94/1.33/0.67  emits 1.64  clip 0.00  kl +0.000
+upd  138  steps  569344  sps 3335  opp frzn  loss -0.071  pg -0.0002  v 0.024  adv_std 0.218  tR +0.27  ent[s/d/p/e] 1.26/2.94/1.34/0.68  emits 1.64  clip 0.00  kl +0.000
+upd  139  steps  573440  sps 3355  opp rand  loss -0.074  pg -0.0007  v 0.020  adv_std 0.201  tR +0.00  ent[s/d/p/e] 1.43/2.93/1.34/0.67  emits 1.66  clip 0.00  kl +0.000 WRr 0.53 WRf 0.59
+upd  140  steps  577536  sps 3229  opp rand  loss -0.075  pg -0.0000  v 0.016  adv_std 0.179  tR -0.05  ent[s/d/p/e] 1.48/2.93/1.34/0.67  emits 1.64  clip 0.00  kl +0.000
+upd  141  steps  581632  sps 3248  opp rand  loss -0.072  pg -0.0002  v 0.022  adv_std 0.208  tR +0.20  ent[s/d/p/e] 1.37/2.94/1.34/0.66  emits 1.63  clip 0.00  kl +0.000
+upd  142  steps  585728  sps 3267  opp rand  loss -0.072  pg -0.0005  v 0.023  adv_std 0.211  tR -0.11  ent[s/d/p/e] 1.35/2.93/1.34/0.67  emits 1.57  clip 0.00  kl +0.000
+upd  143  steps  589824  sps 3285  opp frzn  loss -0.075  pg -0.0003  v 0.016  adv_std 0.179  tR +0.15  ent[s/d/p/e] 1.33/2.93/1.33/0.67  emits 1.62  clip 0.00  kl -0.000
+upd  144  steps  593920  sps 3303  opp rand  loss -0.074  pg -0.0002  v 0.019  adv_std 0.193  tR +0.30  ent[s/d/p/e] 1.38/2.94/1.33/0.67  emits 1.60  clip 0.00  kl +0.000
+upd  145  steps  598016  sps 3322  opp frzn  loss -0.073  pg -0.0002  v 0.018  adv_std 0.192  tR -0.09  ent[s/d/p/e] 1.21/2.94/1.33/0.67  emits 1.46  clip 0.00  kl -0.000
+upd  146  steps  602112  sps 3340  opp rand  loss -0.075  pg -0.0003  v 0.015  adv_std 0.171  tR +0.44  ent[s/d/p/e] 1.33/2.94/1.33/0.66  emits 1.53  clip 0.00  kl +0.000
+upd  147  steps  606208  sps 3359  opp rand  loss -0.075  pg -0.0002  v 0.016  adv_std 0.180  tR +0.05  ent[s/d/p/e] 1.33/2.94/1.33/0.67  emits 1.52  clip 0.00  kl -0.000
+upd  148  steps  610304  sps 3377  opp frzn  loss -0.075  pg -0.0006  v 0.016  adv_std 0.179  tR +0.13  ent[s/d/p/e] 1.30/2.94/1.32/0.66  emits 1.51  clip 0.00  kl +0.000
+upd  149  steps  614400  sps 3395  opp rand  loss -0.075  pg -0.0003  v 0.015  adv_std 0.175  tR +0.38  ent[s/d/p/e] 1.32/2.94/1.33/0.66  emits 1.54  clip 0.00  kl -0.000 WRr 0.41 WRf 0.56
+upd  150  steps  618496  sps 3273  opp frzn  loss -0.075  pg -0.0006  v 0.015  adv_std 0.173  tR +0.20  ent[s/d/p/e] 1.26/2.94/1.33/0.66  emits 1.56  clip 0.00  kl +0.000
+upd  151  steps  622592  sps 3290  opp frzn  loss -0.072  pg -0.0005  v 0.021  adv_std 0.203  tR -0.13  ent[s/d/p/e] 1.21/2.94/1.33/0.66  emits 1.60  clip 0.00  kl +0.000
+upd  152  steps  626688  sps 3308  opp rand  loss -0.073  pg -0.0002  v 0.020  adv_std 0.200  tR +0.00  ent[s/d/p/e] 1.37/2.94/1.33/0.65  emits 1.51  clip 0.00  kl -0.000
+upd  153  steps  630784  sps 3326  opp rand  loss -0.072  pg -0.0001  v 0.020  adv_std 0.202  tR +0.16  ent[s/d/p/e] 1.30/2.94/1.33/0.66  emits 1.56  clip 0.00  kl +0.000
+upd  154  steps  634880  sps 3344  opp rand  loss -0.073  pg -0.0003  v 0.022  adv_std 0.207  tR +0.42  ent[s/d/p/e] 1.55/2.94/1.33/0.66  emits 1.53  clip 0.00  kl +0.000
+upd  155  steps  638976  sps 3361  opp rand  loss -0.075  pg -0.0001  v 0.015  adv_std 0.176  tR +0.26  ent[s/d/p/e] 1.43/2.93/1.34/0.66  emits 1.53  clip 0.00  kl +0.000
+upd  156  steps  643072  sps 3378  opp frzn  loss -0.075  pg -0.0003  v 0.017  adv_std 0.182  tR +0.48  ent[s/d/p/e] 1.42/2.94/1.33/0.66  emits 1.59  clip 0.00  kl +0.000
+upd  157  steps  647168  sps 3395  opp frzn  loss -0.076  pg -0.0002  v 0.014  adv_std 0.168  tR +0.58  ent[s/d/p/e] 1.55/2.94/1.32/0.66  emits 1.58  clip 0.00  kl +0.000
+upd  158  steps  651264  sps 3413  opp rand  loss -0.075  pg -0.0005  v 0.015  adv_std 0.174  tR +0.26  ent[s/d/p/e] 1.32/2.94/1.34/0.65  emits 1.52  clip 0.00  kl +0.000
+upd  159  steps  655360  sps 3430  opp frzn  loss -0.074  pg -0.0007  v 0.018  adv_std 0.189  tR -0.17  ent[s/d/p/e] 1.34/2.94/1.33/0.65  emits 1.54  clip 0.00  kl +0.000 WRr 0.53 WRf 0.47
+upd  160  steps  659456  sps 3302  opp frzn  loss -0.076  pg -0.0004  v 0.014  adv_std 0.169  tR +0.11  ent[s/d/p/e] 1.44/2.93/1.33/0.65  emits 1.53  clip 0.00  kl +0.000
+upd  161  steps  663552  sps 3319  opp rand  loss -0.075  pg -0.0002  v 0.015  adv_std 0.176  tR +0.52  ent[s/d/p/e] 1.46/2.93/1.34/0.64  emits 1.44  clip 0.00  kl +0.000
+upd  162  steps  667648  sps 3336  opp rand  loss -0.077  pg -0.0002  v 0.012  adv_std 0.153  tR +0.65  ent[s/d/p/e] 1.41/2.94/1.34/0.64  emits 1.42  clip 0.00  kl +0.000
+upd  163  steps  671744  sps 3352  opp rand  loss -0.074  pg +0.0000  v 0.017  adv_std 0.183  tR +0.25  ent[s/d/p/e] 1.44/2.93/1.34/0.64  emits 1.44  clip 0.00  kl +0.000
+upd  164  steps  675840  sps 3369  opp rand  loss -0.073  pg -0.0001  v 0.016  adv_std 0.181  tR +0.30  ent[s/d/p/e] 1.12/2.93/1.35/0.64  emits 1.45  clip 0.00  kl -0.000
+upd  165  steps  679936  sps 3386  opp rand  loss -0.073  pg -0.0005  v 0.020  adv_std 0.202  tR +0.41  ent[s/d/p/e] 1.34/2.93/1.35/0.65  emits 1.49  clip 0.00  kl -0.000
+upd  166  steps  684032  sps 3402  opp frzn  loss -0.076  pg -0.0002  v 0.016  adv_std 0.177  tR +0.53  ent[s/d/p/e] 1.55/2.93/1.33/0.65  emits 1.50  clip 0.00  kl -0.000
+upd  167  steps  688128  sps 3418  opp frzn  loss -0.074  pg -0.0003  v 0.017  adv_std 0.182  tR +0.20  ent[s/d/p/e] 1.34/2.94/1.34/0.65  emits 1.47  clip 0.00  kl +0.000
+upd  168  steps  692224  sps 3434  opp frzn  loss -0.076  pg -0.0003  v 0.014  adv_std 0.163  tR +0.55  ent[s/d/p/e] 1.42/2.93/1.34/0.65  emits 1.49  clip 0.00  kl +0.000
+upd  169  steps  696320  sps 3450  opp rand  loss -0.076  pg -0.0004  v 0.013  adv_std 0.163  tR +0.60  ent[s/d/p/e] 1.40/2.93/1.34/0.65  emits 1.48  clip 0.00  kl +0.000 WRr 0.75 WRf 0.69
+upd  170  steps  700416  sps 3338  opp rand  loss -0.075  pg -0.0003  v 0.015  adv_std 0.175  tR +0.36  ent[s/d/p/e] 1.32/2.93/1.35/0.65  emits 1.45  clip 0.00  kl +0.000
+upd  171  steps  704512  sps 3353  opp frzn  loss -0.072  pg -0.0003  v 0.022  adv_std 0.208  tR +0.30  ent[s/d/p/e] 1.28/2.93/1.33/0.66  emits 1.51  clip 0.00  kl +0.000
+upd  172  steps  708608  sps 3369  opp frzn  loss -0.072  pg -0.0002  v 0.022  adv_std 0.208  tR +0.43  ent[s/d/p/e] 1.31/2.93/1.33/0.65  emits 1.46  clip 0.00  kl -0.000
+upd  173  steps  712704  sps 3385  opp rand  loss -0.073  pg -0.0003  v 0.019  adv_std 0.191  tR +0.11  ent[s/d/p/e] 1.21/2.93/1.34/0.66  emits 1.48  clip 0.00  kl +0.000
+upd  174  steps  716800  sps 3400  opp frzn  loss -0.074  pg -0.0000  v 0.017  adv_std 0.185  tR -0.10  ent[s/d/p/e] 1.26/2.93/1.34/0.66  emits 1.46  clip 0.00  kl +0.000
+upd  175  steps  720896  sps 3415  opp frzn  loss -0.074  pg -0.0002  v 0.017  adv_std 0.183  tR +0.06  ent[s/d/p/e] 1.29/2.93/1.34/0.67  emits 1.57  clip 0.00  kl -0.000
+upd  176  steps  724992  sps 3431  opp frzn  loss -0.076  pg -0.0004  v 0.015  adv_std 0.174  tR +0.23  ent[s/d/p/e] 1.38/2.93/1.34/0.67  emits 1.60  clip 0.00  kl +0.000
+upd  177  steps  729088  sps 3446  opp frzn  loss -0.076  pg -0.0006  v 0.016  adv_std 0.181  tR +0.58  ent[s/d/p/e] 1.46/2.93/1.33/0.66  emits 1.53  clip 0.00  kl -0.000
+upd  178  steps  733184  sps 3462  opp rand  loss -0.076  pg -0.0004  v 0.015  adv_std 0.171  tR +0.30  ent[s/d/p/e] 1.42/2.93/1.35/0.67  emits 1.57  clip 0.00  kl +0.000
+upd  179  steps  737280  sps 3477  opp rand  loss -0.075  pg -0.0003  v 0.017  adv_std 0.186  tR +0.54  ent[s/d/p/e] 1.46/2.92/1.35/0.67  emits 1.60  clip 0.00  kl -0.000 WRr 0.62 WRf 0.56
+upd  180  steps  741376  sps 3370  opp rand  loss -0.077  pg +0.0001  v 0.015  adv_std 0.175  tR +0.65  ent[s/d/p/e] 1.65/2.92/1.34/0.68  emits 1.65  clip 0.00  kl +0.000
+upd  181  steps  745472  sps 3385  opp frzn  loss -0.075  pg -0.0003  v 0.016  adv_std 0.177  tR +0.50  ent[s/d/p/e] 1.33/2.92/1.34/0.67  emits 1.63  clip 0.00  kl +0.000
+upd  182  steps  749568  sps 3399  opp frzn  loss -0.077  pg -0.0002  v 0.014  adv_std 0.166  tR +0.52  ent[s/d/p/e] 1.41/2.93/1.34/0.68  emits 1.68  clip 0.00  kl -0.000
+upd  183  steps  753664  sps 3414  opp frzn  loss -0.078  pg -0.0006  v 0.013  adv_std 0.163  tR +0.00  ent[s/d/p/e] 1.45/2.92/1.34/0.67  emits 1.70  clip 0.00  kl +0.001
+upd  184  steps  757760  sps 3429  opp rand  loss -0.075  pg -0.0006  v 0.017  adv_std 0.183  tR +0.16  ent[s/d/p/e] 1.25/2.92/1.35/0.68  emits 1.65  clip 0.00  kl +0.000
+upd  185  steps  761856  sps 3444  opp rand  loss -0.074  pg -0.0005  v 0.018  adv_std 0.192  tR +0.08  ent[s/d/p/e] 1.27/2.93/1.35/0.67  emits 1.59  clip 0.00  kl +0.000
+upd  186  steps  765952  sps 3459  opp frzn  loss -0.076  pg -0.0001  v 0.014  adv_std 0.164  tR -0.12  ent[s/d/p/e] 1.37/2.92/1.34/0.67  emits 1.50  clip 0.00  kl -0.000
+upd  187  steps  770048  sps 3473  opp frzn  loss -0.076  pg -0.0002  v 0.014  adv_std 0.169  tR +0.26  ent[s/d/p/e] 1.30/2.92/1.34/0.67  emits 1.51  clip 0.00  kl +0.000
+upd  188  steps  774144  sps 3488  opp frzn  loss -0.076  pg -0.0002  v 0.016  adv_std 0.179  tR +0.40  ent[s/d/p/e] 1.46/2.92/1.34/0.67  emits 1.61  clip 0.00  kl +0.000
+upd  189  steps  778240  sps 3503  opp rand  loss -0.076  pg -0.0003  v 0.014  adv_std 0.169  tR +0.38  ent[s/d/p/e] 1.33/2.92/1.35/0.67  emits 1.55  clip 0.00  kl +0.000 WRr 0.59 WRf 0.69
+upd  190  steps  782336  sps 3399  opp rand  loss -0.072  pg -0.0002  v 0.022  adv_std 0.211  tR +0.36  ent[s/d/p/e] 1.41/2.92/1.35/0.67  emits 1.59  clip 0.00  kl +0.000
+upd  191  steps  786432  sps 3414  opp rand  loss -0.076  pg -0.0003  v 0.016  adv_std 0.176  tR +0.33  ent[s/d/p/e] 1.48/2.92/1.34/0.68  emits 1.61  clip 0.00  kl -0.000
+upd  192  steps  790528  sps 3429  opp rand  loss -0.076  pg -0.0003  v 0.014  adv_std 0.167  tR +0.45  ent[s/d/p/e] 1.29/2.92/1.35/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  193  steps  794624  sps 3443  opp frzn  loss -0.074  pg -0.0003  v 0.018  adv_std 0.190  tR +0.30  ent[s/d/p/e] 1.30/2.92/1.34/0.67  emits 1.60  clip 0.00  kl +0.000
+upd  194  steps  798720  sps 3457  opp rand  loss -0.074  pg -0.0003  v 0.019  adv_std 0.194  tR -0.41  ent[s/d/p/e] 1.38/2.92/1.34/0.67  emits 1.63  clip 0.00  kl -0.000
+upd  195  steps  802816  sps 3471  opp frzn  loss -0.073  pg -0.0002  v 0.021  adv_std 0.203  tR +0.30  ent[s/d/p/e] 1.33/2.92/1.34/0.68  emits 1.59  clip 0.00  kl -0.000
+upd  196  steps  806912  sps 3485  opp frzn  loss -0.075  pg -0.0002  v 0.017  adv_std 0.186  tR -0.13  ent[s/d/p/e] 1.41/2.92/1.34/0.68  emits 1.55  clip 0.00  kl +0.000
+upd  197  steps  811008  sps 3499  opp frzn  loss -0.075  pg -0.0004  v 0.017  adv_std 0.182  tR +0.44  ent[s/d/p/e] 1.27/2.92/1.34/0.68  emits 1.55  clip 0.00  kl +0.000
+upd  198  steps  815104  sps 3512  opp frzn  loss -0.076  pg -0.0005  v 0.016  adv_std 0.177  tR +0.22  ent[s/d/p/e] 1.34/2.92/1.34/0.67  emits 1.57  clip 0.00  kl -0.000
+upd  199  steps  819200  sps 3527  opp rand  loss -0.079  pg -0.0004  v 0.011  adv_std 0.149  tR +0.30  ent[s/d/p/e] 1.61/2.92/1.33/0.67  emits 1.58  clip 0.00  kl +0.000 WRr 0.62 WRf 0.66
+upd  200  steps  823296  sps 3416  opp rand  loss -0.075  pg -0.0002  v 0.016  adv_std 0.179  tR +0.47  ent[s/d/p/e] 1.29/2.92/1.34/0.67  emits 1.56  clip 0.00  kl +0.000
+upd  201  steps  827392  sps 3430  opp rand  loss -0.075  pg -0.0003  v 0.016  adv_std 0.178  tR +0.59  ent[s/d/p/e] 1.37/2.92/1.34/0.67  emits 1.57  clip 0.00  kl +0.000
+upd  202  steps  831488  sps 3444  opp rand  loss -0.075  pg -0.0004  v 0.016  adv_std 0.177  tR +0.62  ent[s/d/p/e] 1.28/2.92/1.34/0.67  emits 1.54  clip 0.00  kl +0.000
+upd  203  steps  835584  sps 3457  opp frzn  loss -0.076  pg -0.0002  v 0.016  adv_std 0.177  tR +0.36  ent[s/d/p/e] 1.41/2.92/1.34/0.67  emits 1.58  clip 0.00  kl -0.000
+upd  204  steps  839680  sps 3470  opp frzn  loss -0.075  pg -0.0004  v 0.017  adv_std 0.183  tR +0.30  ent[s/d/p/e] 1.31/2.92/1.34/0.67  emits 1.54  clip 0.00  kl -0.000
+upd  205  steps  843776  sps 3484  opp rand  loss -0.076  pg -0.0005  v 0.015  adv_std 0.174  tR +0.14  ent[s/d/p/e] 1.42/2.91/1.34/0.67  emits 1.57  clip 0.00  kl +0.000
+upd  206  steps  847872  sps 3498  opp rand  loss -0.074  pg -0.0005  v 0.019  adv_std 0.193  tR +0.68  ent[s/d/p/e] 1.45/2.91/1.33/0.67  emits 1.60  clip 0.00  kl +0.000
+upd  207  steps  851968  sps 3511  opp frzn  loss -0.075  pg -0.0002  v 0.018  adv_std 0.188  tR +0.39  ent[s/d/p/e] 1.39/2.92/1.34/0.68  emits 1.64  clip 0.00  kl +0.000
+upd  208  steps  856064  sps 3525  opp rand  loss -0.076  pg -0.0005  v 0.015  adv_std 0.173  tR -0.24  ent[s/d/p/e] 1.29/2.92/1.34/0.68  emits 1.64  clip 0.00  kl -0.000
+upd  209  steps  860160  sps 3539  opp rand  loss -0.074  pg -0.0002  v 0.019  adv_std 0.194  tR +0.53  ent[s/d/p/e] 1.35/2.91/1.34/0.68  emits 1.68  clip 0.00  kl +0.000 WRr 0.56 WRf 0.72
+upd  210  steps  864256  sps 3443  opp rand  loss -0.075  pg -0.0003  v 0.017  adv_std 0.183  tR +0.14  ent[s/d/p/e] 1.27/2.92/1.34/0.68  emits 1.67  clip 0.00  kl +0.000
+upd  211  steps  868352  sps 3456  opp rand  loss -0.075  pg -0.0003  v 0.018  adv_std 0.189  tR +0.22  ent[s/d/p/e] 1.50/2.90/1.34/0.68  emits 1.75  clip 0.00  kl +0.000
+upd  212  steps  872448  sps 3469  opp frzn  loss -0.074  pg -0.0001  v 0.018  adv_std 0.187  tR +0.20  ent[s/d/p/e] 1.41/2.92/1.33/0.68  emits 1.62  clip 0.00  kl +0.000
+upd  213  steps  876544  sps 3482  opp frzn  loss -0.075  pg -0.0002  v 0.014  adv_std 0.170  tR -0.32  ent[s/d/p/e] 1.21/2.91/1.34/0.68  emits 1.59  clip 0.00  kl +0.000
+upd  214  steps  880640  sps 3495  opp rand  loss -0.076  pg -0.0001  v 0.015  adv_std 0.171  tR +0.28  ent[s/d/p/e] 1.36/2.92/1.33/0.67  emits 1.60  clip 0.00  kl -0.000
+upd  215  steps  884736  sps 3508  opp rand  loss -0.078  pg -0.0002  v 0.012  adv_std 0.152  tR +0.56  ent[s/d/p/e] 1.49/2.92/1.32/0.68  emits 1.68  clip 0.00  kl +0.000
+upd  216  steps  888832  sps 3521  opp rand  loss -0.074  pg -0.0001  v 0.018  adv_std 0.192  tR +0.30  ent[s/d/p/e] 1.50/2.90/1.32/0.68  emits 1.72  clip 0.00  kl +0.000
+upd  217  steps  892928  sps 3534  opp frzn  loss -0.073  pg -0.0001  v 0.019  adv_std 0.196  tR +0.17  ent[s/d/p/e] 1.31/2.91/1.34/0.68  emits 1.65  clip 0.00  kl -0.000
+upd  218  steps  897024  sps 3547  opp frzn  loss -0.074  pg -0.0002  v 0.018  adv_std 0.193  tR +0.18  ent[s/d/p/e] 1.37/2.92/1.34/0.68  emits 1.66  clip 0.00  kl -0.000
+upd  219  steps  901120  sps 3559  opp frzn  loss -0.077  pg -0.0003  v 0.014  adv_std 0.171  tR +0.26  ent[s/d/p/e] 1.47/2.91/1.33/0.68  emits 1.69  clip 0.00  kl +0.000 WRr 0.62 WRf 0.75
+upd  220  steps  905216  sps 3466  opp rand  loss -0.076  pg -0.0004  v 0.015  adv_std 0.170  tR +0.43  ent[s/d/p/e] 1.45/2.91/1.33/0.68  emits 1.62  clip 0.00  kl +0.000
+upd  221  steps  909312  sps 3478  opp frzn  loss -0.074  pg -0.0003  v 0.018  adv_std 0.192  tR +0.25  ent[s/d/p/e] 1.37/2.90/1.34/0.68  emits 1.62  clip 0.00  kl +0.000
+upd  222  steps  913408  sps 3491  opp rand  loss -0.076  pg -0.0007  v 0.015  adv_std 0.171  tR +0.24  ent[s/d/p/e] 1.42/2.90/1.33/0.67  emits 1.58  clip 0.00  kl +0.000
+upd  223  steps  917504  sps 3504  opp rand  loss -0.077  pg -0.0003  v 0.014  adv_std 0.164  tR +0.25  ent[s/d/p/e] 1.50/2.91/1.33/0.67  emits 1.60  clip 0.00  kl +0.000
+upd  224  steps  921600  sps 3516  opp rand  loss -0.074  pg -0.0001  v 0.018  adv_std 0.188  tR +0.40  ent[s/d/p/e] 1.45/2.90/1.33/0.67  emits 1.58  clip 0.00  kl -0.000
+upd  225  steps  925696  sps 3529  opp rand  loss -0.076  pg -0.0005  v 0.014  adv_std 0.165  tR +0.13  ent[s/d/p/e] 1.43/2.91/1.33/0.67  emits 1.52  clip 0.00  kl -0.000
+upd  226  steps  929792  sps 3542  opp rand  loss -0.074  pg -0.0001  v 0.018  adv_std 0.187  tR +0.27  ent[s/d/p/e] 1.45/2.91/1.33/0.67  emits 1.53  clip 0.00  kl +0.000
+upd  227  steps  933888  sps 3554  opp frzn  loss -0.076  pg -0.0001  v 0.015  adv_std 0.172  tR +0.36  ent[s/d/p/e] 1.42/2.91/1.34/0.67  emits 1.54  clip 0.00  kl -0.000
+upd  228  steps  937984  sps 3566  opp rand  loss -0.075  pg -0.0003  v 0.015  adv_std 0.174  tR +0.20  ent[s/d/p/e] 1.35/2.90/1.34/0.67  emits 1.57  clip 0.00  kl -0.000
+upd  229  steps  942080  sps 3579  opp frzn  loss -0.072  pg -0.0003  v 0.023  adv_std 0.212  tR +0.11  ent[s/d/p/e] 1.40/2.90/1.34/0.67  emits 1.59  clip 0.00  kl +0.000 WRr 0.81 WRf 0.75
+upd  230  steps  946176  sps 3488  opp frzn  loss -0.075  pg -0.0002  v 0.016  adv_std 0.177  tR +0.20  ent[s/d/p/e] 1.30/2.91/1.34/0.67  emits 1.53  clip 0.00  kl -0.000
+upd  231  steps  950272  sps 3500  opp frzn  loss -0.077  pg -0.0002  v 0.014  adv_std 0.167  tR +0.52  ent[s/d/p/e] 1.61/2.91/1.33/0.67  emits 1.62  clip 0.00  kl -0.000
+upd  232  steps  954368  sps 3512  opp frzn  loss -0.077  pg -0.0006  v 0.014  adv_std 0.168  tR +0.56  ent[s/d/p/e] 1.43/2.90/1.34/0.67  emits 1.59  clip 0.00  kl -0.000
+upd  233  steps  958464  sps 3524  opp rand  loss -0.074  pg -0.0002  v 0.018  adv_std 0.190  tR +0.18  ent[s/d/p/e] 1.45/2.90/1.33/0.66  emits 1.51  clip 0.00  kl +0.000
+upd  234  steps  962560  sps 3536  opp frzn  loss -0.077  pg -0.0001  v 0.013  adv_std 0.165  tR +0.18  ent[s/d/p/e] 1.74/2.90/1.32/0.66  emits 1.56  clip 0.00  kl -0.000
+upd  235  steps  966656  sps 3547  opp frzn  loss -0.076  pg -0.0004  v 0.014  adv_std 0.166  tR +0.68  ent[s/d/p/e] 1.45/2.90/1.33/0.66  emits 1.51  clip 0.00  kl +0.000
+upd  236  steps  970752  sps 3560  opp rand  loss -0.076  pg -0.0003  v 0.015  adv_std 0.171  tR +0.39  ent[s/d/p/e] 1.43/2.90/1.33/0.66  emits 1.47  clip 0.00  kl -0.000
+upd  237  steps  974848  sps 3572  opp rand  loss -0.072  pg -0.0001  v 0.021  adv_std 0.206  tR +0.58  ent[s/d/p/e] 1.39/2.90/1.33/0.66  emits 1.51  clip 0.00  kl +0.000
+upd  238  steps  978944  sps 3583  opp frzn  loss -0.075  pg -0.0002  v 0.016  adv_std 0.179  tR -0.04  ent[s/d/p/e] 1.47/2.90/1.33/0.67  emits 1.55  clip 0.00  kl +0.000
+upd  239  steps  983040  sps 3595  opp frzn  loss -0.077  pg -0.0001  v 0.013  adv_std 0.158  tR +0.43  ent[s/d/p/e] 1.51/2.91/1.32/0.66  emits 1.52  clip 0.00  kl -0.000 WRr 0.69 WRf 0.72
+upd  240  steps  987136  sps 3497  opp frzn  loss -0.075  pg -0.0002  v 0.014  adv_std 0.169  tR +0.24  ent[s/d/p/e] 1.26/2.90/1.33/0.67  emits 1.43  clip 0.00  kl +0.000
+upd  241  steps  991232  sps 3508  opp frzn  loss -0.075  pg -0.0002  v 0.015  adv_std 0.172  tR -0.10  ent[s/d/p/e] 1.45/2.90/1.32/0.66  emits 1.48  clip 0.00  kl +0.000
+upd  242  steps  995328  sps 3519  opp frzn  loss -0.075  pg -0.0000  v 0.015  adv_std 0.173  tR +0.55  ent[s/d/p/e] 1.43/2.90/1.33/0.66  emits 1.52  clip 0.00  kl -0.000
+upd  243  steps  999424  sps 3531  opp frzn  loss -0.076  pg -0.0002  v 0.015  adv_std 0.173  tR +0.74  ent[s/d/p/e] 1.55/2.90/1.33/0.67  emits 1.58  clip 0.00  kl -0.000
+upd  244  steps 1003520  sps 3542  opp frzn  loss -0.077  pg -0.0004  v 0.013  adv_std 0.163  tR +0.35  ent[s/d/p/e] 1.45/2.90/1.33/0.67  emits 1.54  clip 0.00  kl +0.000
+upd  245  steps 1007616  sps 3554  opp rand  loss -0.076  pg -0.0003  v 0.014  adv_std 0.163  tR +0.30  ent[s/d/p/e] 1.50/2.90/1.33/0.66  emits 1.57  clip 0.00  kl +0.000
+upd  246  steps 1011712  sps 3565  opp frzn  loss -0.076  pg -0.0002  v 0.015  adv_std 0.172  tR +0.48  ent[s/d/p/e] 1.53/2.90/1.33/0.66  emits 1.49  clip 0.00  kl +0.000
+upd  247  steps 1015808  sps 3577  opp rand  loss -0.074  pg -0.0003  v 0.016  adv_std 0.174  tR +0.16  ent[s/d/p/e] 1.29/2.90/1.33/0.66  emits 1.50  clip 0.00  kl -0.000
+upd  248  steps 1019904  sps 3588  opp rand  loss -0.074  pg -0.0002  v 0.018  adv_std 0.185  tR +0.20  ent[s/d/p/e] 1.47/2.90/1.34/0.66  emits 1.53  clip 0.00  kl +0.000
+upd  249  steps 1024000  sps 3599  opp frzn  loss -0.075  pg -0.0003  v 0.017  adv_std 0.182  tR +0.05  ent[s/d/p/e] 1.57/2.90/1.34/0.66  emits 1.52  clip 0.00  kl -0.000 WRr 0.78 WRf 0.56
+upd  250  steps 1028096  sps 3514  opp frzn  loss -0.074  pg -0.0002  v 0.017  adv_std 0.182  tR +0.40  ent[s/d/p/e] 1.32/2.90/1.34/0.66  emits 1.41  clip 0.00  kl +0.000
+upd  251  steps 1032192  sps 3526  opp rand  loss -0.075  pg -0.0004  v 0.016  adv_std 0.179  tR +0.22  ent[s/d/p/e] 1.47/2.89/1.34/0.65  emits 1.43  clip 0.00  kl +0.000
+upd  252  steps 1036288  sps 3537  opp frzn  loss -0.075  pg -0.0002  v 0.014  adv_std 0.169  tR +0.50  ent[s/d/p/e] 1.44/2.89/1.34/0.65  emits 1.46  clip 0.00  kl +0.000
+upd  253  steps 1040384  sps 3548  opp rand  loss -0.076  pg -0.0001  v 0.013  adv_std 0.160  tR +0.48  ent[s/d/p/e] 1.45/2.89/1.34/0.64  emits 1.44  clip 0.00  kl +0.000
+upd  254  steps 1044480  sps 3559  opp frzn  loss -0.074  pg -0.0001  v 0.016  adv_std 0.177  tR +0.43  ent[s/d/p/e] 1.30/2.90/1.34/0.65  emits 1.38  clip 0.00  kl +0.000
+upd  255  steps 1048576  sps 3570  opp frzn  loss -0.074  pg -0.0001  v 0.015  adv_std 0.175  tR -0.14  ent[s/d/p/e] 1.27/2.89/1.35/0.64  emits 1.38  clip 0.00  kl -0.000
+upd  256  steps 1052672  sps 3580  opp frzn  loss -0.074  pg -0.0002  v 0.016  adv_std 0.181  tR +0.30  ent[s/d/p/e] 1.34/2.89/1.34/0.65  emits 1.43  clip 0.00  kl +0.000
+upd  257  steps 1056768  sps 3592  opp rand  loss -0.074  pg -0.0004  v 0.017  adv_std 0.184  tR +0.47  ent[s/d/p/e] 1.45/2.89/1.34/0.65  emits 1.47  clip 0.00  kl +0.000
+upd  258  steps 1060864  sps 3603  opp rand  loss -0.074  pg -0.0002  v 0.017  adv_std 0.184  tR +0.42  ent[s/d/p/e] 1.29/2.89/1.34/0.65  emits 1.44  clip 0.00  kl -0.000
+upd  259  steps 1064960  sps 3614  opp frzn  loss -0.073  pg -0.0000  v 0.019  adv_std 0.193  tR +0.03  ent[s/d/p/e] 1.32/2.90/1.35/0.65  emits 1.45  clip 0.00  kl -0.000 WRr 0.69 WRf 0.81
+upd  260  steps 1069056  sps 3532  opp frzn  loss -0.075  pg -0.0003  v 0.017  adv_std 0.181  tR +0.67  ent[s/d/p/e] 1.56/2.89/1.35/0.65  emits 1.47  clip 0.00  kl +0.000
+upd  261  steps 1073152  sps 3543  opp rand  loss -0.073  pg -0.0004  v 0.017  adv_std 0.183  tR +0.10  ent[s/d/p/e] 1.16/2.89/1.35/0.64  emits 1.44  clip 0.00  kl +0.000
+upd  262  steps 1077248  sps 3554  opp rand  loss -0.074  pg -0.0000  v 0.020  adv_std 0.198  tR +0.50  ent[s/d/p/e] 1.68/2.89/1.35/0.65  emits 1.51  clip 0.00  kl -0.000
+upd  263  steps 1081344  sps 3564  opp frzn  loss -0.075  pg -0.0001  v 0.016  adv_std 0.176  tR +0.65  ent[s/d/p/e] 1.50/2.91/1.34/0.65  emits 1.48  clip 0.00  kl +0.000
+upd  264  steps 1085440  sps 3575  opp rand  loss -0.075  pg -0.0002  v 0.015  adv_std 0.172  tR +0.00  ent[s/d/p/e] 1.36/2.90/1.35/0.66  emits 1.46  clip 0.00  kl +0.000
+upd  265  steps 1089536  sps 3586  opp rand  loss -0.077  pg -0.0004  v 0.013  adv_std 0.164  tR +0.57  ent[s/d/p/e] 1.62/2.89/1.35/0.65  emits 1.51  clip 0.00  kl +0.000
+upd  266  steps 1093632  sps 3597  opp rand  loss -0.078  pg -0.0004  v 0.010  adv_std 0.144  tR +0.52  ent[s/d/p/e] 1.64/2.89/1.35/0.64  emits 1.49  clip 0.00  kl +0.001
+upd  267  steps 1097728  sps 3608  opp rand  loss -0.074  pg -0.0001  v 0.016  adv_std 0.182  tR +0.50  ent[s/d/p/e] 1.42/2.90/1.35/0.63  emits 1.42  clip 0.00  kl +0.000
+upd  268  steps 1101824  sps 3619  opp rand  loss -0.074  pg -0.0003  v 0.017  adv_std 0.186  tR +0.39  ent[s/d/p/e] 1.46/2.89/1.35/0.63  emits 1.42  clip 0.00  kl +0.000
+upd  269  steps 1105920  sps 3629  opp rand  loss -0.075  pg -0.0001  v 0.016  adv_std 0.178  tR +0.55  ent[s/d/p/e] 1.63/2.89/1.35/0.63  emits 1.48  clip 0.00  kl +0.000 WRr 0.84 WRf 0.75
+upd  270  steps 1110016  sps 3550  opp rand  loss -0.075  pg -0.0003  v 0.015  adv_std 0.170  tR +0.16  ent[s/d/p/e] 1.41/2.89/1.35/0.63  emits 1.40  clip 0.00  kl +0.000
+upd  271  steps 1114112  sps 3560  opp rand  loss -0.075  pg -0.0001  v 0.014  adv_std 0.170  tR +0.45  ent[s/d/p/e] 1.36/2.89/1.35/0.64  emits 1.46  clip 0.00  kl +0.000
+upd  272  steps 1118208  sps 3571  opp frzn  loss -0.074  pg -0.0003  v 0.017  adv_std 0.185  tR +0.05  ent[s/d/p/e] 1.60/2.88/1.35/0.64  emits 1.46  clip 0.00  kl +0.000
+upd  273  steps 1122304  sps 3581  opp rand  loss -0.077  pg -0.0002  v 0.011  adv_std 0.149  tR +0.65  ent[s/d/p/e] 1.45/2.89/1.35/0.65  emits 1.43  clip 0.00  kl +0.000
+upd  274  steps 1126400  sps 3591  opp frzn  loss -0.076  pg -0.0002  v 0.013  adv_std 0.159  tR +0.40  ent[s/d/p/e] 1.32/2.90/1.35/0.65  emits 1.41  clip 0.00  kl -0.000
+upd  275  steps 1130496  sps 3602  opp rand  loss -0.076  pg -0.0005  v 0.015  adv_std 0.172  tR +0.65  ent[s/d/p/e] 1.53/2.87/1.35/0.65  emits 1.52  clip 0.00  kl +0.000
+upd  276  steps 1134592  sps 3612  opp frzn  loss -0.077  pg -0.0000  v 0.012  adv_std 0.155  tR +0.65  ent[s/d/p/e] 1.50/2.89/1.35/0.66  emits 1.52  clip 0.00  kl +0.000
+upd  277  steps 1138688  sps 3622  opp frzn  loss -0.074  pg -0.0005  v 0.019  adv_std 0.195  tR +0.20  ent[s/d/p/e] 1.41/2.89/1.35/0.66  emits 1.49  clip 0.00  kl -0.000
+upd  278  steps 1142784  sps 3632  opp frzn  loss -0.074  pg -0.0003  v 0.018  adv_std 0.188  tR +0.25  ent[s/d/p/e] 1.35/2.88/1.34/0.67  emits 1.48  clip 0.00  kl +0.000
+upd  279  steps 1146880  sps 3643  opp rand  loss -0.077  pg -0.0001  v 0.013  adv_std 0.164  tR +0.33  ent[s/d/p/e] 1.57/2.89/1.34/0.67  emits 1.58  clip 0.00  kl +0.000 WRr 0.59 WRf 0.81
+upd  280  steps 1150976  sps 3566  opp rand  loss -0.076  pg -0.0003  v 0.016  adv_std 0.180  tR +0.38  ent[s/d/p/e] 1.61/2.88/1.34/0.67  emits 1.57  clip 0.00  kl -0.000
+upd  281  steps 1155072  sps 3576  opp frzn  loss -0.076  pg -0.0001  v 0.016  adv_std 0.177  tR +0.24  ent[s/d/p/e] 1.56/2.88/1.35/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  282  steps 1159168  sps 3585  opp frzn  loss -0.077  pg -0.0005  v 0.016  adv_std 0.178  tR +0.50  ent[s/d/p/e] 1.63/2.89/1.34/0.67  emits 1.65  clip 0.00  kl -0.000
+upd  283  steps 1163264  sps 3596  opp rand  loss -0.079  pg +0.0000  v 0.010  adv_std 0.143  tR +0.27  ent[s/d/p/e] 1.62/2.90/1.34/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  284  steps 1167360  sps 3605  opp frzn  loss -0.076  pg -0.0001  v 0.016  adv_std 0.179  tR +0.65  ent[s/d/p/e] 1.61/2.89/1.34/0.67  emits 1.62  clip 0.00  kl -0.000
+upd  285  steps 1171456  sps 3615  opp frzn  loss -0.076  pg -0.0004  v 0.015  adv_std 0.176  tR +0.08  ent[s/d/p/e] 1.38/2.88/1.35/0.67  emits 1.57  clip 0.00  kl -0.000
+upd  286  steps 1175552  sps 3625  opp frzn  loss -0.077  pg -0.0002  v 0.015  adv_std 0.171  tR +0.65  ent[s/d/p/e] 1.65/2.89/1.34/0.67  emits 1.64  clip 0.00  kl -0.000
+upd  287  steps 1179648  sps 3635  opp rand  loss -0.074  pg -0.0004  v 0.019  adv_std 0.195  tR +0.25  ent[s/d/p/e] 1.41/2.88/1.34/0.67  emits 1.59  clip 0.00  kl +0.000
+upd  288  steps 1183744  sps 3645  opp rand  loss -0.073  pg -0.0000  v 0.018  adv_std 0.189  tR +0.25  ent[s/d/p/e] 1.33/2.88/1.34/0.67  emits 1.53  clip 0.00  kl +0.000
+upd  289  steps 1187840  sps 3656  opp rand  loss -0.076  pg -0.0004  v 0.016  adv_std 0.181  tR +0.20  ent[s/d/p/e] 1.70/2.87/1.34/0.66  emits 1.53  clip 0.00  kl -0.000 WRr 0.84 WRf 0.75
+upd  290  steps 1191936  sps 3570  opp rand  loss -0.076  pg -0.0001  v 0.016  adv_std 0.178  tR +0.30  ent[s/d/p/e] 1.55/2.88/1.34/0.67  emits 1.61  clip 0.00  kl +0.000
+upd  291  steps 1196032  sps 3580  opp rand  loss -0.076  pg -0.0002  v 0.016  adv_std 0.177  tR +0.65  ent[s/d/p/e] 1.57/2.87/1.34/0.67  emits 1.61  clip 0.00  kl +0.000
+upd  292  steps 1200128  sps 3590  opp rand  loss -0.076  pg -0.0005  v 0.016  adv_std 0.179  tR +0.40  ent[s/d/p/e] 1.63/2.88/1.34/0.67  emits 1.60  clip 0.00  kl -0.000
+upd  293  steps 1204224  sps 3599  opp rand  loss -0.076  pg -0.0002  v 0.016  adv_std 0.176  tR +0.14  ent[s/d/p/e] 1.66/2.89/1.34/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  294  steps 1208320  sps 3609  opp frzn  loss -0.076  pg -0.0002  v 0.015  adv_std 0.173  tR +0.25  ent[s/d/p/e] 1.44/2.88/1.35/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  295  steps 1212416  sps 3618  opp frzn  loss -0.077  pg -0.0004  v 0.015  adv_std 0.172  tR +0.50  ent[s/d/p/e] 1.65/2.89/1.34/0.68  emits 1.71  clip 0.00  kl +0.000
+upd  296  steps 1216512  sps 3628  opp frzn  loss -0.076  pg -0.0008  v 0.017  adv_std 0.183  tR +0.26  ent[s/d/p/e] 1.43/2.88/1.35/0.67  emits 1.64  clip 0.00  kl +0.000
+upd  297  steps 1220608  sps 3637  opp frzn  loss -0.076  pg -0.0006  v 0.016  adv_std 0.180  tR +0.20  ent[s/d/p/e] 1.50/2.87/1.34/0.68  emits 1.67  clip 0.00  kl +0.000
+upd  298  steps 1224704  sps 3647  opp frzn  loss -0.076  pg -0.0007  v 0.017  adv_std 0.187  tR +0.16  ent[s/d/p/e] 1.60/2.87/1.34/0.68  emits 1.73  clip 0.00  kl +0.000
+upd  299  steps 1228800  sps 3657  opp rand  loss -0.077  pg -0.0006  v 0.015  adv_std 0.171  tR +0.43  ent[s/d/p/e] 1.51/2.87/1.34/0.68  emits 1.74  clip 0.00  kl +0.000 WRr 0.66 WRf 0.75
+upd  300  steps 1232896  sps 3583  opp rand  loss -0.074  pg -0.0002  v 0.019  adv_std 0.195  tR +0.25  ent[s/d/p/e] 1.58/2.87/1.33/0.68  emits 1.80  clip 0.00  kl +0.000
+upd  301  steps 1236992  sps 3593  opp rand  loss -0.078  pg -0.0007  v 0.013  adv_std 0.163  tR +0.22  ent[s/d/p/e] 1.66/2.87/1.33/0.68  emits 1.85  clip 0.00  kl +0.000
+upd  302  steps 1241088  sps 3603  opp rand  loss -0.078  pg -0.0006  v 0.013  adv_std 0.159  tR +0.70  ent[s/d/p/e] 1.59/2.87/1.33/0.68  emits 1.76  clip 0.00  kl -0.000
+upd  303  steps 1245184  sps 3612  opp rand  loss -0.078  pg -0.0001  v 0.011  adv_std 0.150  tR +0.76  ent[s/d/p/e] 1.65/2.87/1.33/0.68  emits 1.79  clip 0.00  kl +0.000
+upd  304  steps 1249280  sps 3621  opp frzn  loss -0.076  pg -0.0002  v 0.016  adv_std 0.180  tR +0.39  ent[s/d/p/e] 1.64/2.87/1.33/0.68  emits 1.75  clip 0.00  kl -0.000
+upd  305  steps 1253376  sps 3630  opp frzn  loss -0.075  pg -0.0003  v 0.017  adv_std 0.184  tR +0.30  ent[s/d/p/e] 1.45/2.88/1.33/0.68  emits 1.70  clip 0.00  kl +0.000
+upd  306  steps 1257472  sps 3640  opp frzn  loss -0.077  pg -0.0002  v 0.013  adv_std 0.164  tR -0.05  ent[s/d/p/e] 1.58/2.88/1.33/0.68  emits 1.74  clip 0.00  kl +0.000
+upd  307  steps 1261568  sps 3649  opp frzn  loss -0.075  pg -0.0007  v 0.017  adv_std 0.184  tR +0.18  ent[s/d/p/e] 1.37/2.88/1.33/0.68  emits 1.62  clip 0.00  kl +0.000
+upd  308  steps 1265664  sps 3658  opp frzn  loss -0.077  pg -0.0006  v 0.013  adv_std 0.158  tR +0.45  ent[s/d/p/e] 1.52/2.88/1.32/0.67  emits 1.59  clip 0.00  kl +0.000
+upd  309  steps 1269760  sps 3667  opp rand  loss -0.078  pg -0.0005  v 0.012  adv_std 0.156  tR +0.41  ent[s/d/p/e] 1.60/2.86/1.33/0.67  emits 1.59  clip 0.00  kl -0.000 WRr 0.69 WRf 0.69
+upd  310  steps 1273856  sps 3597  opp rand  loss -0.076  pg -0.0003  v 0.017  adv_std 0.182  tR +0.64  ent[s/d/p/e] 1.66/2.86/1.33/0.67  emits 1.65  clip 0.00  kl -0.000
+upd  311  steps 1277952  sps 3606  opp rand  loss -0.076  pg -0.0003  v 0.016  adv_std 0.178  tR +0.68  ent[s/d/p/e] 1.67/2.87/1.32/0.67  emits 1.66  clip 0.00  kl -0.000
+upd  312  steps 1282048  sps 3615  opp rand  loss -0.074  pg -0.0002  v 0.018  adv_std 0.189  tR +0.32  ent[s/d/p/e] 1.50/2.85/1.33/0.67  emits 1.56  clip 0.00  kl +0.000
+upd  313  steps 1286144  sps 3625  opp rand  loss -0.073  pg -0.0005  v 0.022  adv_std 0.208  tR +0.30  ent[s/d/p/e] 1.60/2.86/1.33/0.67  emits 1.63  clip 0.00  kl +0.000
+upd  314  steps 1290240  sps 3634  opp rand  loss -0.077  pg -0.0003  v 0.013  adv_std 0.163  tR +0.40  ent[s/d/p/e] 1.69/2.88/1.32/0.67  emits 1.65  clip 0.00  kl +0.000
+upd  315  steps 1294336  sps 3643  opp rand  loss -0.075  pg -0.0006  v 0.016  adv_std 0.177  tR +0.40  ent[s/d/p/e] 1.41/2.87/1.33/0.66  emits 1.54  clip 0.00  kl -0.000
+upd  316  steps 1298432  sps 3653  opp rand  loss -0.074  pg -0.0003  v 0.018  adv_std 0.188  tR +0.43  ent[s/d/p/e] 1.56/2.87/1.32/0.66  emits 1.62  clip 0.00  kl +0.000
+upd  317  steps 1302528  sps 3662  opp frzn  loss -0.077  pg -0.0003  v 0.013  adv_std 0.162  tR +0.37  ent[s/d/p/e] 1.68/2.87/1.30/0.67  emits 1.65  clip 0.00  kl +0.000
+upd  318  steps 1306624  sps 3671  opp rand  loss -0.076  pg -0.0001  v 0.013  adv_std 0.163  tR +0.40  ent[s/d/p/e] 1.52/2.88/1.32/0.67  emits 1.59  clip 0.00  kl -0.000
+upd  319  steps 1310720  sps 3680  opp rand  loss -0.077  pg -0.0004  v 0.013  adv_std 0.162  tR +0.52  ent[s/d/p/e] 1.59/2.87/1.32/0.66  emits 1.66  clip 0.00  kl +0.000 WRr 0.81 WRf 0.78
+upd  320  steps 1314816  sps 3611  opp frzn  loss -0.079  pg -0.0003  v 0.011  adv_std 0.147  tR +0.76  ent[s/d/p/e] 1.73/2.87/1.31/0.67  emits 1.73  clip 0.00  kl +0.000
+upd  321  steps 1318912  sps 3620  opp rand  loss -0.076  pg -0.0003  v 0.013  adv_std 0.160  tR +0.50  ent[s/d/p/e] 1.42/2.88/1.32/0.66  emits 1.52  clip 0.00  kl -0.000
+upd  322  steps 1323008  sps 3629  opp rand  loss -0.074  pg -0.0002  v 0.020  adv_std 0.198  tR +0.43  ent[s/d/p/e] 1.66/2.87/1.32/0.66  emits 1.64  clip 0.00  kl +0.000
+upd  323  steps 1327104  sps 3637  opp frzn  loss -0.078  pg -0.0004  v 0.012  adv_std 0.152  tR +0.67  ent[s/d/p/e] 1.65/2.87/1.32/0.67  emits 1.58  clip 0.00  kl +0.000
+upd  324  steps 1331200  sps 3646  opp frzn  loss -0.075  pg -0.0003  v 0.012  adv_std 0.154  tR +0.36  ent[s/d/p/e] 1.21/2.87/1.33/0.66  emits 1.44  clip 0.00  kl +0.000
+upd  325  steps 1335296  sps 3655  opp rand  loss -0.075  pg -0.0001  v 0.018  adv_std 0.191  tR +0.68  ent[s/d/p/e] 1.68/2.86/1.33/0.67  emits 1.65  clip 0.00  kl +0.000
+upd  326  steps 1339392  sps 3664  opp frzn  loss -0.074  pg -0.0003  v 0.017  adv_std 0.186  tR +0.50  ent[s/d/p/e] 1.50/2.86/1.33/0.67  emits 1.59  clip 0.00  kl +0.000
+upd  327  steps 1343488  sps 3672  opp frzn  loss -0.075  pg -0.0003  v 0.015  adv_std 0.172  tR +0.17  ent[s/d/p/e] 1.27/2.88/1.33/0.66  emits 1.48  clip 0.00  kl +0.000
+upd  328  steps 1347584  sps 3681  opp frzn  loss -0.075  pg -0.0002  v 0.015  adv_std 0.172  tR +0.15  ent[s/d/p/e] 1.41/2.88/1.33/0.67  emits 1.59  clip 0.00  kl -0.000
+upd  329  steps 1351680  sps 3689  opp frzn  loss -0.076  pg -0.0002  v 0.013  adv_std 0.165  tR +0.41  ent[s/d/p/e] 1.54/2.88/1.32/0.66  emits 1.57  clip 0.00  kl -0.000 WRr 0.78 WRf 0.84
+upd  330  steps 1355776  sps 3621  opp frzn  loss -0.075  pg -0.0001  v 0.014  adv_std 0.167  tR +0.43  ent[s/d/p/e] 1.25/2.89/1.33/0.66  emits 1.54  clip 0.00  kl +0.000
+upd  331  steps 1359872  sps 3630  opp rand  loss -0.075  pg -0.0001  v 0.017  adv_std 0.181  tR +0.24  ent[s/d/p/e] 1.58/2.88/1.32/0.66  emits 1.59  clip 0.00  kl +0.000
+upd  332  steps 1363968  sps 3639  opp frzn  loss -0.075  pg -0.0001  v 0.015  adv_std 0.172  tR +0.38  ent[s/d/p/e] 1.45/2.88/1.32/0.67  emits 1.58  clip 0.00  kl -0.000
+upd  333  steps 1368064  sps 3647  opp rand  loss -0.077  pg -0.0003  v 0.013  adv_std 0.158  tR +0.42  ent[s/d/p/e] 1.50/2.88/1.33/0.67  emits 1.65  clip 0.00  kl +0.000
+upd  334  steps 1372160  sps 3656  opp rand  loss -0.076  pg -0.0002  v 0.016  adv_std 0.179  tR +0.64  ent[s/d/p/e] 1.70/2.88/1.32/0.66  emits 1.64  clip 0.00  kl +0.000
+upd  335  steps 1376256  sps 3665  opp rand  loss -0.079  pg -0.0004  v 0.011  adv_std 0.147  tR +0.78  ent[s/d/p/e] 1.66/2.87/1.33/0.67  emits 1.70  clip 0.00  kl +0.000
+upd  336  steps 1380352  sps 3674  opp rand  loss -0.078  pg +0.0001  v 0.012  adv_std 0.154  tR +0.52  ent[s/d/p/e] 1.68/2.87/1.33/0.67  emits 1.72  clip 0.00  kl +0.000
+upd  337  steps 1384448  sps 3682  opp rand  loss -0.077  pg -0.0003  v 0.014  adv_std 0.167  tR +0.91  ent[s/d/p/e] 1.61/2.88/1.33/0.67  emits 1.67  clip 0.00  kl +0.000
+upd  338  steps 1388544  sps 3691  opp frzn  loss -0.077  pg -0.0001  v 0.013  adv_std 0.160  tR +0.14  ent[s/d/p/e] 1.51/2.87/1.33/0.67  emits 1.60  clip 0.00  kl -0.000
+upd  339  steps 1392640  sps 3699  opp frzn  loss -0.075  pg -0.0003  v 0.016  adv_std 0.179  tR +0.18  ent[s/d/p/e] 1.42/2.88/1.32/0.67  emits 1.61  clip 0.00  kl +0.000 WRr 0.66 WRf 0.78
+upd  340  steps 1396736  sps 3623  opp rand  loss -0.078  pg -0.0002  v 0.012  adv_std 0.156  tR +0.39  ent[s/d/p/e] 1.59/2.88/1.32/0.67  emits 1.69  clip 0.00  kl -0.000
+upd  341  steps 1400832  sps 3631  opp frzn  loss -0.076  pg -0.0003  v 0.015  adv_std 0.173  tR +0.30  ent[s/d/p/e] 1.63/2.88/1.31/0.67  emits 1.73  clip 0.00  kl +0.000
+upd  342  steps 1404928  sps 3639  opp frzn  loss -0.076  pg -0.0005  v 0.016  adv_std 0.177  tR +0.55  ent[s/d/p/e] 1.62/2.88/1.31/0.67  emits 1.66  clip 0.00  kl +0.000
+upd  343  steps 1409024  sps 3647  opp frzn  loss -0.075  pg -0.0004  v 0.017  adv_std 0.186  tR +0.36  ent[s/d/p/e] 1.63/2.88/1.31/0.67  emits 1.67  clip 0.00  kl +0.000
+upd  344  steps 1413120  sps 3655  opp frzn  loss -0.077  pg -0.0002  v 0.013  adv_std 0.159  tR +0.44  ent[s/d/p/e] 1.64/2.87/1.30/0.68  emits 1.80  clip 0.00  kl -0.000
+upd  345  steps 1417216  sps 3664  opp frzn  loss -0.079  pg -0.0001  v 0.008  adv_std 0.127  tR +0.75  ent[s/d/p/e] 1.65/2.88/1.31/0.67  emits 1.88  clip 0.00  kl +0.000
+upd  346  steps 1421312  sps 3672  opp frzn  loss -0.077  pg -0.0004  v 0.013  adv_std 0.163  tR +0.81  ent[s/d/p/e] 1.73/2.87/1.30/0.68  emits 1.82  clip 0.00  kl -0.000
+upd  347  steps 1425408  sps 3680  opp frzn  loss -0.077  pg -0.0003  v 0.013  adv_std 0.160  tR +0.70  ent[s/d/p/e] 1.58/2.89/1.30/0.67  emits 1.71  clip 0.00  kl -0.000
+upd  348  steps 1429504  sps 3688  opp frzn  loss -0.077  pg -0.0005  v 0.013  adv_std 0.158  tR +0.12  ent[s/d/p/e] 1.56/2.89/1.29/0.67  emits 1.65  clip 0.00  kl +0.000
+upd  349  steps 1433600  sps 3696  opp frzn  loss -0.077  pg -0.0000  v 0.010  adv_std 0.142  tR +0.72  ent[s/d/p/e] 1.47/2.88/1.30/0.67  emits 1.66  clip 0.00  kl -0.000 WRr 0.81 WRf 0.84
+upd  350  steps 1437696  sps 3632  opp rand  loss -0.074  pg -0.0004  v 0.017  adv_std 0.184  tR +0.33  ent[s/d/p/e] 1.50/2.86/1.31/0.67  emits 1.64  clip 0.00  kl +0.000
+upd  351  steps 1441792  sps 3640  opp frzn  loss -0.076  pg -0.0004  v 0.016  adv_std 0.179  tR +0.54  ent[s/d/p/e] 1.64/2.88/1.30/0.67  emits 1.73  clip 0.00  kl +0.000
+upd  352  steps 1445888  sps 3648  opp frzn  loss -0.078  pg -0.0003  v 0.010  adv_std 0.144  tR +0.52  ent[s/d/p/e] 1.61/2.87/1.30/0.67  emits 1.69  clip 0.00  kl +0.000
+upd  353  steps 1449984  sps 3656  opp frzn  loss -0.076  pg -0.0003  v 0.015  adv_std 0.176  tR +0.58  ent[s/d/p/e] 1.61/2.87/1.30/0.68  emits 1.79  clip 0.00  kl +0.000
+upd  354  steps 1454080  sps 3664  opp frzn  loss -0.076  pg -0.0003  v 0.016  adv_std 0.176  tR +0.46  ent[s/d/p/e] 1.67/2.88/1.30/0.67  emits 1.77  clip 0.00  kl -0.000
+upd  355  steps 1458176  sps 3672  opp rand  loss -0.077  pg -0.0004  v 0.012  adv_std 0.156  tR +0.17  ent[s/d/p/e] 1.48/2.88/1.33/0.67  emits 1.69  clip 0.00  kl +0.000
+upd  356  steps 1462272  sps 3680  opp frzn  loss -0.075  pg -0.0003  v 0.017  adv_std 0.183  tR +0.57  ent[s/d/p/e] 1.59/2.88/1.31/0.67  emits 1.67  clip 0.00  kl +0.000
+upd  357  steps 1466368  sps 3688  opp frzn  loss -0.075  pg -0.0007  v 0.017  adv_std 0.185  tR +0.24  ent[s/d/p/e] 1.56/2.88/1.31/0.67  emits 1.63  clip 0.00  kl +0.000
+upd  358  steps 1470464  sps 3696  opp frzn  loss -0.078  pg -0.0002  v 0.011  adv_std 0.147  tR +0.50  ent[s/d/p/e] 1.61/2.88/1.31/0.67  emits 1.64  clip 0.00  kl +0.000
+upd  359  steps 1474560  sps 3704  opp rand  loss -0.079  pg -0.0002  v 0.011  adv_std 0.150  tR +0.46  ent[s/d/p/e] 1.72/2.88/1.33/0.67  emits 1.69  clip 0.00  kl +0.000 WRr 0.66 WRf 0.88
+upd  360  steps 1478656  sps 3641  opp frzn  loss -0.079  pg -0.0002  v 0.011  adv_std 0.147  tR +0.56  ent[s/d/p/e] 1.80/2.87/1.31/0.67  emits 1.75  clip 0.00  kl +0.000
+upd  361  steps 1482752  sps 3649  opp frzn  loss -0.076  pg -0.0002  v 0.015  adv_std 0.174  tR +0.73  ent[s/d/p/e] 1.68/2.87/1.31/0.67  emits 1.70  clip 0.00  kl +0.000
+upd  362  steps 1486848  sps 3657  opp rand  loss -0.078  pg -0.0002  v 0.011  adv_std 0.146  tR +0.62  ent[s/d/p/e] 1.57/2.87/1.33/0.67  emits 1.66  clip 0.00  kl +0.000
+upd  363  steps 1490944  sps 3665  opp frzn  loss -0.075  pg +0.0001  v 0.016  adv_std 0.179  tR +0.33  ent[s/d/p/e] 1.63/2.87/1.32/0.67  emits 1.68  clip 0.00  kl +0.000
+upd  364  steps 1495040  sps 3673  opp frzn  loss -0.077  pg -0.0005  v 0.012  adv_std 0.151  tR +0.58  ent[s/d/p/e] 1.43/2.87/1.31/0.67  emits 1.65  clip 0.00  kl +0.000
+upd  365  steps 1499136  sps 3681  opp rand  loss -0.076  pg -0.0004  v 0.014  adv_std 0.166  tR +0.40  ent[s/d/p/e] 1.46/2.87/1.33/0.66  emits 1.57  clip 0.00  kl -0.000
+upd  366  steps 1503232  sps 3689  opp rand  loss -0.077  pg -0.0003  v 0.014  adv_std 0.167  tR +0.71  ent[s/d/p/e] 1.66/2.86/1.33/0.66  emits 1.61  clip 0.00  kl +0.000
+upd  367  steps 1507328  sps 3697  opp frzn  loss -0.077  pg -0.0003  v 0.014  adv_std 0.164  tR +0.58  ent[s/d/p/e] 1.67/2.86/1.31/0.67  emits 1.66  clip 0.00  kl +0.000
+upd  368  steps 1511424  sps 3705  opp rand  loss -0.077  pg -0.0007  v 0.014  adv_std 0.164  tR +0.57  ent[s/d/p/e] 1.66/2.86/1.33/0.67  emits 1.60  clip 0.00  kl +0.000
+upd  369  steps 1515520  sps 3712  opp frzn  loss -0.080  pg -0.0004  v 0.008  adv_std 0.129  tR +0.83  ent[s/d/p/e] 1.73/2.86/1.32/0.67  emits 1.70  clip 0.00  kl +0.000 WRr 0.72 WRf 0.84
+upd  370  steps 1519616  sps 3651  opp frzn  loss -0.074  pg -0.0003  v 0.019  adv_std 0.191  tR +0.43  ent[s/d/p/e] 1.56/2.87/1.33/0.67  emits 1.70  clip 0.00  kl +0.000
+upd  371  steps 1523712  sps 3659  opp frzn  loss -0.076  pg -0.0003  v 0.015  adv_std 0.175  tR +0.43  ent[s/d/p/e] 1.53/2.86/1.32/0.68  emits 1.67  clip 0.00  kl -0.000
+upd  372  steps 1527808  sps 3666  opp rand  loss -0.078  pg -0.0002  v 0.012  adv_std 0.158  tR +0.54  ent[s/d/p/e] 1.64/2.87/1.34/0.67  emits 1.70  clip 0.00  kl +0.000
+upd  373  steps 1531904  sps 3674  opp frzn  loss -0.077  pg -0.0003  v 0.014  adv_std 0.167  tR +0.25  ent[s/d/p/e] 1.63/2.87/1.33/0.67  emits 1.77  clip 0.00  kl -0.000
+upd  374  steps 1536000  sps 3682  opp frzn  loss -0.076  pg -0.0006  v 0.014  adv_std 0.167  tR +0.33  ent[s/d/p/e] 1.46/2.88/1.33/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  375  steps 1540096  sps 3689  opp frzn  loss -0.078  pg -0.0007  v 0.012  adv_std 0.158  tR +0.36  ent[s/d/p/e] 1.52/2.87/1.33/0.67  emits 1.76  clip 0.00  kl +0.000
+upd  376  steps 1544192  sps 3697  opp frzn  loss -0.079  pg -0.0002  v 0.013  adv_std 0.158  tR +0.57  ent[s/d/p/e] 1.80/2.88/1.32/0.67  emits 1.88  clip 0.00  kl -0.000
+upd  377  steps 1548288  sps 3704  opp rand  loss -0.076  pg -0.0003  v 0.015  adv_std 0.171  tR +0.30  ent[s/d/p/e] 1.50/2.86/1.33/0.68  emits 1.79  clip 0.00  kl +0.000
+upd  378  steps 1552384  sps 3712  opp rand  loss -0.077  pg -0.0005  v 0.014  adv_std 0.168  tR +0.48  ent[s/d/p/e] 1.68/2.87/1.33/0.68  emits 1.79  clip 0.00  kl +0.000
+upd  379  steps 1556480  sps 3720  opp rand  loss -0.078  pg -0.0003  v 0.013  adv_std 0.159  tR +0.44  ent[s/d/p/e] 1.70/2.86/1.33/0.68  emits 1.78  clip 0.00  kl +0.000 WRr 0.66 WRf 0.88
+upd  380  steps 1560576  sps 3660  opp frzn  loss -0.076  pg -0.0003  v 0.015  adv_std 0.171  tR +0.46  ent[s/d/p/e] 1.54/2.87/1.32/0.68  emits 1.69  clip 0.00  kl +0.000
+upd  381  steps 1564672  sps 3667  opp frzn  loss -0.077  pg -0.0002  v 0.012  adv_std 0.157  tR +0.35  ent[s/d/p/e] 1.46/2.87/1.32/0.67  emits 1.61  clip 0.00  kl +0.000
+upd  382  steps 1568768  sps 3675  opp rand  loss -0.074  pg -0.0004  v 0.019  adv_std 0.194  tR +0.38  ent[s/d/p/e] 1.43/2.87/1.33/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  383  steps 1572864  sps 3682  opp frzn  loss -0.076  pg -0.0001  v 0.015  adv_std 0.174  tR +0.38  ent[s/d/p/e] 1.58/2.86/1.32/0.67  emits 1.68  clip 0.00  kl +0.000
+upd  384  steps 1576960  sps 3690  opp rand  loss -0.075  pg -0.0001  v 0.016  adv_std 0.178  tR +0.09  ent[s/d/p/e] 1.60/2.87/1.33/0.67  emits 1.59  clip 0.00  kl +0.000
+upd  385  steps 1581056  sps 3698  opp frzn  loss -0.077  pg -0.0004  v 0.012  adv_std 0.154  tR +0.47  ent[s/d/p/e] 1.42/2.87/1.33/0.67  emits 1.62  clip 0.00  kl +0.000
+upd  386  steps 1585152  sps 3705  opp rand  loss -0.076  pg -0.0005  v 0.015  adv_std 0.175  tR +0.40  ent[s/d/p/e] 1.51/2.87/1.33/0.67  emits 1.64  clip 0.00  kl -0.000
+upd  387  steps 1589248  sps 3713  opp frzn  loss -0.077  pg -0.0002  v 0.013  adv_std 0.163  tR +0.42  ent[s/d/p/e] 1.58/2.88/1.32/0.67  emits 1.61  clip 0.00  kl -0.000
+upd  388  steps 1593344  sps 3720  opp rand  loss -0.080  pg -0.0003  v 0.009  adv_std 0.135  tR +0.80  ent[s/d/p/e] 1.77/2.87/1.33/0.67  emits 1.74  clip 0.00  kl +0.000
+upd  389  steps 1597440  sps 3728  opp frzn  loss -0.075  pg -0.0003  v 0.016  adv_std 0.177  tR +0.60  ent[s/d/p/e] 1.52/2.87/1.32/0.67  emits 1.65  clip 0.00  kl -0.000 WRr 0.53 WRf 0.81
+upd  390  steps 1601536  sps 3668  opp frzn  loss -0.078  pg -0.0001  v 0.010  adv_std 0.144  tR +0.36  ent[s/d/p/e] 1.64/2.88/1.31/0.67  emits 1.70  clip 0.00  kl +0.000
+upd  391  steps 1605632  sps 3676  opp frzn  loss -0.077  pg -0.0002  v 0.015  adv_std 0.174  tR +0.55  ent[s/d/p/e] 1.80/2.88/1.30/0.67  emits 1.78  clip 0.00  kl -0.000
+upd  392  steps 1609728  sps 3683  opp rand  loss -0.075  pg -0.0001  v 0.015  adv_std 0.174  tR +0.65  ent[s/d/p/e] 1.50/2.88/1.32/0.66  emits 1.61  clip 0.00  kl +0.000
+upd  393  steps 1613824  sps 3691  opp rand  loss -0.076  pg -0.0002  v 0.018  adv_std 0.188  tR +0.42  ent[s/d/p/e] 1.79/2.86/1.32/0.67  emits 1.78  clip 0.00  kl -0.000
+upd  394  steps 1617920  sps 3698  opp frzn  loss -0.077  pg -0.0006  v 0.016  adv_std 0.174  tR +0.56  ent[s/d/p/e] 1.78/2.85/1.30/0.68  emits 1.83  clip 0.00  kl +0.000
+upd  395  steps 1622016  sps 3705  opp rand  loss -0.078  pg -0.0000  v 0.012  adv_std 0.156  tR +0.81  ent[s/d/p/e] 1.73/2.87/1.32/0.67  emits 1.75  clip 0.00  kl +0.000
+upd  396  steps 1626112  sps 3713  opp frzn  loss -0.079  pg -0.0003  v 0.011  adv_std 0.145  tR +0.76  ent[s/d/p/e] 1.78/2.87/1.30/0.68  emits 1.77  clip 0.00  kl +0.000
+upd  397  steps 1630208  sps 3720  opp frzn  loss -0.076  pg -0.0002  v 0.015  adv_std 0.172  tR +0.65  ent[s/d/p/e] 1.71/2.86/1.31/0.68  emits 1.76  clip 0.00  kl +0.000
+upd  398  steps 1634304  sps 3727  opp frzn  loss -0.075  pg -0.0005  v 0.017  adv_std 0.183  tR +0.42  ent[s/d/p/e] 1.53/2.86/1.31/0.67  emits 1.71  clip 0.00  kl -0.000
+upd  399  steps 1638400  sps 3734  opp rand  loss -0.076  pg -0.0003  v 0.015  adv_std 0.172  tR +0.16  ent[s/d/p/e] 1.62/2.85/1.32/0.67  emits 1.67  clip 0.00  kl +0.000 WRr 0.72 WRf 0.91
+final eval win_rate vs random: 0.719
