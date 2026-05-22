@@ -22,8 +22,8 @@ MIN_PLANET_GROUPS: int = 3
 MAX_PLANET_GROUPS: int = 10
 PLANETS_PER_GROUP: int = 4
 
-NUM_PCT_BINS: int = 4
-PCT_BIN_VALUES = (0.25, 0.5, 0.75, 1.0)
+NUM_PCT_BINS: int = 8
+PCT_BIN_VALUES = (0.10, 0.20, 0.30, 0.40, 0.55, 0.70, 0.85, 1.00)
 
 # Max number of fleets a single player can launch per turn (autoregressive head).
 # v20 uses 26; we start small to keep the unroll cheap and grow if needed.

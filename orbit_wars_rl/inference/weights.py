@@ -66,7 +66,17 @@ def load_npz(path: str) -> Dict[str, np.ndarray]:
 
 
 def assert_expected_keys(flat: Dict[str, np.ndarray], n_layers: int = 2) -> None:
-    """Sanity check that ``flat`` contains every key the numpy forward needs."""
+    """Sanity check that ``flat`` contains every key the numpy forward needs.
+
+    Schema (v6+):
+      * encoder: planet/fleet/global proj + type_embed + N pre-norm blocks + ln_out
+      * src_head: two-layer MLP (fc1 -> src_score)
+      * dst_head: cross_attn(qkv,out) + two-layer MLP (dst_fc1 -> dst_score)
+      * pct_head: fc1 -> logits
+      * emit_head: fc1 -> logits
+      * value_head: multi-query attention -- queries param + q_cond + value_attn(qkv,out)
+        + fc1 + value
+    """
     expected: set[str] = set()
     expected.add("encoder/type_embed")
     for proj in ("planet_proj", "fleet_proj", "global_proj"):
@@ -84,23 +94,38 @@ def assert_expected_keys(flat: Dict[str, np.ndarray], n_layers: int = 2) -> None
             expected.add(f"encoder/block{i}/mlp/{fc}/bias")
     expected.add("encoder/ln_out/scale")
     expected.add("encoder/ln_out/bias")
-    expected.add("src_head/src_score/kernel")
-    expected.add("src_head/src_score/bias")
+
+    # SrcHead: fc1 -> src_score
+    for fc in ("fc1", "src_score"):
+        expected.add(f"src_head/{fc}/kernel")
+        expected.add(f"src_head/{fc}/bias")
+
+    # DstHead: cross_attn + dst_fc1 -> dst_score
     for qkv in ("query", "key", "value", "out"):
         expected.add(f"dst_head/cross_attn/{qkv}/kernel")
         expected.add(f"dst_head/cross_attn/{qkv}/bias")
-    expected.add("dst_head/dst_score/kernel")
-    expected.add("dst_head/dst_score/bias")
-    for h in ("pct_head", "value_head", "emit_head"):
-        last = "logits" if h in ("pct_head", "emit_head") else "value"
-        for fc in ("fc1", last):
+    for fc in ("dst_fc1", "dst_score"):
+        expected.add(f"dst_head/{fc}/kernel")
+        expected.add(f"dst_head/{fc}/bias")
+
+    # PctHead + EmitHead: fc1 -> logits
+    for h in ("pct_head", "emit_head"):
+        for fc in ("fc1", "logits"):
             expected.add(f"{h}/{fc}/kernel")
             expected.add(f"{h}/{fc}/bias")
 
+    # ValueHead (multi-query attention):
+    #   queries (param), q_cond/{k,b}, value_attn/{q,k,v,out}/{k,b}, fc1, value
+    expected.add("value_head/queries")
+    expected.add("value_head/q_cond/kernel")
+    expected.add("value_head/q_cond/bias")
+    for qkv in ("query", "key", "value", "out"):
+        expected.add(f"value_head/value_attn/{qkv}/kernel")
+        expected.add(f"value_head/value_attn/{qkv}/bias")
+    for fc in ("fc1", "value"):
+        expected.add(f"value_head/{fc}/kernel")
+        expected.add(f"value_head/{fc}/bias")
+
     missing = expected - set(flat.keys())
-    extra = set(flat.keys()) - expected
     if missing:
         raise KeyError(f"weights missing keys: {sorted(missing)[:6]}{'...' if len(missing) > 6 else ''}")
-    if extra:
-        # Not fatal: training may add things; just inform the caller.
-        pass

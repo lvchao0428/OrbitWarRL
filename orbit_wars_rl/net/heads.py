@@ -21,11 +21,21 @@ def _mask_logits(logits: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
 
 
 class SrcHead(nn.Module):
-    """Score each planet as a launch source; only planets the agent owns survive."""
+    """Score each planet as a launch source; only planets the agent owns survive.
+
+    Two-layer MLP: small per-planet MLP from planet_emb -> hidden -> 1 logit.
+    Top-team feedback (top_players_rl.txt §230: "Action head is pretty much
+    standard") suggests a single Dense is too thin -- needs at least one
+    non-linearity for the head to learn non-trivial src-selection patterns.
+    """
+
+    hidden: int = 64
 
     @nn.compact
     def __call__(self, planet_emb: jnp.ndarray, my_planet_mask: jnp.ndarray) -> jnp.ndarray:
-        logits = nn.Dense(1, name="src_score")(planet_emb)[..., 0]
+        x = nn.Dense(self.hidden, name="fc1")(planet_emb)
+        x = nn.gelu(x)
+        logits = nn.Dense(1, name="src_score")(x)[..., 0]
         return _mask_logits(logits, my_planet_mask)
 
 
@@ -67,7 +77,9 @@ class DstHead(nn.Module):
         cond = attended[:, 0, :]
 
         joined = jnp.concatenate([planet_emb, jnp.broadcast_to(cond[:, None, :], planet_emb.shape)], axis=-1)
-        logits = nn.Dense(1, name="dst_score")(joined)[..., 0]
+        x = nn.Dense(self.d_model, name="dst_fc1")(joined)
+        x = nn.gelu(x)
+        logits = nn.Dense(1, name="dst_score")(x)[..., 0]
 
         logits = _mask_logits(logits, planet_mask)
         if not is_batched:
@@ -135,18 +147,73 @@ class EmitHead(nn.Module):
 
 
 class ValueHead(nn.Module):
-    """Scalar value from pooled global + planet + fleet embeddings."""
+    """Scalar value from a multi-query cross-attention over per-entity embeddings.
 
+    Top-team feedback (top_players_rl.txt §65: "multi-query ValueHead") was
+    flagged as one of the F12 improvements. Compared to the original
+    ``concat(global, planet_pool, fleet_pool) -> MLP -> scalar`` design, this
+    version uses N learned query tokens that cross-attend to all valid
+    planet+fleet embeddings, then pools the queries into a scalar.
+
+    This buys us:
+      * The value head can attend to *specific* planets / fleets rather than
+        a mean-pooled summary -- crucial when one planet (e.g., the enemy
+        home with 200 ships) dominates the outcome but is averaged away.
+      * More capacity proportional to (n_queries * d_model) so value can
+        learn faster without value_coef blowing up policy advantage signal.
+    """
+
+    d_model: int = 64
+    n_queries: int = 4
+    n_heads: int = 4
     hidden: int = 64
 
     @nn.compact
     def __call__(
         self,
         global_emb: jnp.ndarray,
-        planet_pool: jnp.ndarray,
-        fleet_pool: jnp.ndarray,
+        planet_emb: jnp.ndarray,
+        planet_mask: jnp.ndarray,
+        fleet_emb: jnp.ndarray,
+        fleet_mask: jnp.ndarray,
     ) -> jnp.ndarray:
-        x = jnp.concatenate([global_emb, planet_pool, fleet_pool], axis=-1)
-        x = nn.Dense(self.hidden, name="fc1")(x)
+        is_batched = planet_emb.ndim == 3
+        if not is_batched:
+            global_emb = global_emb[None, :]
+            planet_emb = planet_emb[None, ...]
+            planet_mask = planet_mask[None, ...]
+            fleet_emb = fleet_emb[None, ...]
+            fleet_mask = fleet_mask[None, ...]
+        B = planet_emb.shape[0]
+
+        queries = self.param(
+            "queries",
+            nn.initializers.normal(stddev=0.02),
+            (self.n_queries, self.d_model),
+            jnp.float32,
+        )
+        q = jnp.broadcast_to(queries[None, :, :], (B, self.n_queries, self.d_model))
+        # Condition queries on global state so they're not just static slots.
+        g_proj = nn.Dense(self.d_model, name="q_cond")(global_emb)[:, None, :]
+        q = q + g_proj
+
+        kv = jnp.concatenate([planet_emb, fleet_emb], axis=1)
+        kv_mask = jnp.concatenate([planet_mask, fleet_mask], axis=1)
+        attn_mask = kv_mask[:, None, None, :]
+        attended = nn.MultiHeadDotProductAttention(
+            num_heads=self.n_heads,
+            qkv_features=self.d_model,
+            out_features=self.d_model,
+            name="value_attn",
+        )(q, kv, mask=attn_mask)
+
+        # Concat all attended query outputs + global, then MLP to scalar.
+        pooled = attended.reshape(B, self.n_queries * self.d_model)
+        joined = jnp.concatenate([pooled, global_emb], axis=-1)
+        x = nn.Dense(self.hidden, name="fc1")(joined)
         x = nn.gelu(x)
-        return nn.Dense(1, name="value")(x)[..., 0]
+        value = nn.Dense(1, name="value")(x)[..., 0]
+
+        if not is_batched:
+            value = jnp.squeeze(value, axis=0)
+        return value

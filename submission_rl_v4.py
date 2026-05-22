@@ -42,8 +42,8 @@ BOARD = 100.0
 BOARD_HALF = 50.0
 SUN_X = 50.0
 SUN_Y = 50.0
-NUM_PCT_BINS = 4
-PCT_BIN_VALUES = (0.25, 0.5, 0.75, 1.0)
+NUM_PCT_BINS = 8
+PCT_BIN_VALUES = (0.10, 0.20, 0.30, 0.40, 0.55, 0.70, 0.85, 1.00)
 NEUTRAL_OWNER = -1
 PADDING_OWNER = -2
 
@@ -347,7 +347,9 @@ def _mask_logits(logits, mask):
 
 
 def _src_head(W, planet_emb, my_mask):
-    logits = _dense(planet_emb, W["src_head/src_score/kernel"], W["src_head/src_score/bias"])[..., 0]
+    x = _dense(planet_emb, W["src_head/fc1/kernel"], W["src_head/fc1/bias"])
+    x = _gelu(x)
+    logits = _dense(x, W["src_head/src_score/kernel"], W["src_head/src_score/bias"])[..., 0]
     return _mask_logits(logits, my_mask.astype(bool))
 
 
@@ -359,7 +361,9 @@ def _dst_head(W, planet_emb, src_emb, planet_mask, my_mask):
     attended = _attention(q, k, v, planet_mask.astype(bool))
     cond = _attention_out(attended, W["dst_head/cross_attn/out/kernel"], W["dst_head/cross_attn/out/bias"])[0]
     joined = np.concatenate([planet_emb, np.broadcast_to(cond, (planet_emb.shape[0], cond.shape[0]))], axis=-1)
-    logits = _dense(joined, W["dst_head/dst_score/kernel"], W["dst_head/dst_score/bias"])[..., 0]
+    x = _dense(joined, W["dst_head/dst_fc1/kernel"], W["dst_head/dst_fc1/bias"])
+    x = _gelu(x)
+    logits = _dense(x, W["dst_head/dst_score/kernel"], W["dst_head/dst_score/bias"])[..., 0]
     return _mask_logits(logits, planet_mask.astype(bool))
 
 

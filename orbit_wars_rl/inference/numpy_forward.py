@@ -151,8 +151,13 @@ def encode_tokens(
 
 
 def src_head(W: Dict[str, np.ndarray], planet_emb: np.ndarray, my_planet_mask: np.ndarray) -> np.ndarray:
-    """Returns src_logits of shape (P,) masked by my_planet_mask."""
-    logits = _dense(planet_emb, W["src_head/src_score/kernel"], W["src_head/src_score/bias"])[..., 0]
+    """Returns src_logits of shape (P,) masked by my_planet_mask.
+
+    Mirrors the two-layer MLP SrcHead (v6+): fc1 -> gelu -> src_score.
+    """
+    x = _dense(planet_emb, W["src_head/fc1/kernel"], W["src_head/fc1/bias"])
+    x = _gelu(x)
+    logits = _dense(x, W["src_head/src_score/kernel"], W["src_head/src_score/bias"])[..., 0]
     return _mask_logits(logits, my_planet_mask.astype(bool))
 
 
@@ -178,7 +183,9 @@ def dst_head(
 
     P = planet_emb.shape[0]
     joined = np.concatenate([planet_emb, np.broadcast_to(cond, (P, cond.shape[0]))], axis=-1)
-    logits = _dense(joined, W["dst_head/dst_score/kernel"], W["dst_head/dst_score/bias"])[..., 0]
+    x = _dense(joined, W["dst_head/dst_fc1/kernel"], W["dst_head/dst_fc1/bias"])
+    x = _gelu(x)
+    logits = _dense(x, W["dst_head/dst_score/kernel"], W["dst_head/dst_score/bias"])[..., 0]
 
     return _mask_logits(logits, planet_mask.astype(bool))
 
@@ -215,11 +222,34 @@ def emit_head(
 def value_head(
     W: Dict[str, np.ndarray],
     global_emb: np.ndarray,
-    planet_pool: np.ndarray,
-    fleet_pool: np.ndarray,
+    planet_emb: np.ndarray,
+    planet_mask: np.ndarray,
+    fleet_emb: np.ndarray,
+    fleet_mask: np.ndarray,
 ) -> float:
-    x = np.concatenate([global_emb, planet_pool, fleet_pool], axis=-1)
-    x = _dense(x, W["value_head/fc1/kernel"], W["value_head/fc1/bias"])
+    """Multi-query cross-attention ValueHead (v6+).
+
+    Mirrors heads.py::ValueHead exactly. N learned query tokens (conditioned
+    on global state) cross-attend over per-entity planet+fleet embeddings,
+    then concat all attended queries + global_emb -> MLP -> scalar.
+    """
+    queries = W["value_head/queries"]  # (Q, D)
+    n_queries = queries.shape[0]
+    g_proj = _dense(global_emb, W["value_head/q_cond/kernel"], W["value_head/q_cond/bias"])  # (D,)
+    q_tokens = queries + g_proj[None, :]  # (Q, D)
+
+    kv = np.concatenate([planet_emb, fleet_emb], axis=0)  # (P+F, D)
+    kv_mask = np.concatenate([planet_mask.astype(bool), fleet_mask.astype(bool)], axis=0)
+
+    q = _project_qkv(q_tokens, W["value_head/value_attn/query/kernel"], W["value_head/value_attn/query/bias"])
+    k = _project_qkv(kv, W["value_head/value_attn/key/kernel"], W["value_head/value_attn/key/bias"])
+    v = _project_qkv(kv, W["value_head/value_attn/value/kernel"], W["value_head/value_attn/value/bias"])
+    attended = _attention(q, k, v, kv_mask)  # (Q, H, Dh)
+    pooled = _attention_out(attended, W["value_head/value_attn/out/kernel"], W["value_head/value_attn/out/bias"])  # (Q, D)
+    pooled = pooled.reshape(-1)  # (Q*D,)
+
+    joined = np.concatenate([pooled, global_emb], axis=-1)
+    x = _dense(joined, W["value_head/fc1/kernel"], W["value_head/fc1/bias"])
     x = _gelu(x)
     out = _dense(x, W["value_head/value/kernel"], W["value_head/value/bias"])
     return float(out[..., 0])
@@ -242,7 +272,7 @@ def forward(
     parity tests we expose ``encode_tokens``/``src_head``/``dst_head``/``pct_head``
     individually so callers can pass arbitrary src/dst.
     """
-    global_emb, planet_emb, _fleet_emb, planet_pool, fleet_pool = encode_tokens(
+    global_emb, planet_emb, fleet_emb, planet_pool, fleet_pool = encode_tokens(
         W, planet_feats, planet_mask, fleet_feats, fleet_mask, global_feats, n_layers=n_layers,
     )
     s_logits = src_head(W, planet_emb, my_planet_mask)
@@ -252,7 +282,7 @@ def forward(
     dst_idx = int(np.argmax(d_logits))
     dst_emb = planet_emb[dst_idx]
     p_logits = pct_head(W, src_emb, dst_emb, global_emb)
-    v = value_head(W, global_emb, planet_pool, fleet_pool)
+    v = value_head(W, global_emb, planet_emb, planet_mask, fleet_emb, fleet_mask)
     return s_logits, d_logits, p_logits, v
 
 
@@ -267,7 +297,7 @@ def greedy_action(
     n_layers: int = 2,
 ) -> Tuple[int, int, int, float]:
     """Legacy single-action greedy. Argmax src/dst/pct + value."""
-    global_emb, planet_emb, _f_emb, planet_pool, fleet_pool = encode_tokens(
+    global_emb, planet_emb, fleet_emb, planet_pool, fleet_pool = encode_tokens(
         W, planet_feats, planet_mask, fleet_feats, fleet_mask, global_feats, n_layers=n_layers,
     )
     s_logits = src_head(W, planet_emb, my_planet_mask)
@@ -278,11 +308,13 @@ def greedy_action(
     dst_emb = planet_emb[dst_idx]
     p_logits = pct_head(W, src_emb, dst_emb, global_emb)
     pct_idx = int(np.argmax(p_logits))
-    v = value_head(W, global_emb, planet_pool, fleet_pool)
+    v = value_head(W, global_emb, planet_emb, planet_mask, fleet_emb, fleet_mask)
     return src_idx, dst_idx, pct_idx, v
 
 
-_PCT_BIN_TABLE_NP = np.array([0.25, 0.5, 0.75, 1.0], dtype=np.float32)
+_PCT_BIN_TABLE_NP = np.array(
+    [0.10, 0.20, 0.30, 0.40, 0.55, 0.70, 0.85, 1.00], dtype=np.float32
+)
 
 
 def greedy_multi_action(
@@ -305,7 +337,7 @@ def greedy_multi_action(
                    holds the emitted ones)
       value
     """
-    global_emb, planet_emb, _f_emb, planet_pool, fleet_pool = encode_tokens(
+    global_emb, planet_emb, fleet_emb, planet_pool, fleet_pool = encode_tokens(
         W, planet_feats, planet_mask, fleet_feats, fleet_mask, global_feats, n_layers=n_layers,
     )
     P = planet_emb.shape[0]
@@ -352,5 +384,5 @@ def greedy_multi_action(
             emit_out.append(False)
             still_emit = False
 
-    v = value_head(W, global_emb, planet_pool, fleet_pool)
+    v = value_head(W, global_emb, planet_emb, planet_mask, fleet_emb, fleet_mask)
     return src_out, dst_out, pct_out, emit_out, v

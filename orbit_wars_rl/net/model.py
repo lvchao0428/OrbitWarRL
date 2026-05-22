@@ -169,7 +169,7 @@ class ActorCritic(nn.Module):
         self.dst_head = DstHead(d_model=self.d_model, n_heads=self.n_heads)
         self.pct_head = PctHead(num_bins=self.num_pct_bins)
         self.emit_head = EmitHead(max_steps=self.max_fleets_per_turn)
-        self.value_head = ValueHead()
+        self.value_head = ValueHead(d_model=self.d_model, n_heads=self.n_heads)
 
     def _encode(self, obs: EncodedObs) -> dict:
         return self.encoder(
@@ -202,7 +202,7 @@ class ActorCritic(nn.Module):
         planet_emb = enc["planet_emb"]
         global_emb = enc["global_emb"]
         planet_pool = enc["planet_pool"]
-        fleet_pool = enc["fleet_pool"]
+        fleet_emb = enc["fleet_emb"]
 
         is_batched = planet_emb.ndim == 3
         if not is_batched:
@@ -216,7 +216,9 @@ class ActorCritic(nn.Module):
 
         K = self.max_fleets_per_turn
 
-        value = self.value_head(global_emb, planet_pool, fleet_pool)
+        value = self.value_head(
+            global_emb, planet_emb, obs.planet_mask, fleet_emb, obs.fleet_mask
+        )
 
         # We pre-compute src/dst/pct/emit logits for all K steps via a python
         # for-loop so flax can build the heads exactly once. The running
@@ -293,7 +295,7 @@ class ActorCritic(nn.Module):
         planet_emb = enc["planet_emb"]
         global_emb = enc["global_emb"]
         planet_pool = enc["planet_pool"]
-        fleet_pool = enc["fleet_pool"]
+        fleet_emb = enc["fleet_emb"]
 
         obs_my = obs.my_planet_mask
         obs_pmask = obs.planet_mask
@@ -301,7 +303,9 @@ class ActorCritic(nn.Module):
 
         K = self.max_fleets_per_turn
 
-        value = self.value_head(global_emb, planet_pool, fleet_pool)
+        value = self.value_head(
+            global_emb, planet_emb, obs.planet_mask, fleet_emb, obs.fleet_mask
+        )
 
         reserved = jnp.zeros_like(ships_raw)  # (..., P) int32
         # still_emitting is a per-batch bool; if rank=0 keep scalar.

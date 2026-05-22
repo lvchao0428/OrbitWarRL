@@ -1,0 +1,132 @@
+# v6 - architecture aligned with top-team feedback (top_players_rl.txt §F12).
+#
+# This is the first "full-scale" config that targets the F12 architecture
+# description rather than the small/cheap MVP we ran in v3-v5. None of the
+# v5p3 ckpts are loadable here -- the param shapes have changed in 4 places
+# (pct head output, src head adds fc1, dst head adds dst_fc1, value head is
+# completely new). v6 must train from scratch.
+#
+# Architecture deltas vs v5p3
+# ============================
+# All applied as a single "v6 batch" since this is a from-scratch run.
+# Per F12's own warning (top_players_rl.txt §65-69) one delta at a time is
+# right when iterating off a known-good baseline, but here we are matching
+# a successful published architecture wholesale.
+#
+# D1. pct_bins 4 -> 8                       (constants.py + kaggle_adapter.py + submission_rl_v4.py)
+#       (0.25, 0.5, 0.75, 1.0)
+#    -> (0.10, 0.20, 0.30, 0.40, 0.55, 0.70, 0.85, 1.00)
+#       Root cause of mean_emits stuck at ~1.4 across v4/v5 may be that the
+#       policy can't pick a 5/10/15-ship lead fleet; everything < 25% rounds
+#       to either "send 1 ship" or "send 25%". 8 bins concentrated in the
+#       low end let the policy express precision strikes.
+#
+# D2. SrcHead / DstHead: add fc1 -> gelu before final score Dense
+#       Both heads were single linear layers before; they couldn't learn
+#       non-trivial src/dst selection patterns. Top-1 (Lin Myat Ko, §230)
+#       confirmed "Action head is pretty much standard" -- ours was thinner
+#       than standard.
+#
+# D3. ValueHead: rewrite as multi-query cross-attention over planet+fleet emb
+#       F12 §65 lists "multi-query ValueHead" as one of the F12 improvements.
+#       Replaces (global || planet_pool || fleet_pool) -> MLP with N learned
+#       query tokens that cross-attend to every planet/fleet, then concat
+#       attended queries + global -> MLP -> scalar. Same intuition as DstHead.
+#
+# D4. d_model 64 -> 128, ff_dim 128 -> 512 (MLP 4x expansion per F12 §66)
+#       Network grows from ~120k to ~676k params, comfortably in F12's
+#       "about 600k" range. Expect SPS to drop from 6800 to ~3000-4000.
+#
+# D5. n_layers stays at 2  (revised after param-count audit)
+#       With d_model=128 + ff_dim=512 the param count would balloon to ~875k
+#       at n_layers=3 (45% larger than F12's stated ~600k). n_layers=2 lands
+#       us at 676k -- right next to F12. Top-team only specified "transformer
+#       backbone" and "MLP 4x expansion"; depth was never explicitly stated.
+#       Width >> depth for small datasets is the standard transformer scaling
+#       lesson. We can always bump to 3 later if 24h training shows we're
+#       capacity-starved (signal: very low val loss + still rising WR).
+#
+# Hyperparameter deltas vs v5p3
+# =============================
+# Bigger model => smaller lr & larger ent_coef *initially* (to let exploration
+# work in the larger param space before it gets locked down).
+#
+#   lr_peak 3e-4 -> 1.5e-4    (halve; standard for ~3x-5x param scale)
+#   lr_warmup_steps 60 -> 120  (slower warmup; large models need more)
+#   lr_decay_steps 2400 -> 6000  (keep near peak through the bulk of run)
+#   ent_coef_pct 0.001 -> 0.003 (pct now has 8 outputs not 4; raise to
+#                                proportionally maintain exploration pressure)
+#   ent_coef_src 0.002 -> 0.003 (slight bump; not critical)
+#   value_coef 0.20 (unchanged; v5p3 confirmed this stops value-head outrun)
+#
+# Training duration target
+# ========================
+# F12 trained for ~600M env steps over 3 days. At v6's expected SPS ~4000:
+#   600M / 4000 / 3600 = 41 hours
+# v6 first sanity-check run: 1500 updates (= 1500 * 128 * 128 = 24.6M steps,
+# ~1.7 hours). If WRr > 0.85, mean_emits > 2.0, ent_pct < 1.0 at upd 1500
+# we extend to 5000 updates (~6 hours = 82M steps = 14% of F12) and from
+# there decide whether to chase the full 41h F12 budget.
+#
+# Launch
+# ======
+#   ORBITWARS_SHAPING_SCALE=0.0 \
+#       nohup python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v6.yaml \
+#       --log-dir logs/multi_action_v6 \
+#       > logs/multi_action_v6.log 2>&1 &
+#
+# Sign-of-life by upd
+# ===================
+#   upd 30 : adv_std > 0.30, pg_loss < -0.0020, clip 0.02-0.10 (vs v5p3
+#            where these signs appeared by upd 5-10 -- expect slower with
+#            bigger model)
+#   upd 100: ent_pct < 1.0, mean_emits > 2.0, pct_bin distribution at least
+#            uses 4 of 8 bins (no single bin > 60%)
+#   upd 300: WRr > 0.85, mean_emits > 2.5, ent_pct < 0.85
+#   upd 1500: WRr > 0.90 vs random, vs frozen pool > 0.65, mean_emits > 3.0
+
+train:
+  num_envs: 128
+  rollout_length: 128
+  num_updates: 5000       # ~7 hours at 4000 SPS; about 1/5 of F12 training
+  num_groups: 5
+  episode_steps: 80
+  eval_every: 25          # less frequent since larger model
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v6
+  ckpt_every: 50
+  log_every: 1
+  seed: 60
+  d_model: 128            # KEY: 64 -> 128
+  n_layers: 2             # unchanged from v5p3 (see header D5 note about
+                          #   keeping params close to F12's ~600k)
+  n_heads: 4
+  ff_dim: 512             # KEY: 128 -> 512 (MLP 4x expansion per F12 §66)
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015        # KEY: halved from 3e-4
+  lr_warmup_steps: 120    # KEY: doubled for larger model
+  lr_decay_steps: 6000    # > num_updates so lr stays near peak
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20        # v5p3 confirmed this works
+  ent_coef_src: 0.003     # slight bump
+  ent_coef_dst: 0.0001
+  ent_coef_pct: 0.003     # KEY: 0.001 -> 0.003 because num_bins doubled (4->8)
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.97
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 200     # longer warmup for bigger model
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.5
+  eval_vs_frozen: true
