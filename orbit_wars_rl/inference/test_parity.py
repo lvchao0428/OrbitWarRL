@@ -42,20 +42,79 @@ def _build_state_and_obs(seed: int):
     return state, obs
 
 
+def _infer_arch_from_flat(flat: dict) -> tuple[int, int, int]:
+    """Read d_model and n_layers from a flat-keyed weight dict.
+
+    d_model is the second axis of any encoder/* projection kernel
+    (planet_proj/kernel has shape [feat_dim, d_model]).
+    n_layers is the number of ``encoder/block{i}`` prefixes present.
+    n_heads is inferred from any attn query/kernel shape [d_model, H, head_dim]
+    """
+    proj_key = "encoder/planet_proj/kernel"
+    if proj_key not in flat:
+        raise ValueError(f"missing {proj_key} in ckpt; cannot infer d_model")
+    d_model = int(flat[proj_key].shape[-1])
+
+    n_layers = 0
+    while f"encoder/block{n_layers}/ln1/scale" in flat:
+        n_layers += 1
+    if n_layers == 0:
+        raise ValueError("no encoder/block* found in ckpt")
+
+    qk = f"encoder/block0/attn/query/kernel"
+    if qk in flat and flat[qk].ndim == 3:
+        n_heads = int(flat[qk].shape[1])
+    else:
+        n_heads = 4
+
+    return d_model, n_layers, n_heads
+
+
 def run_parity(
     ckpt_path: str | None = None,
     tol: float = 5e-3,
     num_states: int = 16,
     fail_on_logit_drift: bool = False,
     max_fleets_per_turn: int = constants.MAX_FLEETS_PER_TURN,
+    d_model: int | None = None,
+    n_layers: int | None = None,
+    n_heads: int | None = None,
+    ff_dim: int | None = None,
 ) -> int:
     """Returns 0 on pass, non-zero on real disagreement.
 
     A "real disagreement" means the emit/src/dst/pct sequences differ between
     numpy and jax for any state. Logit drift above ``tol`` is reported as
     WARN but not a failure unless ``fail_on_logit_drift`` is set.
+
+    Architecture (d_model/n_layers/n_heads/ff_dim) is inferred from the ckpt
+    when ``ckpt_path`` is given, so v6 (128/2/4/512) is picked up automatically.
     """
-    model = ActorCritic(max_fleets_per_turn=max_fleets_per_turn)
+    # Pre-load flat to infer arch from ckpt if not explicitly supplied.
+    flat: dict | None = None
+    if ckpt_path is not None:
+        flat = load_flat_params(ckpt_path)
+        inf_d, inf_l, inf_h = _infer_arch_from_flat(flat)
+        if d_model is None: d_model = inf_d
+        if n_layers is None: n_layers = inf_l
+        if n_heads is None: n_heads = inf_h
+        # ff_dim has to be inferred from mlp/fc1 kernel: [d_model, ff_dim]
+        fc1_key = "encoder/block0/mlp/fc1/kernel"
+        if ff_dim is None and fc1_key in flat:
+            ff_dim = int(flat[fc1_key].shape[-1])
+    # Defaults (fresh-init parity)
+    if d_model is None: d_model = 64
+    if n_layers is None: n_layers = 2
+    if n_heads is None: n_heads = 4
+    if ff_dim is None: ff_dim = 128
+
+    model = ActorCritic(
+        d_model=d_model,
+        n_layers=n_layers,
+        n_heads=n_heads,
+        ff_dim=ff_dim,
+        max_fleets_per_turn=max_fleets_per_turn,
+    )
     init_state, init_obs = _build_state_and_obs(seed=0)
     init_params = model.init(
         jax.random.PRNGKey(0),
@@ -65,7 +124,7 @@ def run_parity(
     )
 
     if ckpt_path:
-        flat = load_flat_params(ckpt_path)
+        assert flat is not None
         import pickle
         with open(ckpt_path, "rb") as f:
             payload = pickle.load(f)
@@ -74,10 +133,12 @@ def run_parity(
         flat = flatten_params(init_params)
         params = init_params
 
-    assert_expected_keys(flat, n_layers=2)
+    assert_expected_keys(flat, n_layers=n_layers)
 
     print(f"parity_check multi-action (ckpt={ckpt_path or 'fresh-init'}; "
           f"tol={tol}; states={num_states}; K={max_fleets_per_turn})")
+    print(f"  arch: d_model={d_model} n_layers={n_layers} "
+          f"n_heads={n_heads} ff_dim={ff_dim}")
 
     full_match = 0
     emit_only_match = 0
@@ -111,7 +172,7 @@ def run_parity(
         np_src, np_dst, np_pct, np_emit, np_value = nf.greedy_multi_action(
             flat, planet_feats, planet_mask, fleet_feats, fleet_mask,
             global_feats, my_planet_mask, planet_ships,
-            n_layers=2, max_fleets_per_turn=max_fleets_per_turn,
+            n_layers=n_layers, max_fleets_per_turn=max_fleets_per_turn,
         )
 
         # jax emit_mask is K-long; numpy returns only the emitted slice.
