@@ -1,0 +1,88 @@
+# v5.2 - THE actual fix. v5p0/v5p1 failed because killing shaping was the
+# RIGHT thing but it left episode_steps=250 + rollout_length=128 which means
+# the average rollout sees ~0.5 terminal rewards per env => advantage ~= 0
+# => pg_loss ~= 0 => policy doesn't learn ANYTHING. v4p2 had the same
+# problem but masked by very weak shaping that produced phi ~ 0 most of
+# the time anyway.
+#
+# Root-cause chain we ACTUALLY confirmed (DAY2 §11):
+#   1. ent_coef_pct=0.02 LOCKS pct head at uniform (mode-collapse symptom)
+#   2. shaping_delta = 0.1 * tanh(ship_diff/30) implicitly rewards "1-ship
+#      fleet" because failing-with-50-ships hurts phi
+#   3. but ALSO sparsity: rollout_len=128 < episode_steps=250 means most
+#      rollouts have ZERO terminal reward. shaping was tiny. So advantage
+#      was effectively zero, pg_loss was zero, policy didn't learn.
+#
+# Fix in v5p2:
+#   * episode_steps 250 -> 80  (top of "rollout_len * 0.6" guideline)
+#     short enough that EVERY rollout has multiple terminal rewards
+#   * ORBITWARS_SHAPING_SCALE=0.0  (terminal reward dominates; +1/-1 enough)
+#   * ent_coef_pct  0.02 -> 0.001  (un-lock pct head; 4-bin space)
+#   * ent_coef_emit 0.03 -> 0.003  (un-lock emit head; 2-bin space)
+#   * gamma 0.99 -> 0.97  (effective horizon ~33, matches episode_steps=80)
+#   * num_envs 64 -> 128  (more data per update; SPS should still > 4K on 5090)
+#   * num_updates 600 -> 800
+#
+# Launch:
+#   ORBITWARS_SHAPING_SCALE=0.0 \
+#       python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v5p2.yaml \
+#       --log-dir logs/multi_action_v5p2 \
+#       2>&1 | tee logs/multi_action_v5p2.log
+#
+# Sign-of-life check (vs v5p1 dead-stuck baseline):
+#   upd 20  : adv_std > 0.30  (vs v5p1's 0.11) -- THE KEY SIGNAL
+#             pg_loss > 0.001  (vs v5p1's 0.0006)
+#             episodes/update >> 0 (rollout completes whole games)
+#   upd 100 : ent_pct < 1.0  (vs v5p1's 1.18)
+#             mean_emits > 2.5
+#             WRr should overshoot then settle near 0.8+
+#   upd 400 : WRr ~ 0.85+, mean_emits 3+
+#
+# If adv_std STILL stuck at ~0.1 at upd 20, KILL -- the bug is not where
+# we think. Run diag_real_game_obs.py to look at the raw value head.
+
+train:
+  num_envs: 128            # 64 -> 128 (more independent terminals per update)
+  rollout_length: 128
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 80        # KEY: shorter than rollout_length so every rollout
+                           # is guaranteed >= 1 terminal reward per env
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v5p2
+  ckpt_every: 25
+  log_every: 1
+  seed: 52
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 60
+  lr_decay_steps: 800
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.002      # 0.005 -> 0.002
+  ent_coef_dst: 0.0001     # 0.0003 -> 0.0001
+  ent_coef_pct: 0.001      # 0.02 -> 0.001 (CRITICAL: un-lock pct head)
+  ent_coef_emit: 0.003     # 0.03 -> 0.003 (CRITICAL: un-lock emit head)
+  max_grad_norm: 0.5
+  gamma: 0.97              # 0.99 -> 0.97 (effective horizon ~33, matches episode=80)
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 80
+  snapshot_every: 20
+  pool_capacity: 6
+  frozen_ratio: 0.5
+  eval_vs_frozen: true
