@@ -20,7 +20,15 @@ from orbit_wars_rl.env.state import EnvState
 
 # Scale for dense shaping. Small enough that the terminal +/-1 still dominates
 # the long-horizon return but large enough to give a useful gradient mid-game.
-SHAPING_SCALE: float = 0.1
+#
+# IMPORTANT (DAY2 §10+): an empirical finding is that the tanh-of-ship-diff
+# potential implicitly penalizes "send 50 ships, fail" much more than
+# "send 1 ship, lose nothing", so the policy converges to never sending
+# meaningful fleets. Setting SHAPING_SCALE=0 reverts to pure terminal
+# +/-1 (which the 1st-place player on Kaggle says is enough for 2p).
+# Override at the command line via ORBITWARS_SHAPING_SCALE=0.0 ./train.
+import os as _os
+SHAPING_SCALE: float = float(_os.environ.get("ORBITWARS_SHAPING_SCALE", "0.1"))
 
 # Reference ship total used to normalize the (delta my - delta opp) signal.
 # Picked so a typical mid-game ship-balance swing of ~10 ships yields a

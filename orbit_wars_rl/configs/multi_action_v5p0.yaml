@@ -1,0 +1,75 @@
+# v5.0 - SAME as v4p2 EXCEPT shaping is killed (pure terminal +/-1).
+#
+# Root cause hypothesis for v4.2 failing vs v20 (0/20):
+#   reward shaping = 0.1 * tanh((my_ships - opp_ships) / 30) implicitly
+#   penalises "send 50 ships, fail" much more than "send 1 ship, lose
+#   nothing". Policy rationally converges to 1-ship fleets which travel
+#   at speed 1.0 (slowest) and never catch v20-style intercepts.
+#
+# Top players' write-up says "+1/-1 is enough for 2p mode". This is the
+# minimal-change ablation to test that.
+#
+# Only the SHAPING_SCALE env var is changed at the command line (not in
+# yaml because rewards.py is module-level constant). All other hparams
+# are EXACTLY the same as v4p2 so a 200-update sample directly tells us
+# whether shaping was the root cause.
+#
+# Launch command (CRITICAL: must export the env var):
+#   ORBITWARS_SHAPING_SCALE=0.0 \
+#       python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v5p0.yaml \
+#       --log-dir logs/multi_action_v5p0 \
+#       2>&1 | tee logs/multi_action_v5p0.log
+#
+# Sign-of-life check (look at first ~50 updates):
+#   mean_emits: should rise to 3+ (vs v4.2's stuck 1.5-1.8)
+#   ent[pct]:   should drop below 1.20 (vs v4.2's flat 1.32)
+#   tR:         expect strong negative early -- agent is now trying
+#                things; that's good. If tR stays at -0.5 at upd 200, abort.
+#
+# Don't be alarmed by lower WRr in the first 100 updates -- the policy
+# is now exploring real fleet sizes for the first time.
+
+train:
+  num_envs: 64
+  rollout_length: 128
+  num_updates: 600         # v4p2 used 800; cut to 600 so we get results in 12 min
+  num_groups: 5
+  episode_steps: 250
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v5p0
+  ckpt_every: 25
+  log_every: 1
+  seed: 50                # fresh
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 60
+  lr_decay_steps: 600
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.0003
+  ent_coef_pct: 0.02       # KEPT v4p2 value on purpose -- ablate later
+  ent_coef_emit: 0.03      # ditto
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 80
+  snapshot_every: 20
+  pool_capacity: 6
+  frozen_ratio: 0.5
+  eval_vs_frozen: true
