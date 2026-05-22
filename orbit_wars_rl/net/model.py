@@ -244,7 +244,7 @@ class ActorCritic(nn.Module):
             src_logits_t = self.src_head(planet_emb, eff_mask)
             emit_logits_t = self.emit_head(global_emb, planet_pool, jnp.int32(t))
             src_emb_t = _gather_planet_emb(planet_emb, src_t)
-            dst_logits_t = self.dst_head(planet_emb, src_emb_t, obs_pmask, obs_my)
+            dst_logits_t = self.dst_head(planet_emb, src_emb_t, obs_pmask, obs_my, src_idx=src_t)
             dst_emb_t = _gather_planet_emb(planet_emb, dst_t)
             pct_logits_t = self.pct_head(src_emb_t, dst_emb_t, global_emb)
 
@@ -361,7 +361,7 @@ class ActorCritic(nn.Module):
             src_entropy = jnp.where(emit_t, src_ent_full, jnp.float32(0.0))
 
             src_emb_t = _gather_planet_emb(planet_emb, src_t)
-            dst_logits_t = self.dst_head(planet_emb, src_emb_t, obs_pmask, obs_my)
+            dst_logits_t = self.dst_head(planet_emb, src_emb_t, obs_pmask, obs_my, src_idx=src_t)
             if deterministic:
                 dst_t = jnp.argmax(dst_logits_t, axis=-1).astype(jnp.int32)
             else:

@@ -42,10 +42,18 @@ class SrcHead(nn.Module):
 class DstHead(nn.Module):
     """Score each planet as a target using cross-attention conditioned on src.
 
-    Any valid planet is a legal target -- including the agent's own planets
-    (the game rules treat same-owner arrivals as reinforcements). We only
-    mask out the padding rows; ``my_planet_mask`` is kept in the signature
-    so the encoder can reuse it for conditioning if needed in the future.
+    Padding rows are masked out via ``planet_mask``. We additionally mask out
+    the ``src`` planet itself so the policy cannot waste probability mass on
+    a same-planet launch (which the env silently downgrades to ``ships=0``).
+
+    Top-team feedback (top_players_rl.txt §230 + DAY2 diagnosis): training
+    used to allow ``src==dst`` since ``actions.decode_action`` zeros it out,
+    but at inference time argmax frequently collapses to the src planet
+    (its own embedding dominates the self-attention score), producing an
+    empty kaggle action list. Masking src here keeps train/eval aligned.
+
+    ``my_planet_mask`` is kept in the signature for backward-compatible call
+    sites; same-owner arrivals are still allowed as reinforcements.
     """
 
     d_model: int = 64
@@ -58,6 +66,7 @@ class DstHead(nn.Module):
         src_emb: jnp.ndarray,
         planet_mask: jnp.ndarray,
         my_planet_mask: jnp.ndarray,
+        src_idx: jnp.ndarray | None = None,
     ) -> jnp.ndarray:
         del my_planet_mask  # kept for backward-compatible call sites
         is_batched = planet_emb.ndim == 3
@@ -65,6 +74,8 @@ class DstHead(nn.Module):
             planet_emb = planet_emb[None, ...]
             src_emb = src_emb[None, ...]
             planet_mask = planet_mask[None, ...]
+            if src_idx is not None:
+                src_idx = src_idx[None, ...] if src_idx.ndim == 0 else src_idx
 
         q = src_emb[:, None, :]
         attn_mask = planet_mask[:, None, None, :]
@@ -81,7 +92,13 @@ class DstHead(nn.Module):
         x = nn.gelu(x)
         logits = nn.Dense(1, name="dst_score")(x)[..., 0]
 
-        logits = _mask_logits(logits, planet_mask)
+        # Build effective mask: planet_mask AND NOT src (one-hot).
+        eff_mask = planet_mask
+        if src_idx is not None:
+            P = planet_emb.shape[1]
+            src_one_hot = jax.nn.one_hot(src_idx, P, dtype=jnp.bool_)  # (B, P)
+            eff_mask = planet_mask & jnp.logical_not(src_one_hot)
+        logits = _mask_logits(logits, eff_mask)
         if not is_batched:
             logits = jnp.squeeze(logits, axis=0)
         return logits

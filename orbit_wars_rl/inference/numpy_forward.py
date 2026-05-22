@@ -279,6 +279,8 @@ def forward(
     src_idx = int(np.argmax(s_logits))
     src_emb = planet_emb[src_idx]
     d_logits = dst_head(W, planet_emb, src_emb, planet_mask, my_planet_mask)
+    d_logits = d_logits.copy()
+    d_logits[src_idx] = -1e9
     dst_idx = int(np.argmax(d_logits))
     dst_emb = planet_emb[dst_idx]
     p_logits = pct_head(W, src_emb, dst_emb, global_emb)
@@ -304,6 +306,8 @@ def greedy_action(
     src_idx = int(np.argmax(s_logits))
     src_emb = planet_emb[src_idx]
     d_logits = dst_head(W, planet_emb, src_emb, planet_mask, my_planet_mask)
+    d_logits = d_logits.copy()
+    d_logits[src_idx] = -1e9
     dst_idx = int(np.argmax(d_logits))
     dst_emb = planet_emb[dst_idx]
     p_logits = pct_head(W, src_emb, dst_emb, global_emb)
@@ -365,6 +369,8 @@ def greedy_multi_action(
         src_t = int(np.argmax(s_logits))
         src_emb = planet_emb[src_t]
         d_logits = dst_head(W, planet_emb, src_emb, planet_mask, my_planet_mask)
+        d_logits = d_logits.copy()
+        d_logits[src_t] = -1e9
         dst_t = int(np.argmax(d_logits))
         dst_emb = planet_emb[dst_t]
         p_logits = pct_head(W, src_emb, dst_emb, global_emb)

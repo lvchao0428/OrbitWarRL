@@ -419,6 +419,7 @@ def greedy_multi_action(W, enc) -> Tuple[List[int], List[int], List[int]]:
         src_t = int(np.argmax(s_logits))
         src_emb = planet_emb[src_t]
         d_logits = _dst_head(W, planet_emb, src_emb, planet_mask, my_mask)
+        d_logits[src_t] = _NEG
         dst_t = int(np.argmax(d_logits))
         dst_emb = planet_emb[dst_t]
         p_logits = _pct_head(W, src_emb, dst_emb, global_emb)
