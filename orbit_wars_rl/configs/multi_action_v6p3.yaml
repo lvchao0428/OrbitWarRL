@@ -1,0 +1,133 @@
+# v6p3 - fix dst-collapses-to-src bug discovered at v6p2 upd 999.
+#
+# THE BUG (uncovered 2026-05-23 ~02:10 AM):
+#   Diagnostic on smoke obs showed v6p2 u999 deterministically emits
+#     src=[0] dst=[0]  -- dst argmax collapsed to the source planet itself.
+#   In the training env this gets silently zeroed (actions.py L127:
+#     valid = ... & different_target;  ships_to_send = where(valid, ..., 0))
+#   so the training reward signal can't see / penalise the bad action.
+#   At inference (decode_multi_to_kaggle_moves) src==dst is dropped --
+#   net result: u999 emitted 0 fleets vs the dummy smoke obs and went
+#   0/20 vs v20_0513 in H2H.
+#
+#   Same fingerprint (smoke moves []) repro'd for u1399 etc. -- it's a
+#   monotonic late-training collapse, not a one-off random seed glitch.
+#
+# WHY DST COLLAPSES TO SRC
+#   DstHead is a cross-attention on (Q=src_emb, K/V=planet_emb). The src
+#   planet's own embedding is by far the closest match to its own
+#   conditioning vector after a few attention layers -- nothing in the
+#   loss penalised this, since the env masks it out for free. So the
+#   network can over-confidently put mass on src without any gradient
+#   correction. With ent_coef_dst=0.0001 (basically off) there's no
+#   counter-pressure, and after 1000+ updates ~all probability mass
+#   piles up on src for at least some obs.
+#
+# THE FIX
+#   OPT A: in net/heads.py DstHead now accepts ``src_idx`` and masks the
+#   src row to -inf (matching numpy_forward.py inference). Training
+#   sampler can no longer pick src==dst, so dst logits get clean
+#   gradient signal forever after.
+#
+#   OPT B: numpy_forward.py and submission_rl_v4.py also mask src at
+#   inference (caller-side). Parity preserved (jax & numpy both apply
+#   the same mask). Already deployed in v6p2 u999_fixed -- which
+#   recovered to:
+#     vs v1     8/20 -> 15/20  (+35%)
+#     vs v4p2  10/20 -> 11/20  (+5%)
+#     vs v20    0/20 ->  0/20  (gap is strategy, not bug)
+#
+#   v6p3 continues training with OPT A active so the policy can
+#   *actually learn* to pick good non-src targets (instead of relying
+#   on the inference-time fallback which just picks the 2nd-largest
+#   logit, often suboptimal).
+#
+# OTHER TWEAKS
+#   - ent_coef_dst 0.0001 -> 0.001 (10x). With src masked the dst
+#     probability mass has to redistribute across non-src planets;
+#     we want some exploration in that redistribution rather than
+#     instant re-collapse onto a single planet.
+#   - selfplay.warmup_updates 50 -> 20 since we're resuming from a
+#     well-trained policy (u1899) -- the frozen pool is already strong.
+#   - Keep d_model/n_layers/etc unchanged: this is purely a head-mask
+#     fix, no architecture change. Params shape unchanged so resume
+#     from v6p2 ckpt passes the shape check.
+#
+# Launch
+# ======
+#   pkill -f multi_action_v6p2 2>/dev/null
+#   # Resume from highest stable ckpt (currently u1899 or thereabouts)
+#   RESUME_CKPT="ckpt_multi_action_v6p2/ckpt_001899.pkl"
+#
+#   ORBITWARS_SHAPING_SCALE=0.0 \
+#       nohup python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v6p3.yaml \
+#       --resume-from "$RESUME_CKPT" \
+#       --log-dir logs/multi_action_v6p3 \
+#       > logs/multi_action_v6p3.log 2>&1 &
+#
+#   tail -f logs/multi_action_v6p3.log
+#
+# Sign-of-life
+# ============
+#   - First 5 updates after resume: ent_dst should *transiently spike*
+#     up by ~0.3-0.6 (mass redistributing off masked src), then
+#     re-commit. clip should be 0.10-0.20.
+#   - upd 50: H2H smoke check -- export ckpt, run diag_smoke_obs --
+#     dst should be NON-SRC for both player=0 and player=1.
+#   - upd 200: emits 4.0-5.0, ent_dst <= 1.5, WRr >= 0.90, WRf >= 0.75.
+#     If WRf << WRr the frozen pool isn't being challenged -> push more
+#     diverse opponents in.
+#   - upd 500: H2H vs v20 has at least 1 win.
+#   - upd 1500: H2H vs v20 has at least 3 wins. (Stretch: 5+)
+#
+# Kill triggers
+# =============
+#   - ent_dst spikes > 2.5 sustained 20+ updates after resume -- means
+#     mask hurt the policy more than expected. Halve lr_peak.
+#   - clip > 0.30 sustained -- network reorganising more than expected.
+#     Halve lr_peak.
+
+train:
+  num_envs: 128
+  rollout_length: 128
+  num_updates: 5000
+  num_groups: 5
+  episode_steps: 80
+  eval_every: 25
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v6p3
+  ckpt_every: 50
+  log_every: 1
+  seed: 63
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 100000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001        # KEY: 0.0001 -> 0.001 (10x)
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.97
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 20         # KEY: 50 -> 20 (resuming from strong policy)
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.5
+  eval_vs_frozen: true
