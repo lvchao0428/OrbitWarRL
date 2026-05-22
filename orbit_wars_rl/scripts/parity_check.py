@@ -77,6 +77,10 @@ def _build_mvp_state_from_kaggle(kobs, num_players: int = 2) -> EnvState:
         step=jnp.int32(0),
         done=jnp.bool_(False),
         rng=jnp.asarray([0, 0], dtype=jnp.uint32),
+        angular_velocity=jnp.float32(0.0),
+        planet_orbit_radius=jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.float32),
+        planet_orbit_phase=jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.float32),
+        planet_is_orbiting=jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.bool_),
     )
 
 

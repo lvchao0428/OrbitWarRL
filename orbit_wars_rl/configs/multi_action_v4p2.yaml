@@ -1,0 +1,66 @@
+# v4.2 - parity-correct env + LEAD-TARGET features (planet pos at t+15 / t+30).
+#
+# Why v4.2 vs v4.1:
+#   v4.1 (just killed at upd 191/800): ent_coef_dst fixed back to 0.0003 but
+#   dst entropy STILL stuck at 2.87 (vs target 2.0), pg_loss flatlined,
+#   clip = kl = 0 throughout. Root cause was NOT entropy regularization.
+#
+#   The new orbital env makes fleet trajectories hit moving targets.
+#   For random init policy, almost all dst choices lead to "fleet flies to
+#   where planet WAS" -> miss -> no reward signal. Value head learns "all
+#   destinations look the same" -> V(s) is flat -> advantage ~= 0 ->
+#   PPO grad to dst head ~= 0 -> dst stays at uniform forever.
+#
+#   This is the classic "lead-target" problem flagged in top_players_rl.txt.
+#   2-layer transformer cannot learn cos/sin in-context, so we hand-engineer
+#   the prediction.
+#
+# Fix in v4.2: planet feature 15->19, adds (x_at_t+15, y_at_t+15,
+# x_at_t+30, y_at_t+30) for each planet. Policy can now read "where will
+# this planet be when my fleet arrives".
+#
+# All other hparams from v4.1.
+
+train:
+  num_envs: 64
+  rollout_length: 128
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 250
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v4p2
+  ckpt_every: 25
+  log_every: 1
+  seed: 46              # fresh seed
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 60
+  lr_decay_steps: 800
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.0003
+  ent_coef_pct: 0.02
+  ent_coef_emit: 0.03
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 80
+  snapshot_every: 20
+  pool_capacity: 6
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

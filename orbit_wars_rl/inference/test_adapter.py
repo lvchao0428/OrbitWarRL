@@ -62,6 +62,7 @@ def _state_to_kaggle_obs(state, player: int) -> dict:
         "planets": planets,
         "fleets": fleets,
         "step": int(state.step),
+        "angular_velocity": float(state.angular_velocity),
     }
 
 

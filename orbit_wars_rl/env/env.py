@@ -11,7 +11,7 @@ import jax
 import jax.numpy as jnp
 
 from orbit_wars_rl.env import constants, dynamics, init, rewards
-from orbit_wars_rl.env.actions import PlayerAction
+from orbit_wars_rl.env.actions import MultiPlayerAction, PlayerAction, single_to_multi
 from orbit_wars_rl.env.state import EnvState
 
 
@@ -46,16 +46,35 @@ class OrbitWarsEnv:
     def step(
         self,
         state: EnvState,
-        actions: tuple[PlayerAction, PlayerAction],
+        actions: tuple[MultiPlayerAction, MultiPlayerAction],
     ) -> tuple[EnvState, EnvOutput]:
+        """Take a turn given each player's multi-fleet action.
+
+        ``actions`` must be a tuple of two ``MultiPlayerAction``. Legacy code
+        that only has single ``PlayerAction``s can wrap them via
+        ``actions.single_to_multi`` (kept jit-pure).
+        """
         s1 = dynamics.launch_fleets(state, actions)
         s2 = dynamics.produce(s1)
+        # Fleet movement uses swept-pair collision against each planet's
+        # *future* (post-rotation) segment. This is how the Kaggle env
+        # detects continuous collision: any fleet crossing the swept area of
+        # a moving planet is sent into combat with it. So there's no
+        # separate sweep phase -- the move + planet rotation happen jointly.
         s3, hit_pidx, hit_mask = dynamics.move_and_collide(s2)
-        s4 = dynamics.resolve_combat(s3, hit_pidx, hit_mask)
+        s_combat = dynamics.resolve_combat(s3, hit_pidx, hit_mask)
+        # Apply the planet rotation we already accounted for in collision
+        # detection. After this, planet_x/y reflect the end-of-tick position.
+        s4 = dynamics.rotate_planets(s_combat)
 
         next_step = s4.step + 1
         done_now = rewards.is_terminal(s4.replace(step=next_step), self.episode_steps)
-        reward_p0 = jnp.where(done_now, rewards.terminal_reward(s4, 0), jnp.float32(0.0))
+        terminal_r = rewards.terminal_reward(s4, 0)
+        # Potential-based dense shaping computed on the *board state before
+        # the step counter advances*. Suppressed on the terminal step so the
+        # +/-1 isn't double-counted by the value head.
+        shaping = rewards.shaping_delta(state, s4, 0)
+        reward_p0 = jnp.where(done_now, terminal_r, shaping)
 
         out = EnvOutput(
             reward=reward_p0,
@@ -68,7 +87,7 @@ class OrbitWarsEnv:
     def step_and_autoreset(
         self,
         state: EnvState,
-        actions: tuple[PlayerAction, PlayerAction],
+        actions: tuple[MultiPlayerAction, MultiPlayerAction],
         reset_rng: jnp.ndarray,
     ) -> tuple[EnvState, EnvOutput]:
         """Like ``step`` but resets when done. Used inside rollouts."""
@@ -79,3 +98,22 @@ class OrbitWarsEnv:
             fresh, next_state,
         )
         return chosen, out
+
+    def step_single(
+        self,
+        state: EnvState,
+        actions: tuple[PlayerAction, PlayerAction],
+    ) -> tuple[EnvState, EnvOutput]:
+        """Legacy single-fleet step. Wraps the inputs as K=1 MultiPlayerAction."""
+        multi_actions = (single_to_multi(actions[0]), single_to_multi(actions[1]))
+        return self.step(state, multi_actions)
+
+    def step_and_autoreset_single(
+        self,
+        state: EnvState,
+        actions: tuple[PlayerAction, PlayerAction],
+        reset_rng: jnp.ndarray,
+    ) -> tuple[EnvState, EnvOutput]:
+        """Legacy single-fleet step_and_autoreset. Wraps inputs as K=1."""
+        multi_actions = (single_to_multi(actions[0]), single_to_multi(actions[1]))
+        return self.step_and_autoreset(state, multi_actions, reset_rng)

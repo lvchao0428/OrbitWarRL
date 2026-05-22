@@ -6,7 +6,7 @@ makes the global aggregates safe to compute via sum / mean.
 
 Feature layouts (kept in lock-step with the heads):
 
-  planet (12 dims):
+  planet (19 dims):
     [0..2]  owner one-hot from the *current player*'s POV: [is_mine, is_enemy, is_neutral]
     [3]     x_norm  in [-1, 1]
     [4]     y_norm  in [-1, 1]
@@ -17,24 +17,29 @@ Feature layouts (kept in lock-step with the heads):
     [9]     fraction inbound friendly ships / max
     [10]    fraction inbound enemy ships  / max
     [11]    is_padding (1 if pad, else 0) -- redundant w/ mask but harmless
+    [12]    is_orbiting (1 if planet rotates around sun)
+    [13]    orbit_phase / pi  -- current angle from +x axis, in [-1, 1]
+    [14]    orbit_radius / BOARD_HALF  -- distance to sun, in [0, ~1]
+    [15]    x_at_t_plus_15  (lead-target predicted x; static planets = current x)
+    [16]    y_at_t_plus_15
+    [17]    x_at_t_plus_30
+    [18]    y_at_t_plus_30
 
-  fleet (8 dims):
-    [0..2]  owner one-hot from POV: [mine, enemy, neutral=always 0 but kept for symmetry]
-    [3]     x_norm
-    [4]     y_norm
-    [5]     sin(angle), cos(angle) stacked into [5], [6]
-    [6]     cos(angle)
-    [7]     log1p(ships) / 8
+  Lead-target features (v4.2): pre-compute each planet's predicted position
+  at t+15 / t+30 steps. This is what `top_players_rl.txt` calls "lead-target":
+  policy must aim at where the orbiting planet WILL BE when fleet arrives.
+  Fleet speed scales with ships (1.0 .. 6.0), so 15 & 30 cover near/far
+  intercepts (board diagonal ~141 units; small fleets travel ~30 in 30 steps).
+  Without these the 2-layer transformer would have to learn cos/sin in-
+  context, which empirically (v4.0 + v4.1 both failed) it cannot do.
 
-  global (10 dims):
-    [0]   step / episode_steps
-    [1]   my_ships_frac
-    [2]   opp_ships_frac
-    [3]   my_planet_frac
-    [4]   opp_planet_frac
-    [5]   my_prod_frac
-    [6]   opp_prod_frac
+  fleet (8 dims): unchanged.
+
+  global (11 dims):
+    [0]    step / episode_steps
+    [1..6] ship/planet/prod fractions (mine vs opp)
     [7..9] phase one-hot [early, mid, late]
+    [10]   angular_velocity / OMEGA_MAX  -- episode-wide rotation speed, in [0.5, 1]
 """
 
 from __future__ import annotations
@@ -50,9 +55,14 @@ from orbit_wars_rl.env.dynamics import fleet_speed
 from orbit_wars_rl.env.state import EnvState
 
 
-PLANET_FEAT_DIM = 12
+PLANET_FEAT_DIM = 19
 FLEET_FEAT_DIM = 8
-GLOBAL_FEAT_DIM = 10
+GLOBAL_FEAT_DIM = 11
+
+# Lead-target prediction times (in env steps). Chosen so small fleets
+# (speed=1.0, ~30 steps to cross half the board) and big fleets (speed=6,
+# ~5 steps) both have a reasonable intercept prediction.
+LEAD_TIMES = (15.0, 30.0)
 
 _BOARD = jnp.float32(constants.BOARD)
 _BOARD_HALF = jnp.float32(constants.BOARD * 0.5)
@@ -134,6 +144,29 @@ def _encode_planets(state: EnvState, player: int) -> Tuple[jnp.ndarray, jnp.ndar
 
     is_padding = jnp.logical_not(state.planet_mask).astype(jnp.float32)
 
+    is_orbiting = state.planet_is_orbiting.astype(jnp.float32)
+    orbit_phase_norm = state.planet_orbit_phase / jnp.float32(jnp.pi)
+    orbit_radius_norm = state.planet_orbit_radius / _BOARD_HALF
+
+    # Lead-target features: predicted (x, y) at t + LEAD_TIMES[k] steps.
+    # For static planets the prediction is just current pos. For orbiting we
+    # advance phase by omega * T (kaggle linearises rotation to chord per
+    # tick, but multi-step prediction is just exact rotation).
+    omega = state.angular_velocity
+    rotate_mask_f = state.planet_is_orbiting.astype(jnp.float32)
+    lead_x_15, lead_y_15 = _predict_planet_pos(
+        state.planet_orbit_phase, state.planet_orbit_radius, omega,
+        jnp.float32(LEAD_TIMES[0]), state.planet_x, state.planet_y, rotate_mask_f,
+    )
+    lead_x_30, lead_y_30 = _predict_planet_pos(
+        state.planet_orbit_phase, state.planet_orbit_radius, omega,
+        jnp.float32(LEAD_TIMES[1]), state.planet_x, state.planet_y, rotate_mask_f,
+    )
+    lead_x_15_norm = (lead_x_15 - _BOARD_HALF) / _BOARD_HALF
+    lead_y_15_norm = (lead_y_15 - _BOARD_HALF) / _BOARD_HALF
+    lead_x_30_norm = (lead_x_30 - _BOARD_HALF) / _BOARD_HALF
+    lead_y_30_norm = (lead_y_30 - _BOARD_HALF) / _BOARD_HALF
+
     feats = jnp.stack(
         [
             is_mine.astype(jnp.float32),
@@ -148,11 +181,41 @@ def _encode_planets(state: EnvState, player: int) -> Tuple[jnp.ndarray, jnp.ndar
             in_friend_norm,
             in_foe_norm,
             is_padding,
+            is_orbiting,
+            orbit_phase_norm,
+            orbit_radius_norm,
+            lead_x_15_norm,
+            lead_y_15_norm,
+            lead_x_30_norm,
+            lead_y_30_norm,
         ],
         axis=-1,
     )
     feats = feats * state.planet_mask[:, None].astype(jnp.float32)
     return feats, is_mine, is_enemy, is_neutral
+
+
+def _predict_planet_pos(
+    orbit_phase: jnp.ndarray,
+    orbit_radius: jnp.ndarray,
+    omega: jnp.ndarray,
+    lead_time: jnp.ndarray,
+    cur_x: jnp.ndarray,
+    cur_y: jnp.ndarray,
+    rotate_mask_f: jnp.ndarray,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """Compute (x, y) at t + lead_time for each planet. Static planets keep
+    current pos. Caller passes ``rotate_mask_f`` as float32 mask (1.0 for
+    orbiting, 0.0 for static) so we can fuse the where-cond branchlessly.
+    """
+    new_phase = orbit_phase + omega * lead_time
+    sun_x = _SUN[0]
+    sun_y = _SUN[1]
+    rot_x = sun_x + orbit_radius * jnp.cos(new_phase)
+    rot_y = sun_y + orbit_radius * jnp.sin(new_phase)
+    out_x = rotate_mask_f * rot_x + (1.0 - rotate_mask_f) * cur_x
+    out_y = rotate_mask_f * rot_y + (1.0 - rotate_mask_f) * cur_y
+    return out_x, out_y
 
 
 def _encode_fleets(state: EnvState, player: int) -> jnp.ndarray:
@@ -212,6 +275,8 @@ def _encode_global(state: EnvState, player: int, episode_steps: int) -> jnp.ndar
     is_mid = ((step_norm >= 0.18) & (step_norm < 0.64)).astype(jnp.float32)
     is_late = (step_norm >= 0.64).astype(jnp.float32)
 
+    av_norm = state.angular_velocity / jnp.float32(constants.ORBIT_OMEGA_MAX)
+
     return jnp.stack(
         [
             step_norm,
@@ -224,6 +289,7 @@ def _encode_global(state: EnvState, player: int, episode_steps: int) -> jnp.ndar
             is_early,
             is_mid,
             is_late,
+            av_norm,
         ],
     )
 

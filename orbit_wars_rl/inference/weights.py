@@ -91,8 +91,9 @@ def assert_expected_keys(flat: Dict[str, np.ndarray], n_layers: int = 2) -> None
         expected.add(f"dst_head/cross_attn/{qkv}/bias")
     expected.add("dst_head/dst_score/kernel")
     expected.add("dst_head/dst_score/bias")
-    for h in ("pct_head", "value_head"):
-        for fc in ("fc1", "logits" if h == "pct_head" else "value"):
+    for h in ("pct_head", "value_head", "emit_head"):
+        last = "logits" if h in ("pct_head", "emit_head") else "value"
+        for fc in ("fc1", last):
             expected.add(f"{h}/{fc}/kernel")
             expected.add(f"{h}/{fc}/bias")
 

@@ -45,21 +45,45 @@ def _serialize(flat: dict[str, np.ndarray]) -> str:
 
 
 def _inject(template_path: str, out_path: str, payload_b64: str) -> None:
+    """Replace the ``WEIGHTS_B64 = "..."`` assignment line in the template.
+
+    Uses a regex anchored at start-of-line so a docstring or comment that
+    happens to contain the literal placeholder string is NOT substituted
+    (we hit that exact bug while iterating on the v4 template, which
+    silently produced a placeholder-only submission that imported fine
+    but errored at first ``agent()`` call, returning ``[]`` via the
+    ``try/except`` swallower).
+    """
+    import re
+
     txt = Path(template_path).read_text(encoding="utf-8")
-    placeholder = 'WEIGHTS_B64 = "__WEIGHTS_B64__"'
-    if placeholder not in txt:
-        # also accept the case where it was already filled (rebuild).
-        import re
-        new_line = f'WEIGHTS_B64 = "{payload_b64}"'
-        new_txt, n = re.subn(r'^WEIGHTS_B64 = "[^"]*"', new_line, txt, count=1, flags=re.MULTILINE)
-        if n == 0:
-            raise RuntimeError(
-                f"could not find a WEIGHTS_B64 = \"...\" line in {template_path}"
-            )
-        Path(out_path).write_text(new_txt, encoding="utf-8")
-        return
     new_line = f'WEIGHTS_B64 = "{payload_b64}"'
-    Path(out_path).write_text(txt.replace(placeholder, new_line, 1), encoding="utf-8")
+    # Anchored at start of line; only matches top-level assignment.
+    new_txt, n_sub = re.subn(
+        r'^WEIGHTS_B64 = "[^"]*"', new_line, txt, count=0, flags=re.MULTILINE,
+    )
+    if n_sub == 0:
+        raise RuntimeError(
+            f"could not find a top-level 'WEIGHTS_B64 = \"...\"' line in "
+            f"{template_path}"
+        )
+    if n_sub > 1:
+        raise RuntimeError(
+            f"template {template_path} has {n_sub} top-level 'WEIGHTS_B64 = "
+            f"\"...\"' lines; expected exactly one. Refusing to inject "
+            f"ambiguously."
+        )
+    # Cheap post-write verification: re-read and confirm the placeholder is
+    # gone from the assignment lines (a docstring containing the literal
+    # string is fine; we only care about top-level assigns).
+    Path(out_path).write_text(new_txt, encoding="utf-8")
+    written = Path(out_path).read_text(encoding="utf-8")
+    bad = re.findall(r'^WEIGHTS_B64 = "__WEIGHTS_B64__"', written, flags=re.MULTILINE)
+    if bad:
+        raise RuntimeError(
+            f"after inject, {out_path} still has a placeholder assignment "
+            f"line; injector is broken."
+        )
 
 
 def main() -> int:
@@ -68,8 +92,8 @@ def main() -> int:
     ap.add_argument(
         "--template",
         type=str,
-        default=str(Path(__file__).resolve().parents[2] / "submission_rl_v1.py"),
-        help="single-file submission template (defaults to submission_rl_v1.py at repo root)",
+        default=str(Path(__file__).resolve().parents[2] / "submission_rl_v4.py"),
+        help="single-file submission template (defaults to submission_rl_v4.py at repo root)",
     )
     ap.add_argument(
         "--out",
@@ -123,6 +147,9 @@ def main() -> int:
     assert spec is not None and spec.loader is not None
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
 
+    # Smoke obs MUST include angular_velocity ~ in-distribution: training
+    # uses omega ∈ [0.025, 0.05] (env/constants.py), so 0.0 is OOD and the
+    # v4 policy (which trained with orbital motion) refuses to act on it.
     fake_obs = {
         "player": 0,
         "planets": [
@@ -138,12 +165,27 @@ def main() -> int:
             [2, -1, 20.0, 80.0, 1.0, 15, 2],
             [3, 1, 80.0, 80.0, 1.0, 30, 3],
         ],
+        "angular_velocity": 0.04,
     }
     moves = mod.agent(fake_obs, {"episodeSteps": 500})
     print(f"[export] smoke moves: {moves}")
+    if not moves:
+        # Try with a much closer corner planet to check whether ships=30 is
+        # actually being read (older v3-style smoke test had ships=30 and
+        # always emitted; if v4 sees 30 ships and emits 0 fleets, that is
+        # a real problem, not just smoke-obs OOD).
+        print("[export] WARNING: empty smoke moves -- this might mean:")
+        print("  - v4 policy trained on orbital env doesn't act on the dummy")
+        print("    smoke obs (no fleets in flight, no enemy pressure)")
+        print("  - or there is a real train/inference mismatch.")
+        print("  - Run h2h_local against a known opponent to verify.")
     if not isinstance(moves, list):
         print("[export] agent() did not return a list!", file=sys.stderr)
         return 4
+    for m in moves:
+        if not isinstance(m, list) or len(m) != 3:
+            print(f"[export] agent() returned malformed move: {m}", file=sys.stderr)
+            return 4
 
     return 0
 

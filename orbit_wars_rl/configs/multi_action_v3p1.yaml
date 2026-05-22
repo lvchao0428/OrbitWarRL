@@ -1,0 +1,67 @@
+# v3.1 - addresses the v3 H2H regression where dst entropy never learned.
+#
+# v3 observations (logs/multi_action_v3.log, 400 updates):
+#   * final WRr 0.72 (regressed from 0.91 in the lost prior run)
+#   * dst entropy 2.95 -> 2.85 over 400 updates (essentially flat; max=ln(20)=3.0)
+#   * pg_loss ~= 0.0003, clip = 0.00, kl = 0.000 (PPO barely updating)
+#   * adv_std ~= 0.17 throughout (matches random-init baseline, value not adding info)
+#   * H2H vs v1: 1/5 (vs 0/5 before dst_mask fix; still way worse than baseline expectation)
+#
+# Hypothesis: even after the dst-mask fix, dst head is undertrained because
+#   (a) ent_coef_dst=0.01 keeps the dst distribution close to uniform (max-entropy)
+#   (b) gamma=0.997 + ep_steps=200 = effective horizon ~333 way too long
+#       for the value to learn -> advantage signal stays noisy
+#   (c) PPO update_epochs=2 + lr=1.5e-4 = barely chews through batches
+#
+# This config targets (a)+(b) primarily, modest +(c). Keeps clip_eps=0.15
+# and num_envs unchanged for stability.
+#
+# Expected diff vs v3:
+#   * dst entropy should drop to < 2.0 by upd 200 (vs 2.85 forever)
+#   * pg_loss magnitude should rise to ~0.001-0.005 (PPO actually doing work)
+#   * adv_std should rise to > 0.3 once value catches up
+#   * WRr should be ≥ 0.85 with much less variance
+
+train:
+  num_envs: 32
+  rollout_length: 128
+  num_updates: 400
+  num_groups: 5
+  episode_steps: 200
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v3p1
+  ckpt_every: 25
+  log_every: 1
+  seed: 44
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00020       # v3: 0.00015  (+33% to push pg_loss off the noise floor)
+  lr_warmup_steps: 60
+  lr_decay_steps: 400
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.001    # v3: 0.01  (10x smaller -- let dst commit; was the main bug)
+  ent_coef_pct: 0.02
+  ent_coef_emit: 0.03
+  max_grad_norm: 0.5
+  gamma: 0.99            # v3: 0.997 (shorter effective horizon ~100 vs ~333)
+  gae_lambda: 0.95
+  update_epochs: 3       # v3: 2  (slightly more chewing)
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 40
+  snapshot_every: 10
+  pool_capacity: 5
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

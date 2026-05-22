@@ -1,0 +1,80 @@
+# v4.3 - prepared as fallback EXTENSION run for v4.2 (only spin up if H2H weak).
+#
+# v4.2 observation (upd 383/800 snapshot):
+#   * ent[d] 2.96 -> 2.40 with -0.25/100upd acceleration after upd ~200
+#   * WRr 0.66-0.81, WRf 0.75-0.78, tR +0.4-0.7 mid-game frequent
+#   * clip = 0 / kl ~ 0 is multi-action PPO ratio dilution, NOT collapse:
+#     8-step turn logp sums force the scalar ratio inside [0.85, 1.15] even
+#     when individual head logits move 0.3-0.5 nats per update.
+#   * Predicted v4.2 final: ent[d] ~ 1.4-1.8, WRr > 0.85, parity with v3.2.
+#
+# v4.3 trigger conditions (run only if):
+#   (a) H2H v4.2 vs v3.2_peak < 0.50 over 20 paired games, OR
+#   (b) H2H v4.2 vs v1 < 0.80 over 20 paired games
+#
+# Strategy: WARM-START from v4.2 final ckpt (NOT from scratch), give it
+# another 400 updates with lr decayed further to grind out the last bits
+# of dst entropy. We do NOT change feature dims so ckpt is compatible.
+#
+# Key levers vs v4.2:
+#   * num_updates 800 -> 1200 (+50%, ~1.6h extra on 5090)
+#   * lr_peak 3e-4 -> 1.5e-4 (resume regime, avoid disturbing learned policy)
+#   * lr_warmup_steps 60 -> 30 (small re-warm)
+#   * lr_decay_steps 1200 (full decay over the run)
+#   * ent_coef_dst 0.0003 -> 0.0001 (3x weaker still; v4.2 already at 2.4 so
+#     committing further is cheap)
+#   * episode_steps 250 -> 300 (give more orbit cycles per episode at this
+#     stage where the policy can actually navigate moving targets)
+#
+# To launch (after train.py --resume-from support added in this commit):
+#   python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v4p3.yaml \
+#       --resume-from ckpt_multi_action_v4p2/ckpt_000799.pkl \
+#       --log-dir logs/multi_action_v4p3 \
+#       2>&1 | tee logs/multi_action_v4p3.log
+#
+# Shape check is done in runner.train() and will refuse to silently drop layers.
+
+train:
+  num_envs: 64
+  rollout_length: 128
+  num_updates: 1200
+  num_groups: 5
+  episode_steps: 300
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v4p3
+  ckpt_every: 25
+  log_every: 1
+  seed: 47
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 30
+  lr_decay_steps: 1200
+  lr_floor: 0.000005
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.0001
+  ent_coef_pct: 0.02
+  ent_coef_emit: 0.03
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 0      # resume run, opponent pool already populated
+  snapshot_every: 30
+  pool_capacity: 8       # bigger pool of strong opponents
+  frozen_ratio: 0.6      # more self-play (less rand) at this stage
+  eval_vs_frozen: true

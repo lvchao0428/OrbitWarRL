@@ -1,0 +1,68 @@
+# v3.3 - first env-gap-closing fix.
+#
+# v3.2 results (logs/multi_action_v3p2.log, 480/600 updates):
+#   * dst entropy 2.95 -> 2.01 -- first time we broke through the max-entropy
+#     trap; the dst commit experiment finally worked
+#   * pg_loss -0.0013 (4-5x v3) -- PPO doing real work
+#   * tR 0.78-1.00 -- nearly winning every game in our env
+#   * WRr 0.78-0.88 steady-state; WRf 0.94 (self-play not pushing learner)
+#   * Local "feel" healthy. H2H result still pending.
+#
+# Regardless of H2H, MVP env vs Kaggle env structural gap is the next bottleneck.
+# DAY1 §3.3 + DAY2 §6.3.1 all pointed to this. v3.3 starts closing it with the
+# CHEAPEST fix that actually helps: shuffle planet slot ids each reset, so
+# player 0 home isn't always at slot 0. This forces the policy to use features
+# (is_mine, ships, prod, distance) instead of memorizing "slot 0 = my home".
+#
+# We DO NOT add orbital motion in this run -- that's a bigger code change.
+# Plan: if v3.3 (with shuffle) closes the H2H gap to v1, we know shuffle was
+# the dominant gap. If not, orbital motion is next (~3-5h).
+#
+# NOTE: cannot continue from v3.2 ckpt -- v3.2 was trained on fixed slot 0/3
+# layout, and slot shuffle would cause catastrophic forgetting on that policy.
+# Train from scratch with shuffled slots; expect to need similar 400-600
+# updates to converge.
+
+train:
+  num_envs: 64
+  rollout_length: 128
+  num_updates: 600       # match v3.2 since training from scratch
+  num_groups: 5
+  episode_steps: 200
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v3p3
+  ckpt_every: 25
+  log_every: 1
+  seed: 44
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.0003        # same as v3.2 (training from scratch)
+  lr_warmup_steps: 60
+  lr_decay_steps: 600
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.0003
+  ent_coef_pct: 0.02
+  ent_coef_emit: 0.03
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 60
+  snapshot_every: 15
+  pool_capacity: 6
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

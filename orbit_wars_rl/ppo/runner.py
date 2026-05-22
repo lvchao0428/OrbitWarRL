@@ -22,6 +22,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+import chex
 import jax
 import jax.numpy as jnp
 
@@ -65,6 +66,7 @@ class TrainConfig:
     n_layers: int = 2
     n_heads: int = 4
     ff_dim: int = 128
+    max_fleets_per_turn: int = constants.MAX_FLEETS_PER_TURN
 
     ppo: PPOConfig = field(default_factory=PPOConfig)
     selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)
@@ -116,7 +118,16 @@ class Logger:
                 pass
 
 
-def train(cfg: TrainConfig, log_dir: Optional[str] = None) -> dict:
+def train(
+    cfg: TrainConfig,
+    log_dir: Optional[str] = None,
+    resume_from: Optional[str] = None,
+) -> dict:
+    """Train PPO. If ``resume_from`` is a path to a pickle written by
+    ``save_checkpoint``, overwrite the freshly-initialised params (and
+    ``opt_state`` when the optimizer pytree shapes match) with the loaded
+    snapshot. Useful for warm-starting an extension run on a new YAML config
+    (e.g. v4.2 ckpt -> v4.3 run with refreshed lr schedule and entropy)."""
     rng = jax.random.PRNGKey(cfg.seed)
     rng_init, rng_envs, rng_train = jax.random.split(rng, 3)
 
@@ -126,14 +137,36 @@ def train(cfg: TrainConfig, log_dir: Optional[str] = None) -> dict:
         n_layers=cfg.n_layers,
         n_heads=cfg.n_heads,
         ff_dim=cfg.ff_dim,
+        max_fleets_per_turn=cfg.max_fleets_per_turn,
     )
 
     env_rngs = jax.random.split(rng_envs, cfg.num_envs)
     states = jax.vmap(env.reset)(env_rngs)
-    dummy_obs = encode(jax.tree_util.tree_map(lambda x: x[0], states), 0, cfg.episode_steps)
-    params = model.init(rng_init, dummy_obs, jax.random.PRNGKey(0))
+    dummy_state = jax.tree_util.tree_map(lambda x: x[0], states)
+    dummy_obs = encode(dummy_state, 0, cfg.episode_steps)
+    params = model.init(
+        rng_init,
+        dummy_obs,
+        jax.random.PRNGKey(0),
+        dummy_state.planet_ships,
+    )
     optimizer = make_optimizer(cfg.ppo)
     opt_state = optimizer.init(params)
+
+    if resume_from is not None:
+        ckpt = load_checkpoint(resume_from)
+        try:
+            chex.assert_trees_all_equal_shapes(params, ckpt["params"])
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"resume params shape mismatch with {resume_from}: {exc}. "
+                "Refusing to silently drop layers."
+            ) from exc
+        params = ckpt["params"]
+        print(f"[resume] loaded params from {resume_from} (step={ckpt.get('step', '?')})")
+        # opt_state stays freshly initialised: lr / momentum schedules are
+        # re-baked from the new PPOConfig (which is the whole point of an
+        # extension run with a tweaked schedule).
 
     rollout_fn = make_rollout_fn(
         env, model,
@@ -223,11 +256,17 @@ def train(cfg: TrainConfig, log_dir: Optional[str] = None) -> dict:
                 wr_str += f" WRr {wr_rand:.2f}"
             if wr_frzn is not None:
                 wr_str += f" WRf {wr_frzn:.2f}"
+            emits = metrics_py.get("mean_emits_per_turn", 0.0)
+            ent_emit = metrics_py.get("ent_emit", 0.0)
+            adv_std = metrics_py.get("adv_std", 0.0)
+            term_r = metrics_py.get("mean_terminal_reward", 0.0)
             print(
                 f"upd {update:4d}  steps {total_env_steps:7d}  sps {metrics_py['sps']:.0f}  "
                 f"opp {opp_tag}  loss {metrics_py['loss']:+.3f}  "
-                f"pg {metrics_py['pg_loss']:+.3f}  v {metrics_py['v_loss']:.3f}  "
-                f"ent[s/d/p] {metrics_py['ent_src']:.2f}/{metrics_py['ent_dst']:.2f}/{metrics_py['ent_pct']:.2f}  "
+                f"pg {metrics_py['pg_loss']:+.4f}  v {metrics_py['v_loss']:.3f}  "
+                f"adv_std {adv_std:.3f}  tR {term_r:+.2f}  "
+                f"ent[s/d/p/e] {metrics_py['ent_src']:.2f}/{metrics_py['ent_dst']:.2f}/{metrics_py['ent_pct']:.2f}/{ent_emit:.2f}  "
+                f"emits {emits:.2f}  "
                 f"clip {metrics_py['clip_frac']:.2f}  kl {metrics_py['approx_kl']:+.3f}"
                 + wr_str
             )

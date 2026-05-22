@@ -1,0 +1,42 @@
+# Sanity check: same pipeline but K=1 (single fleet per turn).
+# If this learns and the K=8 doesn't, the bug is in the multi-action loop.
+# If neither learns, the bug is in the PPO/feature/reward pipeline.
+
+train:
+  num_envs: 16
+  rollout_length: 128
+  num_updates: 30
+  num_groups: 5
+  episode_steps: 100
+  eval_every: 5
+  eval_num_envs: 16
+  ckpt_dir: ./ckpt_multi_action_k1
+  ckpt_every: 0
+  log_every: 1
+  seed: 44
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 1
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 5
+  lr_decay_steps: 50
+  lr_floor: 0.00005
+  clip_eps: 0.2
+  value_clip_eps: 0.2
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.01
+  ent_coef_pct: 0.02
+  ent_coef_emit: 0.0
+  max_grad_norm: 0.5
+  gamma: 0.997
+  gae_lambda: 0.95
+  update_epochs: 3
+  num_minibatches: 4
+
+selfplay:
+  enabled: false

@@ -1,0 +1,48 @@
+# Local Mac CPU multi-action training config -- 50 updates, ~10 min.
+#
+# Smaller scale than multi_action.yaml so you can iterate on the Mac during
+# development. Use multi_action.yaml on the GPU server for real runs.
+
+train:
+  num_envs: 16
+  rollout_length: 64
+  num_updates: 50
+  num_groups: 5
+  episode_steps: 200
+  eval_every: 10
+  eval_num_envs: 16
+  ckpt_dir: ./ckpt_multi_action_local
+  ckpt_every: 25
+  log_every: 1
+  seed: 44
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 10
+  lr_decay_steps: 50
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.01
+  ent_coef_pct: 0.02
+  ent_coef_emit: 0.04
+  max_grad_norm: 0.5
+  gamma: 0.997
+  gae_lambda: 0.95
+  update_epochs: 2
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 10
+  snapshot_every: 5
+  pool_capacity: 3
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

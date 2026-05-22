@@ -6,15 +6,19 @@ import jax
 import jax.numpy as jnp
 
 from orbit_wars_rl.env import OrbitWarsEnv, constants
-from orbit_wars_rl.env.actions import PlayerAction
+from orbit_wars_rl.env.actions import MultiPlayerAction, PlayerAction, single_to_multi
 from orbit_wars_rl.features import encode
 from orbit_wars_rl.net.model import ActorCritic
 from orbit_wars_rl.ppo.rollout import random_opponent_action
 
 
-def _greedy_act(model: ActorCritic, params, obs):
-    sa = model.apply(params, obs, jax.random.PRNGKey(0), deterministic=True)
-    return PlayerAction(src_idx=sa.src_idx, dst_idx=sa.dst_idx, pct_bin=sa.pct_bin)
+def _sampled_to_multi(sampled) -> MultiPlayerAction:
+    return MultiPlayerAction(
+        src_idx=sampled.src_idx,
+        dst_idx=sampled.dst_idx,
+        pct_bin=sampled.pct_bin,
+        emit_mask=sampled.emit_mask,
+    )
 
 
 def play_vs_random(
@@ -45,9 +49,9 @@ def play_vs_random(
         def _per_env(state, r_a, r_o, r_r):
             obs0 = encode(state, 0, max_episode_steps)
             obs1 = encode(state, 1, max_episode_steps)
-            sa = model.apply(params, obs0, r_a, deterministic=True)
-            a0 = PlayerAction(src_idx=sa.src_idx, dst_idx=sa.dst_idx, pct_bin=sa.pct_bin)
-            a1 = random_opponent_action(r_o, obs1)
+            sa = model.apply(params, obs0, r_a, state.planet_ships, deterministic=True)
+            a0 = _sampled_to_multi(sa)
+            a1 = single_to_multi(random_opponent_action(r_o, obs1))
             new_state, out = env.step_and_autoreset(state, (a0, a1), r_r)
             return new_state, out.reward, out.done
 
@@ -107,10 +111,10 @@ def play_vs_frozen(
         def _per_env(state, r_agent, r_opp, r_reset):
             obs0 = encode(state, 0, max_episode_steps)
             obs1 = encode(state, 1, max_episode_steps)
-            sa0 = model.apply(params, obs0, r_agent, deterministic=True)
-            sa1 = model.apply(frozen_params, obs1, r_opp, deterministic=False)
-            a0 = PlayerAction(src_idx=sa0.src_idx, dst_idx=sa0.dst_idx, pct_bin=sa0.pct_bin)
-            a1 = PlayerAction(src_idx=sa1.src_idx, dst_idx=sa1.dst_idx, pct_bin=sa1.pct_bin)
+            sa0 = model.apply(params, obs0, r_agent, state.planet_ships, deterministic=True)
+            sa1 = model.apply(frozen_params, obs1, r_opp, state.planet_ships, deterministic=False)
+            a0 = _sampled_to_multi(sa0)
+            a1 = _sampled_to_multi(sa1)
             new_state, out = env.step_and_autoreset(state, (a0, a1), r_reset)
             return new_state, out.reward, out.done
 

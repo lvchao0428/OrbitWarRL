@@ -1,0 +1,67 @@
+# v4.1 - parity-correct env, fixed ent_coef_dst from v4 (which was misconfigured).
+#
+# v4 (this run, killed at upd 144 / 800) showed:
+#   * WRr ~0.6-0.8 (works! env + obs schema validated)
+#   * ent[d] = 2.94 STUCK ~ ln(20)=3.0  (dst head locked at uniform)
+#   * pg_loss collapsed to -0.0005 after upd 30
+#   * clip = 0.00, kl = 0.000 throughout  (PPO doing nothing)
+# Root cause: I cranked ent_coef_dst 0.0003 -> 0.003 in v4 because "orbit
+# adds info" -- but adding info doesn't expand dst space; it's still 20
+# planets. Higher ent_coef keeps dst at uniform, killing all gradient.
+#
+# Fix in v4.1: revert ent_coef_dst to v3.2's proven 0.0003 + a SMALL anneal
+# schedule baked into the slightly higher warmup. Everything else from v4 stays
+# (episode 250, num_updates 800, lr 3e-4, num_envs 64, epochs 4).
+#
+# Major env changes since v3.x (see docs/DAY2_PROGRESS.md §7):
+#   * planet rotation + swept-pair collision detection (matches kaggle env 0 mismatch
+#     in 49 steps, 7 seeds incl. orbiting home + 16 orbiting planets)
+#   * obs schema: planet 12->15 (is_orbiting, orbit_phase, orbit_radius),
+#     global 10->11 (angular_velocity / OMEGA_MAX)
+#   * fleet spawn offset 0.5 -> 0.1 (matches kaggle exactly)
+#
+# v3.2 ckpts are NOT compatible (dim mismatch). Train from scratch.
+
+train:
+  num_envs: 64
+  rollout_length: 128
+  num_updates: 800       # v3.2: 600
+  num_groups: 5
+  episode_steps: 250     # v3.2: 200 (need ~1 full orbit per episode)
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v4p1
+  ckpt_every: 25
+  log_every: 1
+  seed: 45               # fresh seed (was 44 on v3.x)
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 60
+  lr_decay_steps: 800    # match num_updates
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.0003   # v4 mistakenly used 0.003 -> dst locked at uniform; revert to v3.2 value
+  ent_coef_pct: 0.02
+  ent_coef_emit: 0.03
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 80     # scale with num_updates ratio (60/600 == 80/800)
+  snapshot_every: 20     # scale with num_updates
+  pool_capacity: 6
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

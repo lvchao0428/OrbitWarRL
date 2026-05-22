@@ -4,8 +4,10 @@ Usage:
     python -m orbit_wars_rl.scripts.h2h_local \
         --agent-a submission_rl_v1.py \
         --agent-b submission_v20_0513.py \
-        --num-games 10 \
-        --seeds 0
+        --num-games 5 \
+        --seeds 0 1 2 3 4            # space-separated
+    # or comma-separated also works:
+    #   --seeds 0,1,2,3,4
 """
 
 from __future__ import annotations
@@ -42,9 +44,32 @@ def main() -> int:
     ap.add_argument("--agent-a", type=str, required=True)
     ap.add_argument("--agent-b", type=str, required=True)
     ap.add_argument("--num-games", type=int, default=10)
-    ap.add_argument("--seeds", type=int, nargs="*", default=None,
-                    help="optional fixed seeds; if shorter than num_games we cycle")
+    ap.add_argument(
+        "--seeds",
+        type=str,
+        nargs="*",
+        default=None,
+        help=(
+            "optional fixed seeds; if shorter than num_games we cycle. "
+            "Accepts space-separated (`0 1 2`) and/or comma-separated (`0,1,2`)."
+        ),
+    )
     args = ap.parse_args()
+
+    # Normalize --seeds: allow comma-separated tokens and mixed forms.
+    if args.seeds:
+        flat_seeds: list[int] = []
+        for tok in args.seeds:
+            for part in tok.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    flat_seeds.append(int(part))
+                except ValueError:
+                    print(f"--seeds: cannot parse '{part}' as int", file=sys.stderr)
+                    return 2
+        args.seeds = flat_seeds
 
     for f in (args.agent_a, args.agent_b):
         if not Path(f).exists():

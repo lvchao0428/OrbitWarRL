@@ -33,6 +33,8 @@ def main() -> int:
                     help="tensorboard log dir; set None to disable tb")
     ap.add_argument("--num-updates", type=int, default=None,
                     help="override config num_updates (for quick experiments)")
+    ap.add_argument("--resume-from", type=str, default=None,
+                    help="warm-start params from a checkpoint pkl (shape-checked)")
     args = ap.parse_args()
 
     cfg_dict = _load_yaml(args.config)
@@ -51,7 +53,7 @@ def main() -> int:
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
 
-    result = train(train_cfg, log_dir=log_dir)
+    result = train(train_cfg, log_dir=log_dir, resume_from=args.resume_from)
     h = result["history"]
     if h:
         last = h[-1]

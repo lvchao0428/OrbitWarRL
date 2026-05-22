@@ -163,7 +163,13 @@ def dst_head(
     planet_mask: np.ndarray,
     my_planet_mask: np.ndarray,
 ) -> np.ndarray:
-    """Cross-attention conditioned on src_emb. Returns dst_logits of shape (P,)."""
+    """Cross-attention conditioned on src_emb. Returns dst_logits of shape (P,).
+
+    Any valid planet is a legal target (including own planets -- the game
+    treats same-owner arrivals as reinforcements). ``my_planet_mask`` is
+    accepted for signature compatibility but ignored.
+    """
+    del my_planet_mask
     q = _project_qkv(src_emb[None, :], W["dst_head/cross_attn/query/kernel"], W["dst_head/cross_attn/query/bias"])
     k = _project_qkv(planet_emb, W["dst_head/cross_attn/key/kernel"], W["dst_head/cross_attn/key/bias"])
     v = _project_qkv(planet_emb, W["dst_head/cross_attn/value/kernel"], W["dst_head/cross_attn/value/bias"])
@@ -174,8 +180,7 @@ def dst_head(
     joined = np.concatenate([planet_emb, np.broadcast_to(cond, (P, cond.shape[0]))], axis=-1)
     logits = _dense(joined, W["dst_head/dst_score/kernel"], W["dst_head/dst_score/bias"])[..., 0]
 
-    valid = planet_mask.astype(bool) & np.logical_not(my_planet_mask.astype(bool))
-    return _mask_logits(logits, valid)
+    return _mask_logits(logits, planet_mask.astype(bool))
 
 
 def pct_head(
@@ -188,6 +193,23 @@ def pct_head(
     x = _dense(x, W["pct_head/fc1/kernel"], W["pct_head/fc1/bias"])
     x = _gelu(x)
     return _dense(x, W["pct_head/logits/kernel"], W["pct_head/logits/bias"])
+
+
+def emit_head(
+    W: Dict[str, np.ndarray],
+    global_emb: np.ndarray,
+    planet_pool: np.ndarray,
+    step_idx: int,
+    max_steps: int = 8,
+) -> np.ndarray:
+    """Returns emit_logits of shape (2,). [stop, continue]."""
+    step_oh = np.zeros((max_steps,), dtype=np.float32)
+    if 0 <= step_idx < max_steps:
+        step_oh[step_idx] = 1.0
+    x = np.concatenate([global_emb, planet_pool, step_oh], axis=-1)
+    x = _dense(x, W["emit_head/fc1/kernel"], W["emit_head/fc1/bias"])
+    x = _gelu(x)
+    return _dense(x, W["emit_head/logits/kernel"], W["emit_head/logits/bias"])
 
 
 def value_head(
@@ -244,7 +266,7 @@ def greedy_action(
     my_planet_mask: np.ndarray,
     n_layers: int = 2,
 ) -> Tuple[int, int, int, float]:
-    """Argmax src/dst/pct + value, single observation."""
+    """Legacy single-action greedy. Argmax src/dst/pct + value."""
     global_emb, planet_emb, _f_emb, planet_pool, fleet_pool = encode_tokens(
         W, planet_feats, planet_mask, fleet_feats, fleet_mask, global_feats, n_layers=n_layers,
     )
@@ -258,3 +280,77 @@ def greedy_action(
     pct_idx = int(np.argmax(p_logits))
     v = value_head(W, global_emb, planet_pool, fleet_pool)
     return src_idx, dst_idx, pct_idx, v
+
+
+_PCT_BIN_TABLE_NP = np.array([0.25, 0.5, 0.75, 1.0], dtype=np.float32)
+
+
+def greedy_multi_action(
+    W: Dict[str, np.ndarray],
+    planet_feats: np.ndarray,
+    planet_mask: np.ndarray,
+    fleet_feats: np.ndarray,
+    fleet_mask: np.ndarray,
+    global_feats: np.ndarray,
+    my_planet_mask: np.ndarray,
+    planet_ships: np.ndarray,    # (P,) int -- raw garrison
+    n_layers: int = 2,
+    max_fleets_per_turn: int = 8,
+) -> Tuple[list, list, list, list, float]:
+    """Greedy multi-fleet action mirroring ActorCritic.__call__(deterministic=True).
+
+    Returns:
+      src_list, dst_list, pct_list -- ints (only emit==True steps included)
+      emit_list -- bool list per step (length K, but trimmed list above only
+                   holds the emitted ones)
+      value
+    """
+    global_emb, planet_emb, _f_emb, planet_pool, fleet_pool = encode_tokens(
+        W, planet_feats, planet_mask, fleet_feats, fleet_mask, global_feats, n_layers=n_layers,
+    )
+    P = planet_emb.shape[0]
+    ships = planet_ships.astype(np.int32).copy()
+    reserved = np.zeros((P,), dtype=np.int32)
+    still_emit = True
+
+    src_out, dst_out, pct_out, emit_out = [], [], [], []
+    for t in range(max_fleets_per_turn):
+        remaining = ships - reserved
+        avail_mask = my_planet_mask.astype(bool) & (remaining > 0)
+        any_avail = bool(avail_mask.any())
+        no_options = not any_avail
+        eff_mask = avail_mask if any_avail else my_planet_mask.astype(bool)
+
+        e_logits = emit_head(W, global_emb, planet_pool, t, max_steps=max_fleets_per_turn)
+        if t == 0:
+            decision = (not no_options)
+        else:
+            emit_pred = int(np.argmax(e_logits))
+            decision = (emit_pred == 1) and (not no_options)
+        emit_t = decision and still_emit
+
+        s_logits = src_head(W, planet_emb, eff_mask)
+        src_t = int(np.argmax(s_logits))
+        src_emb = planet_emb[src_t]
+        d_logits = dst_head(W, planet_emb, src_emb, planet_mask, my_planet_mask)
+        dst_t = int(np.argmax(d_logits))
+        dst_emb = planet_emb[dst_t]
+        p_logits = pct_head(W, src_emb, dst_emb, global_emb)
+        pct_t = int(np.argmax(p_logits))
+
+        if emit_t:
+            avail_at_src = max(int(ships[src_t]) - int(reserved[src_t]), 0)
+            pct = float(_PCT_BIN_TABLE_NP[pct_t])
+            ships_t = max(1, int(np.floor(avail_at_src * pct)))
+            ships_t = min(ships_t, avail_at_src)
+            reserved[src_t] += ships_t
+            src_out.append(src_t)
+            dst_out.append(dst_t)
+            pct_out.append(pct_t)
+            emit_out.append(True)
+        else:
+            emit_out.append(False)
+            still_emit = False
+
+    v = value_head(W, global_emb, planet_pool, fleet_pool)
+    return src_out, dst_out, pct_out, emit_out, v

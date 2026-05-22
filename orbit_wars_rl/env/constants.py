@@ -25,9 +25,22 @@ PLANETS_PER_GROUP: int = 4
 NUM_PCT_BINS: int = 4
 PCT_BIN_VALUES = (0.25, 0.5, 0.75, 1.0)
 
+# Max number of fleets a single player can launch per turn (autoregressive head).
+# v20 uses 26; we start small to keep the unroll cheap and grow if needed.
+MAX_FLEETS_PER_TURN: int = 8
+
 HOME_PLANET_SHIPS: int = 10
 NEUTRAL_SHIPS_MIN: int = 5
 NEUTRAL_SHIPS_MAX: int = 50
 
 PROD_MIN: int = 1
 PROD_MAX: int = 5
+
+# Orbital motion (matches Kaggle orbit_wars).
+# Each episode samples one angular_velocity uniformly from this range; all
+# orbiting planets share the same omega. Sign convention: positive = CCW
+# (matches Kaggle env, confirmed via parity test seed=42 step 5 displacements).
+ORBIT_OMEGA_MIN: float = 0.025
+ORBIT_OMEGA_MAX: float = 0.05
+# A planet orbits iff (distance_to_sun + planet_radius) < this threshold.
+ORBIT_RADIUS_LIMIT: float = 50.0

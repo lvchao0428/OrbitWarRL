@@ -276,3 +276,5 @@ upd 119  WRr 1.00  WRf 0.66    ← 收尾：vs random 满分，vs frozen 退回 
 ---
 
 *文档版本 1.0 — 写于 2026-05-22 01:1x（北京时间），不影响主路径的任何代码。*
+
+> Day 2 (2026-05-22) 起的进展记录在 [`DAY2_PROGRESS.md`](DAY2_PROGRESS.md)。

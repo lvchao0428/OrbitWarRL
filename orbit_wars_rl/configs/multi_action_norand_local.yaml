@@ -1,0 +1,41 @@
+# Pure vs-random multi-action training (selfplay off) -- 40 updates, debugging.
+# rollout_length increased so each rollout actually contains terminal +/-1 signal.
+
+train:
+  num_envs: 16
+  rollout_length: 128
+  num_updates: 50
+  num_groups: 5
+  episode_steps: 100
+  eval_every: 5
+  eval_num_envs: 16
+  ckpt_dir: ./ckpt_multi_action_norand
+  ckpt_every: 0
+  log_every: 1
+  seed: 44
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 5
+  lr_decay_steps: 60
+  lr_floor: 0.00005
+  clip_eps: 0.2
+  value_clip_eps: 0.2
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.01
+  ent_coef_pct: 0.02
+  ent_coef_emit: 0.03
+  max_grad_norm: 0.5
+  gamma: 0.997
+  gae_lambda: 0.95
+  update_epochs: 3
+  num_minibatches: 4
+
+selfplay:
+  enabled: false

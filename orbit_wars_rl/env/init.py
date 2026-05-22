@@ -6,6 +6,8 @@ slots and the rest padded out.
 
 from __future__ import annotations
 
+import os
+
 import jax
 import jax.numpy as jnp
 
@@ -14,7 +16,13 @@ from orbit_wars_rl.env.state import EnvState
 
 
 def _symmetric_group_offsets(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-    """Given an anchor (x, y) in quadrant 1, build 4 mirrored positions."""
+    """Given an anchor (x, y) in quadrant 1, build 4 mirrored positions.
+
+    Mirror order matters and matches Kaggle: anchor goes to slot 0 (quadrant
+    1: high x, high y), slot 1 mirrors across the vertical line x=50, slot 2
+    mirrors across y=50, slot 3 is the diagonal opposite (used as home for
+    player 1 in 2P games).
+    """
     cx = jnp.float32(constants.BOARD * 0.5)
     cy = jnp.float32(constants.BOARD * 0.5)
     return jnp.stack(
@@ -28,16 +36,44 @@ def _symmetric_group_offsets(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
     )
 
 
-def reset(rng: jnp.ndarray, num_groups: int = 5) -> EnvState:
+# Kaggle env has the home group be one of the symmetric groups picked at
+# random; that means a home planet *can* be orbiting (confirmed via seeds 1,
+# 500, 1000, 3000). Our implementation respects this by deriving
+# planet_is_orbiting purely from (distance_to_sun + radius < 50), not from
+# home-group status.
+#
+# Kaggle's anchor range is wider than ours: empirically we've seen home
+# orbital radii up to ~61 (seed 100), implying anchors can sit near the
+# board corners. Our current sampler bounds anchors to [12, 47] which keeps
+# orb_r in roughly [4.2, 53.7]. Closing that gap is a separate concern --
+# logging it here so it's not forgotten.
+
+
+def reset(rng: jnp.ndarray, num_groups: int = 5, shuffle_slots: bool | None = None) -> EnvState:
     """Generate a 2P map with ``num_groups`` symmetric planet groups.
 
     ``num_groups`` is a Python int (static); the *positions* within each group
     are randomized via ``rng``. Slots beyond ``num_groups*4`` are masked off.
+
+    ``shuffle_slots`` permutes the assignment of (owner, position, ships, prod)
+    across the first 4*num_groups slot ids. Without it, player 0 home is
+    always at slot 0 and player 1 home is always at slot 3 -- which lets the
+    transformer-policy memorize "slot 0 = my home" instead of using features.
+    Real Kaggle env has no such slot-id stability; shuffling closes that gap.
+
+    If ``shuffle_slots`` is None (default), reads env var ORBITWARS_SHUFFLE_SLOTS
+    (1/true/yes => on, 0/false/no => off). If unset, defaults to ON. This lets
+    legacy ckpts trained on fixed slots be evaluated fairly by setting
+    ORBITWARS_SHUFFLE_SLOTS=0 at the command line.
     """
+    if shuffle_slots is None:
+        env_val = os.environ.get("ORBITWARS_SHUFFLE_SLOTS", "1").strip().lower()
+        shuffle_slots = env_val not in ("0", "false", "no", "off", "")
+
     assert constants.MIN_PLANET_GROUPS <= num_groups <= constants.MAX_PLANET_GROUPS
     assert num_groups * constants.PLANETS_PER_GROUP <= constants.MAX_PLANETS
 
-    rng_pos, rng_prod, rng_ships, rng_state = jax.random.split(rng, 4)
+    rng_pos, rng_prod, rng_ships, rng_perm, rng_omega, rng_state = jax.random.split(rng, 6)
 
     half = constants.BOARD * 0.5
     margin = 12.0
@@ -80,6 +116,40 @@ def reset(rng: jnp.ndarray, num_groups: int = 5) -> EnvState:
     owners = jnp.full((num_groups * 4,), constants.NEUTRAL_OWNER, dtype=jnp.int8)
     owners = owners.at[0].set(jnp.int8(0)).at[3].set(jnp.int8(1))
 
+    # Orbit fields. We derive these BEFORE the slot permutation so the four
+    # planets in each group rotate together (preserving the 4-fold symmetry).
+    sun_x = jnp.float32(constants.SUN_X)
+    sun_y = jnp.float32(constants.SUN_Y)
+    dx = xy[:, 0] - sun_x
+    dy = xy[:, 1] - sun_y
+    orbit_radius_live = jnp.sqrt(dx * dx + dy * dy)
+    orbit_phase_live = jnp.arctan2(dy, dx)
+    is_orbiting_live = (orbit_radius_live + radius) < jnp.float32(constants.ORBIT_RADIUS_LIMIT)
+
+    # Sample one angular velocity for the whole episode.
+    angular_velocity = jax.random.uniform(
+        rng_omega, (),
+        minval=jnp.float32(constants.ORBIT_OMEGA_MIN),
+        maxval=jnp.float32(constants.ORBIT_OMEGA_MAX),
+    )
+
+    # Permute slot ids so player 0 home isn't always at slot 0 / player 1 at slot 3.
+    # This is the cheapest way to close the env-vs-Kaggle gap: real Kaggle places
+    # planet ids in arbitrary order each match, so the policy must use features
+    # not slot indices. We only permute the live slots, not the padding.
+    # Orbit fields are permuted alongside their planet so the (radius, phase,
+    # is_orbiting) triple stays tied to its planet.
+    if shuffle_slots:
+        perm = jax.random.permutation(rng_perm, num_groups * 4)
+        xy = xy[perm]
+        productions = productions[perm]
+        radius = radius[perm]
+        ships = ships[perm]
+        owners = owners[perm]
+        orbit_radius_live = orbit_radius_live[perm]
+        orbit_phase_live = orbit_phase_live[perm]
+        is_orbiting_live = is_orbiting_live[perm]
+
     pad = constants.MAX_PLANETS - num_groups * 4
     planet_x = jnp.concatenate([xy[:, 0], jnp.zeros((pad,), dtype=jnp.float32)])
     planet_y = jnp.concatenate([xy[:, 1], jnp.zeros((pad,), dtype=jnp.float32)])
@@ -90,6 +160,15 @@ def reset(rng: jnp.ndarray, num_groups: int = 5) -> EnvState:
     planet_mask = jnp.concatenate([
         jnp.ones((num_groups * 4,), dtype=jnp.bool_),
         jnp.zeros((pad,), dtype=jnp.bool_),
+    ])
+    planet_orbit_radius = jnp.concatenate([
+        orbit_radius_live, jnp.zeros((pad,), dtype=jnp.float32),
+    ])
+    planet_orbit_phase = jnp.concatenate([
+        orbit_phase_live, jnp.zeros((pad,), dtype=jnp.float32),
+    ])
+    planet_is_orbiting = jnp.concatenate([
+        is_orbiting_live, jnp.zeros((pad,), dtype=jnp.bool_),
     ])
 
     return EnvState(
@@ -109,4 +188,8 @@ def reset(rng: jnp.ndarray, num_groups: int = 5) -> EnvState:
         step=jnp.int32(0),
         done=jnp.bool_(False),
         rng=rng_state.astype(jnp.uint32),
+        angular_velocity=angular_velocity,
+        planet_orbit_radius=planet_orbit_radius,
+        planet_orbit_phase=planet_orbit_phase,
+        planet_is_orbiting=planet_is_orbiting,
     )

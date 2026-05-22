@@ -1,4 +1,29 @@
-"""ActorCritic: encoder + 3 policy heads + value head; supports sample / argmax."""
+"""ActorCritic with autoregressive multi-fleet head.
+
+Each turn the policy emits up to ``K = MAX_FLEETS_PER_TURN`` fleets via an
+autoregressive scan:
+
+  for t in [0, K):
+      emit_logits = EmitHead(global, planet_pool, step=t)
+      if t == 0: force emit (else the turn is empty)
+      emit_t = bernoulli(emit_logits)  # 1 = continue, 0 = stop
+      if not still_emitting: replay zeros (logp_t = 0)
+      src_logits = SrcHead(planet_emb) masked by (my_planets & remaining_ships > 0)
+      src_t = categorical(src_logits)
+      dst_logits = DstHead(planet_emb, src_emb)
+      dst_t = categorical(dst_logits)
+      pct_logits = PctHead(src_emb, dst_emb, global)
+      pct_t = categorical(pct_logits)
+      reserved += ships(src, pct)        # for the next iteration's mask
+
+A "soft" reserved-ships book-keeping mirrors what ``dynamics.launch_fleets``
+actually does, so the policy never confidently emits an action the env will
+silently drop.
+
+The encoder runs **once** per turn -- the encoded planet embeddings are reused
+across all K autoregressive steps. Only the EmitHead/SrcHead/PctHead are
+re-run per step. ``DstHead`` is also re-run but it's cheap.
+"""
 
 from __future__ import annotations
 
@@ -11,27 +36,42 @@ import jax.numpy as jnp
 from orbit_wars_rl.env import constants
 from orbit_wars_rl.features import EncodedObs
 from orbit_wars_rl.net.transformer import EntityTransformer
-from orbit_wars_rl.net.heads import SrcHead, DstHead, PctHead, ValueHead
+from orbit_wars_rl.net.heads import SrcHead, DstHead, PctHead, ValueHead, EmitHead
+
+
+_PCT_BIN_TABLE = jnp.array(constants.PCT_BIN_VALUES, dtype=jnp.float32)
 
 
 class ActorCriticOutput(NamedTuple):
-    src_logits: jnp.ndarray
-    dst_logits: jnp.ndarray
-    pct_logits: jnp.ndarray
-    value: jnp.ndarray
+    """Logits arrays from ``evaluate``. Each [..., K, ...]."""
+
+    src_logits: jnp.ndarray         # (..., K, P)
+    dst_logits: jnp.ndarray         # (..., K, P)
+    pct_logits: jnp.ndarray         # (..., K, num_pct_bins)
+    emit_logits: jnp.ndarray        # (..., K, 2)
+    value: jnp.ndarray              # (...,)
 
 
-class SampledAction(NamedTuple):
-    src_idx: jnp.ndarray
-    dst_idx: jnp.ndarray
-    pct_bin: jnp.ndarray
-    src_logp: jnp.ndarray
-    dst_logp: jnp.ndarray
-    pct_logp: jnp.ndarray
-    src_entropy: jnp.ndarray
-    dst_entropy: jnp.ndarray
-    pct_entropy: jnp.ndarray
-    value: jnp.ndarray
+class SampledMultiAction(NamedTuple):
+    """Sampled K-step action with per-step logp/entropy and overall value."""
+
+    src_idx: jnp.ndarray          # (..., K) int32
+    dst_idx: jnp.ndarray          # (..., K) int32
+    pct_bin: jnp.ndarray          # (..., K) int32
+    emit_mask: jnp.ndarray        # (..., K) bool   -- True iff this step actually launches
+    emit_free_mask: jnp.ndarray   # (..., K) bool   -- True iff EmitHead was a free choice (not forced)
+
+    src_logp: jnp.ndarray         # (..., K) float -- per-step, 0 where not emitting
+    dst_logp: jnp.ndarray         # (..., K)
+    pct_logp: jnp.ndarray         # (..., K)
+    emit_logp: jnp.ndarray        # (..., K)
+
+    src_entropy: jnp.ndarray      # (..., K) float -- per-step, 0 where not emitting
+    dst_entropy: jnp.ndarray      # (..., K)
+    pct_entropy: jnp.ndarray      # (..., K)
+    emit_entropy: jnp.ndarray     # (..., K)
+
+    value: jnp.ndarray            # (...,) float
 
 
 def _categorical_logp_entropy(
@@ -53,12 +93,70 @@ def _gather_planet_emb(planet_emb: jnp.ndarray, idx: jnp.ndarray) -> jnp.ndarray
     return planet_emb[idx]
 
 
+def _ships_to_send_for_step(
+    planet_ships: jnp.ndarray,   # (P,) int32 -- raw garrison
+    reserved: jnp.ndarray,       # (P,) int32 -- already reserved this turn
+    src_idx: jnp.ndarray,        # () int32
+    pct_bin: jnp.ndarray,        # () int32
+) -> jnp.ndarray:
+    """Mirrors ``actions.decode_action`` ships logic (without owner/dst checks)."""
+    avail = jnp.maximum(planet_ships[src_idx] - reserved[src_idx], jnp.int32(0))
+    pct_idx = jnp.clip(pct_bin, 0, constants.NUM_PCT_BINS - 1)
+    pct = _PCT_BIN_TABLE[pct_idx]
+    raw = jnp.maximum(
+        jnp.int32(1),
+        jnp.floor(avail.astype(jnp.float32) * pct).astype(jnp.int32),
+    )
+    return jnp.minimum(raw, avail)
+
+
+def _ships_to_send_for_step_batched(
+    planet_ships: jnp.ndarray,   # (..., P) int32
+    reserved: jnp.ndarray,       # (..., P) int32
+    src_idx: jnp.ndarray,        # (...,) int32
+    pct_bin: jnp.ndarray,        # (...,) int32
+) -> jnp.ndarray:
+    """Same as ``_ships_to_send_for_step`` but supports a leading batch dim.
+
+    Used by the multi-action sample/evaluate loops which run with leading
+    ``[B]`` (from vmap or rollout scan over T*B).
+    """
+    if planet_ships.ndim == 1:
+        return _ships_to_send_for_step(planet_ships, reserved, src_idx, pct_bin)
+    # Gather along the last (planet) axis with src_idx.
+    src_ships = jnp.take_along_axis(planet_ships, src_idx[..., None], axis=-1)[..., 0]
+    src_reserved = jnp.take_along_axis(reserved, src_idx[..., None], axis=-1)[..., 0]
+    avail = jnp.maximum(src_ships - src_reserved, jnp.int32(0))
+    pct_idx = jnp.clip(pct_bin, 0, constants.NUM_PCT_BINS - 1)
+    pct = _PCT_BIN_TABLE[pct_idx]
+    raw = jnp.maximum(
+        jnp.int32(1),
+        jnp.floor(avail.astype(jnp.float32) * pct).astype(jnp.int32),
+    )
+    return jnp.minimum(raw, avail)
+
+
+def _scatter_add(buf: jnp.ndarray, idx: jnp.ndarray, val: jnp.ndarray) -> jnp.ndarray:
+    """Add ``val`` into ``buf`` at index ``idx`` along the last axis.
+
+    Supports both 1D and batched buffers (broadcasting idx/val accordingly).
+    Equivalent to ``buf[..., idx] += val`` but jit-friendly.
+    """
+    if buf.ndim == 1:
+        return buf.at[idx].add(val)
+    # Build a one-hot scatter add along the last axis.
+    P = buf.shape[-1]
+    one_hot = jax.nn.one_hot(idx, P, dtype=buf.dtype)  # (..., P)
+    return buf + val[..., None] * one_hot
+
+
 class ActorCritic(nn.Module):
     d_model: int = 64
     n_layers: int = 2
     n_heads: int = 4
     ff_dim: int = 128
     num_pct_bins: int = constants.NUM_PCT_BINS
+    max_fleets_per_turn: int = constants.MAX_FLEETS_PER_TURN
 
     def setup(self) -> None:
         self.encoder = EntityTransformer(
@@ -70,6 +168,7 @@ class ActorCritic(nn.Module):
         self.src_head = SrcHead()
         self.dst_head = DstHead(d_model=self.d_model, n_heads=self.n_heads)
         self.pct_head = PctHead(num_bins=self.num_pct_bins)
+        self.emit_head = EmitHead(max_steps=self.max_fleets_per_turn)
         self.value_head = ValueHead()
 
     def _encode(self, obs: EncodedObs) -> dict:
@@ -81,74 +180,229 @@ class ActorCritic(nn.Module):
             obs.global_feats,
         )
 
+    # ---- evaluate (PPO): replay pre-sampled K-step actions and recompute logits
+
     def evaluate(
         self,
         obs: EncodedObs,
-        src_idx: jnp.ndarray,
-        dst_idx: jnp.ndarray,
+        src_idx: jnp.ndarray,    # (..., K) int32
+        dst_idx: jnp.ndarray,    # (..., K) int32
+        pct_bin: jnp.ndarray,    # (..., K) int32  -- needed to recompute reserved buffer
+        emit_mask: jnp.ndarray,  # (..., K) bool   -- which steps actually emitted
+        planet_ships_raw: jnp.ndarray,  # (..., P) int32 -- garrison at start of turn (for reserved)
     ) -> ActorCriticOutput:
-        """Compute all logits + value given pre-chosen src/dst (for PPO update)."""
-        enc = self._encode(obs)
-        src_logits = self.src_head(enc["planet_emb"], obs.my_planet_mask)
-        src_emb = _gather_planet_emb(enc["planet_emb"], src_idx)
-        dst_logits = self.dst_head(enc["planet_emb"], src_emb, obs.planet_mask, obs.my_planet_mask)
-        dst_emb = _gather_planet_emb(enc["planet_emb"], dst_idx)
-        pct_logits = self.pct_head(src_emb, dst_emb, enc["global_emb"])
-        value = self.value_head(enc["global_emb"], enc["planet_pool"], enc["fleet_pool"])
-        return ActorCriticOutput(src_logits, dst_logits, pct_logits, value)
+        """Compute per-step logits + value given pre-chosen K-step actions.
 
-    def __call__(self, obs: EncodedObs, rng: jnp.ndarray, *, deterministic: bool = False) -> SampledAction:
-        """Sample (src, dst, pct) and return logps + entropies + value.
-
-        ``deterministic=True`` picks argmax for all heads (use at eval time).
-        Falls back to slot 0 if a player has no valid source planet.
+        Implementation note: we unroll K steps with a Python ``for`` loop because
+        ``nn.Module.__call__`` is not allowed inside ``jax.lax.scan`` (flax would
+        re-init params each iter). K is static (``self.max_fleets_per_turn``)
+        so the unroll is cheap and JIT-friendly.
         """
         enc = self._encode(obs)
-        src_logits = self.src_head(enc["planet_emb"], obs.my_planet_mask)
+        planet_emb = enc["planet_emb"]
+        global_emb = enc["global_emb"]
+        planet_pool = enc["planet_pool"]
+        fleet_pool = enc["fleet_pool"]
 
-        any_src = obs.my_planet_mask.any(axis=-1)
-
-        r_src, r_dst, r_pct = jax.random.split(rng, 3)
-
-        if deterministic:
-            src_idx = jnp.argmax(src_logits, axis=-1)
+        is_batched = planet_emb.ndim == 3
+        if not is_batched:
+            obs_my = obs.my_planet_mask
+            obs_pmask = obs.planet_mask
+            ships_raw_b = planet_ships_raw
         else:
-            src_idx = jax.random.categorical(r_src, src_logits, axis=-1)
-        src_idx = src_idx.astype(jnp.int32)
+            obs_my = obs.my_planet_mask
+            obs_pmask = obs.planet_mask
+            ships_raw_b = planet_ships_raw
 
-        src_logp, src_entropy = _categorical_logp_entropy(src_logits, src_idx)
-        src_logp = jnp.where(any_src, src_logp, jnp.float32(0.0))
-        src_entropy = jnp.where(any_src, src_entropy, jnp.float32(0.0))
+        K = self.max_fleets_per_turn
 
-        src_emb = _gather_planet_emb(enc["planet_emb"], src_idx)
-        dst_logits = self.dst_head(enc["planet_emb"], src_emb, obs.planet_mask, obs.my_planet_mask)
-        if deterministic:
-            dst_idx = jnp.argmax(dst_logits, axis=-1)
-        else:
-            dst_idx = jax.random.categorical(r_dst, dst_logits, axis=-1)
-        dst_idx = dst_idx.astype(jnp.int32)
-        dst_logp, dst_entropy = _categorical_logp_entropy(dst_logits, dst_idx)
+        value = self.value_head(global_emb, planet_pool, fleet_pool)
 
-        dst_emb = _gather_planet_emb(enc["planet_emb"], dst_idx)
-        pct_logits = self.pct_head(src_emb, dst_emb, enc["global_emb"])
-        if deterministic:
-            pct_idx = jnp.argmax(pct_logits, axis=-1)
-        else:
-            pct_idx = jax.random.categorical(r_pct, pct_logits, axis=-1)
-        pct_idx = pct_idx.astype(jnp.int32)
-        pct_logp, pct_entropy = _categorical_logp_entropy(pct_logits, pct_idx)
+        # We pre-compute src/dst/pct/emit logits for all K steps via a python
+        # for-loop so flax can build the heads exactly once. The running
+        # ``reserved`` buffer is updated each iter using the *given* action.
+        reserved = jnp.zeros_like(ships_raw_b)  # (..., P)
 
-        value = self.value_head(enc["global_emb"], enc["planet_pool"], enc["fleet_pool"])
+        src_logits_list = []
+        dst_logits_list = []
+        pct_logits_list = []
+        emit_logits_list = []
 
-        return SampledAction(
-            src_idx=src_idx,
-            dst_idx=dst_idx,
-            pct_bin=pct_idx,
-            src_logp=src_logp,
-            dst_logp=dst_logp,
-            pct_logp=pct_logp,
-            src_entropy=src_entropy,
-            dst_entropy=dst_entropy,
-            pct_entropy=pct_entropy,
+        for t in range(K):
+            # Take per-step inputs along the K axis (works batched and unbatched).
+            src_t = src_idx[..., t]
+            dst_t = dst_idx[..., t]
+            pct_t = pct_bin[..., t]
+
+            # masked src head: my planets with remaining ships > 0
+            remaining = ships_raw_b - reserved
+            avail_mask = obs_my & (remaining > 0)
+            fallback = jnp.logical_not(avail_mask.any(axis=-1, keepdims=True))
+            eff_mask = jnp.where(fallback, obs_my, avail_mask)
+            src_logits_t = self.src_head(planet_emb, eff_mask)
+            emit_logits_t = self.emit_head(global_emb, planet_pool, jnp.int32(t))
+            src_emb_t = _gather_planet_emb(planet_emb, src_t)
+            dst_logits_t = self.dst_head(planet_emb, src_emb_t, obs_pmask, obs_my)
+            dst_emb_t = _gather_planet_emb(planet_emb, dst_t)
+            pct_logits_t = self.pct_head(src_emb_t, dst_emb_t, global_emb)
+
+            src_logits_list.append(src_logits_t)
+            dst_logits_list.append(dst_logits_t)
+            pct_logits_list.append(pct_logits_t)
+            emit_logits_list.append(emit_logits_t)
+
+            ships_t = _ships_to_send_for_step_batched(ships_raw_b, reserved, src_t, pct_t)
+            ships_eff = jnp.where(emit_mask[..., t], ships_t, jnp.int32(0))
+            reserved = _scatter_add(reserved, src_t, ships_eff)
+
+        # Stack along a new K axis.
+        s_logits = jnp.stack(src_logits_list, axis=-2)  # (..., K, P)
+        d_logits = jnp.stack(dst_logits_list, axis=-2)  # (..., K, P)
+        p_logits = jnp.stack(pct_logits_list, axis=-2)  # (..., K, num_pct_bins)
+        e_logits = jnp.stack(emit_logits_list, axis=-2)  # (..., K, 2)
+
+        return ActorCriticOutput(
+            src_logits=s_logits,
+            dst_logits=d_logits,
+            pct_logits=p_logits,
+            emit_logits=e_logits,
+            value=value,
+        )
+
+    # ---- sample (rollout): produce K-step action stochastically
+
+    def __call__(
+        self,
+        obs: EncodedObs,
+        rng: jnp.ndarray,
+        planet_ships_raw: jnp.ndarray,
+        *,
+        deterministic: bool = False,
+    ) -> SampledMultiAction:
+        """Sample a K-step multi-fleet action.
+
+        ``planet_ships_raw`` (..., P,) is the per-planet garrison at the start
+        of the turn -- needed for the running ``reserved_ships`` mask.
+
+        ``deterministic=True`` picks argmax everywhere (use at eval time).
+
+        Like ``evaluate``, the K-step loop is a Python ``for`` (flax doesn't
+        allow ``nn.Module.__call__`` inside ``jax.lax.scan``).
+        """
+        enc = self._encode(obs)
+        planet_emb = enc["planet_emb"]
+        global_emb = enc["global_emb"]
+        planet_pool = enc["planet_pool"]
+        fleet_pool = enc["fleet_pool"]
+
+        obs_my = obs.my_planet_mask
+        obs_pmask = obs.planet_mask
+        ships_raw = planet_ships_raw
+
+        K = self.max_fleets_per_turn
+
+        value = self.value_head(global_emb, planet_pool, fleet_pool)
+
+        reserved = jnp.zeros_like(ships_raw)  # (..., P) int32
+        # still_emitting is a per-batch bool; if rank=0 keep scalar.
+        leading_shape = ships_raw.shape[:-1]
+        still_emitting = jnp.ones(leading_shape, dtype=jnp.bool_) if leading_shape else jnp.bool_(True)
+
+        src_list, dst_list, pct_list, emit_list = [], [], [], []
+        free_list = []  # store the sampler's free_choice mask per step for evaluate parity
+        sl_list, dl_list, pl_list, el_list = [], [], [], []
+        se_list, de_list, pe_list, ee_list = [], [], [], []
+
+        # Per-step rngs deterministically derived from the outer rng + t.
+        for t in range(K):
+            rng = jax.random.fold_in(rng, t + 1)
+            r_emit, r_src, r_dst, r_pct = jax.random.split(rng, 4)
+
+            remaining = ships_raw - reserved
+            avail_mask = obs_my & (remaining > 0)
+            any_avail = avail_mask.any(axis=-1, keepdims=True)
+            no_options = jnp.logical_not(jnp.squeeze(any_avail, axis=-1)) if leading_shape else jnp.logical_not(any_avail[0])
+            # broadcast the "no_options" fallback against the K-axis structure
+            eff_mask = jnp.where(any_avail, avail_mask, obs_my)
+            src_logits_t = self.src_head(planet_emb, eff_mask)
+            emit_logits_t = self.emit_head(global_emb, planet_pool, jnp.int32(t))
+
+            # Sample emit (1 = continue, 0 = stop). At t==0 force-continue; if
+            # no_options force-stop. Once stopped, stay stopped.
+            if deterministic:
+                emit_pred = jnp.argmax(emit_logits_t, axis=-1).astype(jnp.int32)
+            else:
+                emit_pred = jax.random.categorical(r_emit, emit_logits_t).astype(jnp.int32)
+            emit_pred_bool = emit_pred == 1
+            force_first = bool(t == 0)
+            if force_first:
+                decision = jnp.logical_not(no_options)
+            else:
+                decision = emit_pred_bool & jnp.logical_not(no_options)
+            emit_t = decision & still_emitting
+
+            emit_idx = emit_t.astype(jnp.int32)
+            emit_logp_full, emit_ent_full = _categorical_logp_entropy(emit_logits_t, emit_idx)
+            already_stopped = jnp.logical_not(still_emitting)
+            free_choice = jnp.logical_not(already_stopped | jnp.bool_(force_first) | no_options)
+            emit_logp = jnp.where(free_choice, emit_logp_full, jnp.float32(0.0))
+            emit_entropy = jnp.where(free_choice, emit_ent_full, jnp.float32(0.0))
+
+            if deterministic:
+                src_t = jnp.argmax(src_logits_t, axis=-1).astype(jnp.int32)
+            else:
+                src_t = jax.random.categorical(r_src, src_logits_t).astype(jnp.int32)
+            src_logp_full, src_ent_full = _categorical_logp_entropy(src_logits_t, src_t)
+            src_logp = jnp.where(emit_t, src_logp_full, jnp.float32(0.0))
+            src_entropy = jnp.where(emit_t, src_ent_full, jnp.float32(0.0))
+
+            src_emb_t = _gather_planet_emb(planet_emb, src_t)
+            dst_logits_t = self.dst_head(planet_emb, src_emb_t, obs_pmask, obs_my)
+            if deterministic:
+                dst_t = jnp.argmax(dst_logits_t, axis=-1).astype(jnp.int32)
+            else:
+                dst_t = jax.random.categorical(r_dst, dst_logits_t).astype(jnp.int32)
+            dst_logp_full, dst_ent_full = _categorical_logp_entropy(dst_logits_t, dst_t)
+            dst_logp = jnp.where(emit_t, dst_logp_full, jnp.float32(0.0))
+            dst_entropy = jnp.where(emit_t, dst_ent_full, jnp.float32(0.0))
+
+            dst_emb_t = _gather_planet_emb(planet_emb, dst_t)
+            pct_logits_t = self.pct_head(src_emb_t, dst_emb_t, global_emb)
+            if deterministic:
+                pct_t = jnp.argmax(pct_logits_t, axis=-1).astype(jnp.int32)
+            else:
+                pct_t = jax.random.categorical(r_pct, pct_logits_t).astype(jnp.int32)
+            pct_logp_full, pct_ent_full = _categorical_logp_entropy(pct_logits_t, pct_t)
+            pct_logp = jnp.where(emit_t, pct_logp_full, jnp.float32(0.0))
+            pct_entropy = jnp.where(emit_t, pct_ent_full, jnp.float32(0.0))
+
+            ships_t = _ships_to_send_for_step_batched(ships_raw, reserved, src_t, pct_t)
+            ships_eff = jnp.where(emit_t, ships_t, jnp.int32(0))
+            reserved = _scatter_add(reserved, src_t, ships_eff)
+            still_emitting = still_emitting & emit_t
+
+            src_list.append(src_t)
+            dst_list.append(dst_t)
+            pct_list.append(pct_t)
+            emit_list.append(emit_t)
+            free_list.append(free_choice)
+            sl_list.append(src_logp); dl_list.append(dst_logp); pl_list.append(pct_logp); el_list.append(emit_logp)
+            se_list.append(src_entropy); de_list.append(dst_entropy); pe_list.append(pct_entropy); ee_list.append(emit_entropy)
+
+        stack = lambda lst: jnp.stack(lst, axis=-1)
+        return SampledMultiAction(
+            src_idx=stack(src_list),
+            dst_idx=stack(dst_list),
+            pct_bin=stack(pct_list),
+            emit_mask=stack(emit_list),
+            emit_free_mask=stack(free_list),
+            src_logp=stack(sl_list),
+            dst_logp=stack(dl_list),
+            pct_logp=stack(pl_list),
+            emit_logp=stack(el_list),
+            src_entropy=stack(se_list),
+            dst_entropy=stack(de_list),
+            pct_entropy=stack(pe_list),
+            emit_entropy=stack(ee_list),
             value=value,
         )

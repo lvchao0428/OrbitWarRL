@@ -1,0 +1,67 @@
+# v3.2 - addresses the v3.1 "learning is healthy but too slow" diagnosis.
+#
+# v3.1 results (logs/multi_action_v3p1.log, 400 updates):
+#   * final WRr 0.81 (vs v3 0.72) - directionally correct
+#   * final WRf 0.78 (vs v3 0.91) - self-play is healthier
+#   * dst entropy 2.95 -> 2.75 (was 2.95 -> 2.85; starting to descend at rate ~0.08/100upd)
+#   * pg_loss ~0.0007 (vs v3 0.0003) - PPO is doing 2x more work
+#   * tR 0.55-0.91 (vs v3 0.16-0.65) - terminal reward signal much stronger
+#   * adv_std 0.11 (lower than v3 0.17, but because value caught up - actually healthy)
+#
+# v3.1 was the right direction; just need to crank harder. Key levers:
+#   * dst entropy descending at 0.08/100upd extrapolates to needing ~1000 updates
+#     to reach < 2.0. Either (a) train longer, (b) cut ent_coef_dst again, or (c) lr.
+#   * pg_loss is still small (0.0007); we have headroom on lr and epochs without
+#     hitting kl explosion (current kl ~ 0.000 throughout)
+#
+# Plan for v3.2:
+#   * ent_coef_dst 0.001 -> 0.0003 (3x weaker; let dst commit faster)
+#   * lr_peak 2.0e-4 -> 3.0e-4 (kl/clip headroom is huge)
+#   * update_epochs 3 -> 4 (more chewing per batch)
+#   * num_updates 400 -> 600 (give it more time at the new rates)
+#   * num_envs 32 -> 64 (more parallel data per update; need to verify 5090 memory)
+#   * keep gamma=0.99 + clip_eps=0.15 + ent_coef_emit=0.03 unchanged (these worked)
+
+train:
+  num_envs: 64           # v3.1: 32  (double for more diverse data per update; ~2x VRAM)
+  rollout_length: 128
+  num_updates: 600       # v3.1: 400 (give the policy more time)
+  num_groups: 5
+  episode_steps: 200
+  eval_every: 10
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v3p2
+  ckpt_every: 25
+  log_every: 1
+  seed: 44
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.0003        # v3.1: 0.0002 (kl/clip stayed at 0 -- huge headroom)
+  lr_warmup_steps: 60
+  lr_decay_steps: 600    # match num_updates
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.0003   # v3.1: 0.001  (3x smaller -- dst still close to max entropy)
+  ent_coef_pct: 0.02
+  ent_coef_emit: 0.03
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4       # v3.1: 3
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 60     # v3.1: 40 (scale with num_updates ratio)
+  snapshot_every: 15     # v3.1: 10 (scale)
+  pool_capacity: 6       # v3.1: 5
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

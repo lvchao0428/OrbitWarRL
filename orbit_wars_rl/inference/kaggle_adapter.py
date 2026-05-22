@@ -38,9 +38,16 @@ PCT_BIN_VALUES = (0.25, 0.5, 0.75, 1.0)
 NEUTRAL_OWNER = -1
 PADDING_OWNER = -2
 
-PLANET_FEAT_DIM = 12
+PLANET_FEAT_DIM = 19
 FLEET_FEAT_DIM = 8
-GLOBAL_FEAT_DIM = 10
+GLOBAL_FEAT_DIM = 11
+
+# Orbit constants (must mirror env/constants.py).
+ROTATION_RADIUS_LIMIT = 50.0
+ORBIT_OMEGA_MAX = 0.05
+
+# Lead-target prediction times (mirror features/encode.py LEAD_TIMES).
+LEAD_TIMES = (15.0, 30.0)
 
 DEFAULT_EPISODE_STEPS = 500
 _LOG_1000 = float(np.log(1000.0))
@@ -48,11 +55,11 @@ _LOG_1000 = float(np.log(1000.0))
 
 @dataclass
 class EncodedObsNp:
-    planet_feats: np.ndarray       # (MAX_PLANETS, 12)
+    planet_feats: np.ndarray       # (MAX_PLANETS, 15)
     planet_mask: np.ndarray        # (MAX_PLANETS,) bool
     fleet_feats: np.ndarray        # (MAX_FLEETS, 8)
     fleet_mask: np.ndarray         # (MAX_FLEETS,) bool
-    global_feats: np.ndarray       # (10,)
+    global_feats: np.ndarray       # (11,)
     my_planet_mask: np.ndarray     # (MAX_PLANETS,) bool
     enemy_planet_mask: np.ndarray  # (MAX_PLANETS,) bool
     neutral_planet_mask: np.ndarray  # (MAX_PLANETS,) bool
@@ -148,6 +155,33 @@ def encode_kaggle_obs(
     in_foe_norm = np.log1p(in_foe) / 8.0
     is_padding = (~planet_mask).astype(np.float32)
 
+    # Orbit features (mirror env/state.py + features/encode.py).
+    dx_sun = planet_x - SUN_X
+    dy_sun = planet_y - SUN_Y
+    orbit_radius_np = np.sqrt(dx_sun * dx_sun + dy_sun * dy_sun)
+    orbit_phase_np = np.arctan2(dy_sun, dx_sun)
+    is_orbiting_np = ((orbit_radius_np + planet_radius) < ROTATION_RADIUS_LIMIT) & planet_mask
+    is_orbiting_f = is_orbiting_np.astype(np.float32)
+    orbit_phase_norm = orbit_phase_np.astype(np.float32) / np.float32(np.pi)
+    orbit_radius_norm = orbit_radius_np.astype(np.float32) / BOARD_HALF
+
+    # Lead-target predicted positions (mirror features/encode.py).
+    av_raw = float(obs.get("angular_velocity") or 0.0)
+    rotate_mask_f = is_orbiting_f
+    def _lead(t: float):
+        new_phase = orbit_phase_np + av_raw * t
+        rot_x = SUN_X + orbit_radius_np * np.cos(new_phase)
+        rot_y = SUN_Y + orbit_radius_np * np.sin(new_phase)
+        out_x = rotate_mask_f * rot_x + (1.0 - rotate_mask_f) * planet_x
+        out_y = rotate_mask_f * rot_y + (1.0 - rotate_mask_f) * planet_y
+        return out_x.astype(np.float32), out_y.astype(np.float32)
+    lead_x_15, lead_y_15 = _lead(LEAD_TIMES[0])
+    lead_x_30, lead_y_30 = _lead(LEAD_TIMES[1])
+    lead_x_15_norm = (lead_x_15 - BOARD_HALF) / BOARD_HALF
+    lead_y_15_norm = (lead_y_15 - BOARD_HALF) / BOARD_HALF
+    lead_x_30_norm = (lead_x_30 - BOARD_HALF) / BOARD_HALF
+    lead_y_30_norm = (lead_y_30 - BOARD_HALF) / BOARD_HALF
+
     planet_feats = np.stack(
         [
             is_mine.astype(np.float32),
@@ -162,6 +196,13 @@ def encode_kaggle_obs(
             in_friend_norm,
             in_foe_norm,
             is_padding,
+            is_orbiting_f,
+            orbit_phase_norm,
+            orbit_radius_norm,
+            lead_x_15_norm,
+            lead_y_15_norm,
+            lead_x_30_norm,
+            lead_y_30_norm,
         ],
         axis=-1,
     ).astype(np.float32)
@@ -211,6 +252,8 @@ def encode_kaggle_obs(
     is_mid = float(0.18 <= step_norm < 0.64)
     is_late = float(step_norm >= 0.64)
 
+    av_norm = av_raw / ORBIT_OMEGA_MAX
+
     global_feats = np.array(
         [
             step_norm,
@@ -223,6 +266,7 @@ def encode_kaggle_obs(
             is_early,
             is_mid,
             is_late,
+            av_norm,
         ],
         dtype=np.float32,
     )
@@ -312,3 +356,64 @@ def decode_to_kaggle_move(
     angle = math.atan2(dy - sy, dx - sx)
 
     return [[int(src_idx), float(angle), int(ships_to_send)]]
+
+
+def decode_multi_to_kaggle_moves(
+    obs: Dict[str, Any],
+    src_list: List[int],
+    dst_list: List[int],
+    pct_list: List[int],
+    player: Optional[int] = None,
+) -> List[List[float]]:
+    """Translate a list of (src, dst, pct) triples into Kaggle's move format.
+
+    Mirrors ``decode_to_kaggle_move`` per-launch but tracks a running
+    ``reserved`` per-planet counter so two launches from the same src don't
+    each see the full garrison.
+    """
+    if player is None:
+        player = int(obs.get("player", 0))
+
+    planets_by_id: Dict[int, Any] = {}
+    for p in obs.get("planets") or []:
+        planets_by_id[int(p[0])] = p
+
+    reserved: Dict[int, int] = {}
+    moves: List[List[float]] = []
+    for src_idx, dst_idx, pct_bin in zip(src_list, dst_list, pct_list):
+        if src_idx not in planets_by_id or dst_idx not in planets_by_id:
+            continue
+        if src_idx == dst_idx:
+            continue
+        src = planets_by_id[src_idx]
+        dst = planets_by_id[dst_idx]
+        src_owner, src_ships = int(src[1]), int(src[5])
+        if src_owner != player:
+            continue
+        avail = src_ships - reserved.get(src_idx, 0)
+        if avail <= 0:
+            continue
+        pct_bin = max(0, min(NUM_PCT_BINS - 1, int(pct_bin)))
+        pct = PCT_BIN_VALUES[pct_bin]
+        ships_to_send = max(1, int(math.floor(avail * pct)))
+        ships_to_send = min(ships_to_send, avail)
+        sx, sy = float(src[2]), float(src[3])
+        dx, dy = float(dst[2]), float(dst[3])
+        angle = math.atan2(dy - sy, dx - sx)
+        moves.append([int(src_idx), float(angle), int(ships_to_send)])
+        reserved[src_idx] = reserved.get(src_idx, 0) + ships_to_send
+    return moves
+
+
+def extract_planet_ships_array(obs: Dict[str, Any]) -> "np.ndarray":
+    """Build a (MAX_PLANETS,) int32 array of current garrison per slot id.
+
+    Slots not present in obs get 0. Used as input to the multi-action
+    sampler's reserved_ships logic.
+    """
+    arr = np.zeros((MAX_PLANETS,), dtype=np.int32)
+    for p in obs.get("planets") or []:
+        pid = int(p[0])
+        if 0 <= pid < MAX_PLANETS:
+            arr[pid] = int(p[5])
+    return arr
