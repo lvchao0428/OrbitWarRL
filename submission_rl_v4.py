@@ -15,11 +15,13 @@ WILL BE at t+15 / t+30 steps. Without these the small transformer can't
 learn cos/sin in-context and dst head stays at uniform random.
 
 Everything else (autoregressive K=8 multi-action, numpy forward, weights
-payload) is unchanged. Weights are still injected via the
-WEIGHTS_B64 placeholder line near the bottom of this file by
-``orbit_wars_rl/scripts/export_submission.py``. (We avoid writing the
-exact ``WEIGHTS_B64 = "..."`` form here so the injector's literal
-string-replace does not accidentally substitute this docstring.)
+payload) is unchanged. Weights are injected into the WEIGHTS_B64 line
+near the bottom of this file by ``orbit_wars_rl/scripts/export_submission.py``.
+
+NOTE: do not write the literal assignment ``WEIGHTS_B64 = <quoted-string>``
+form anywhere in this docstring -- the injector uses a start-of-line
+anchored regex, but extra matches in early drafts caused us to lose a
+training run (see docs/DAY2_PROGRESS.md ${section}9.10).
 """
 
 from __future__ import annotations
@@ -477,9 +479,9 @@ def _load_weights() -> Dict[str, np.ndarray]:
         return _PARAMS_CACHE
     if WEIGHTS_B64 == "__WEIGHTS_B64__":
         raise RuntimeError(
-            "submission_rl_v3.py: WEIGHTS_B64 placeholder is not filled in. "
+            "submission_rl_v4.py: WEIGHTS_B64 placeholder is not filled in. "
             "Run: python -m orbit_wars_rl.scripts.export_submission "
-            "--template submission_rl_v3.py --ckpt <path>"
+            "--template submission_rl_v4.py --ckpt <path>"
         )
     raw = zlib.decompress(base64.b64decode(WEIGHTS_B64))
     with np.load(io.BytesIO(raw)) as data:
