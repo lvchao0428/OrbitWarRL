@@ -1,0 +1,78 @@
+Loading environment cabt failed: dlopen(/opt/anaconda3/lib/python3.12/site-packages/kaggle_environments/envs/cabt/cg/libcg.so, 0x0006): tried: '/opt/anaconda3/lib/python3.12/site-packages/kaggle_environments/envs/cabt/cg/libcg.so' (slice is not valid mach-o file), '/System/Volumes/Preboot/Cryptexes/OS/opt/anaconda3/lib/python3.12/site-packages/kaggle_environments/envs/cabt/cg/libcg.so' (no such file), '/opt/anaconda3/lib/python3.12/site-packages/kaggle_environments/envs/cabt/cg/libcg.so' (slice is not valid mach-o file)
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: Successfully loaded OpenSpiel environments: 23.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_amazons
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_backgammon
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_checkers
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_chess
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_clobber
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_coin_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_connect_four
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_dark_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_gin_rummy
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_go
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_goofspiel
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hearts
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_lines_of_action
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_matching_pennies_3p
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_oshi_zumo
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_othello
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_tic_tac_toe
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_y
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_universal_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_python_repeated_pokerkit
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: OpenSpiel games skipped: 1.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    snake
+agent A: submission_rl_v6p3_ckpt_004999.py
+agent B: submission_v20_0513.py
+seed   : 0
+steps  : 151   (elapsed 38.5s)
+result : a=-1 b=1  status=['DONE', 'DONE']
+outcome: B wins
+
+ step | A (player 0)               | B (player 1)               | action A                       | action B                       | events
+------------------------------------------------------------------------------------------------------------------------------------------------------
+    0 | P= 1 sP=  10 F= 0 sF=   0 S=  10 | P= 1 sP=  10 F= 0 sF=   0 S=  10 | []                             | []                             | 
+   15 | P= 1 sP=   2 F=23 sF=  23 S=  25 | P= 2 sP=   8 F= 0 sF=   0 S=   8 | [(12,-2.91,1)]                 | []                             | P23:-1->1
+   30 | P= 1 sP=   1 F=19 sF=  27 S=  28 | P= 2 sP=  44 F= 3 sF=  24 S=  68 | [(12,-1.21,1)]                 | []                             | 
+   45 | P= 1 sP=   1 F=26 sF=  38 S=  39 | P= 2 sP=  64 F= 8 sF=  64 S= 128 | [(12,-1.99,4)]                 | []                             | 
+   60 | P= 1 sP=   1 F=28 sF=  40 S=  41 | P= 2 sP=  31 F=10 sF= 157 S= 188 | [(12,-1.94,1)]                 | [(15,1.2,46),(23,2.29,8)]      | 
+   75 | P= 1 sP=   1 F=30 sF=  33 S=  34 | P= 5 sP= 161 F= 5 sF=  61 S= 222 | [(12,2.05,1)]                  | []                             | P4:-1->1 P6:-1->1 P24:-1->1
+   90 | P= 1 sP=   1 F=29 sF=  32 S=  33 | P= 6 sP= 329 F= 5 sF= 107 S= 436 | [(12,-2.87,1)]                 | [(6,2.49,9)]                   | P21:-1->1
+  105 | P= 0 sP=   0 F=23 sF=  23 S=  23 | P=11 sP= 508 F= 1 sF=  12 S= 520 | []                             | []                             | P5:-1->1 P8:-1->1 P9:-1->1 P12:0->1 P20:-1->1
+  120 | P= 0 sP=   0 F=17 sF=  17 S=  17 | P=14 sP= 622 F= 7 sF= 169 S= 791 | []                             | []                             | P10:-1->1 P28:-1->1 P31:-1->1
+* 121 | P= 0 sP=   0 F=17 sF=  17 S=  17 | P=15 sP= 664 F= 5 sF= 113 S= 777 | []                             | []                             | P2:-1->1
+* 122 | P= 0 sP=   0 F=17 sF=  17 S=  17 | P=15 sP= 694 F= 5 sF= 113 S= 807 | []                             | []                             | 
+* 123 | P= 0 sP=   0 F=17 sF=  17 S=  17 | P=15 sP= 751 F= 4 sF=  86 S= 837 | []                             | []                             | 
+* 124 | P= 0 sP=   0 F=17 sF=  17 S=  17 | P=15 sP= 781 F= 4 sF=  86 S= 867 | []                             | []                             | 
+* 125 | P= 0 sP=   0 F=17 sF=  17 S=  17 | P=15 sP= 837 F= 3 sF=  60 S= 897 | []                             | []                             | 
+* 126 | P= 0 sP=   0 F=17 sF=  17 S=  17 | P=15 sP= 879 F= 2 sF=  48 S= 927 | []                             | []                             | 
+* 127 | P= 0 sP=   0 F=16 sF=  16 S=  16 | P=16 sP= 852 F= 3 sF=  76 S= 928 | []                             | [(10,0.45,10),(6,2.84,23),(24,2.53,43)] | P29:-1->1
+* 128 | P= 0 sP=   0 F=13 sF=  13 S=  13 | P=16 sP= 880 F= 3 sF=  76 S= 956 | []                             | []                             | 
+* 129 | P= 0 sP=   0 F=13 sF=  13 S=  13 | P=17 sP= 914 F= 2 sF=  33 S= 947 | []                             | []                             | P0:-1->1
+* 130 | P= 0 sP=   0 F=13 sF=  13 S=  13 | P=17 sP= 946 F= 2 sF=  33 S= 979 | []                             | []                             | 
+* 131 | P= 0 sP=   0 F=13 sF=  13 S=  13 | P=17 sP= 988 F= 1 sF=  23 S=1011 | []                             | []                             | 
+* 132 | P= 0 sP=   0 F=13 sF=  13 S=  13 | P=17 sP=1020 F= 1 sF=  23 S=1043 | []                             | []                             | 
+* 133 | P= 0 sP=   0 F=12 sF=  12 S=  12 | P=17 sP=1052 F= 1 sF=  23 S=1075 | []                             | []                             | 
+* 134 | P= 0 sP=   0 F=12 sF=  12 S=  12 | P=18 sP=1087 F= 0 sF=   0 S=1087 | []                             | []                             | P22:-1->1
+* 135 | P= 0 sP=   0 F=12 sF=  12 S=  12 | P=18 sP=1122 F= 0 sF=   0 S=1122 | []                             | []                             | 
+* 136 | P= 0 sP=   0 F=11 sF=  11 S=  11 | P=18 sP=1129 F= 1 sF=  28 S=1157 | []                             | [(15,-2.44,28)]                | 
+* 137 | P= 0 sP=   0 F=11 sF=  11 S=  11 | P=18 sP=1164 F= 1 sF=  28 S=1192 | []                             | []                             | 
+* 138 | P= 0 sP=   0 F=11 sF=  11 S=  11 | P=18 sP=1199 F= 1 sF=  28 S=1227 | []                             | []                             | 
+* 139 | P= 0 sP=   0 F=10 sF=  10 S=  10 | P=18 sP=1234 F= 1 sF=  28 S=1262 | []                             | []                             | 
+* 140 | P= 0 sP=   0 F=10 sF=  10 S=  10 | P=18 sP=1269 F= 1 sF=  28 S=1297 | []                             | []                             | 
+* 141 | P= 0 sP=   0 F= 8 sF=   8 S=   8 | P=19 sP=1259 F= 1 sF=  46 S=1305 | []                             | [(23,-1.22,46)]                | P7:-1->1
+* 142 | P= 0 sP=   0 F= 7 sF=   7 S=   7 | P=19 sP=1155 F= 4 sF= 189 S=1344 | []                             | [(23,3.1,81),(31,-1.79,50),(10,-3.12,12)] | 
+* 143 | P= 0 sP=   0 F= 6 sF=   6 S=   6 | P=19 sP=1194 F= 4 sF= 189 S=1383 | []                             | []                             | 
+* 144 | P= 0 sP=   0 F= 4 sF=   4 S=   4 | P=19 sP=1233 F= 4 sF= 189 S=1422 | []                             | []                             | 
+* 145 | P= 0 sP=   0 F= 3 sF=   3 S=   3 | P=19 sP=1272 F= 4 sF= 189 S=1461 | []                             | []                             | 
+* 146 | P= 0 sP=   0 F= 2 sF=   2 S=   2 | P=20 sP=1314 F= 3 sF= 108 S=1422 | []                             | []                             | P11:-1->1
+* 147 | P= 0 sP=   0 F= 2 sF=   2 S=   2 | P=20 sP=1354 F= 3 sF= 108 S=1462 | []                             | []                             | 
+* 148 | P= 0 sP=   0 F= 1 sF=   1 S=   1 | P=21 sP=1397 F= 2 sF=  62 S=1459 | []                             | []                             | P3:-1->1
+* 149 | P= 0 sP=   0 F= 1 sF=   1 S=   1 | P=21 sP=1421 F= 3 sF=  79 S=1500 | []                             | [(2,-2.19,17)]                 | 
+* 150 | P= 0 sP=   0 F= 0 sF=   0 S=   0 | P=21 sP=1512 F= 2 sF=  29 S=1541 | []                             | []                             | 
+------------------------------------------------------------------------------------------------------------------------------------------------------
+steps=151 (* = tail dump)
+final result: a=-1 b=1

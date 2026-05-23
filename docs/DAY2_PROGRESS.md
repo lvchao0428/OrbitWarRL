@@ -1161,4 +1161,108 @@ python -m orbit_wars_rl.scripts.h2h_gauntlet \
 2. **§9.10**：v4 template docstring 里写字面 `WEIGHTS_B64 = "..."` 把 `_inject`
    骗到了，已修。下次 sync + re-export 应当一切正常。
 
+---
+
+## 11. v6p2 → v6p3：DstHead collapse-to-src bug（2026-05-23 凌晨 02:00-03:00）
+
+### 11.1 症状
+
+* **v6p2 u999 H2H 全面退化**（vs u299 对比）：
+  - vs v20:  0/20 → 0/20
+  - vs v1:   15/20 → **8/20**（-35%！）
+  - vs v4p2: 6/20 → 10/20（+20%）
+* `export_submission` smoke obs 返回 **`moves: []`**（u299 时返回 `[[0, 0.0, 30]]`）。
+* `asA=8 asB=0` 不平衡（player 0 时能赢, player 1 时全输）——典型 player-bias 信号。
+
+### 11.2 诊断（`scripts/diag_smoke_obs.py`）
+
+写了一个新诊断脚本直接对 submission 的 `greedy_multi_action` 输出做 dump，
+而不只看 decode 后的 `agent()` moves。结果：
+
+```
+u999 player=0: src_list=[0] dst_list=[0] <-- DROPPED (src==dst)
+u999 player=1: src_list=[3] dst_list=[3] <-- DROPPED (src==dst)
+
+u299 player=0: src=[0] dst=[1] ✓
+u299 player=1: src=[3] dst=[1] ✓
+```
+
+**DstHead argmax collapse 到 src 自己**。`decode_multi_to_kaggle_moves` 里
+`if src_idx == dst_idx: continue` 把 fleet 全部过滤掉 → smoke moves []。
+
+### 11.3 根因
+
+`env/actions.py` L127：
+```
+different_target = src_idx != dst_idx
+valid = ... & different_target
+ships_to_send = where(valid, ships_to_send, 0)
+```
+训练时 `src==dst` 会被环境 **silently** 设为 `ships=0`，但 policy 仍然 sample
+了那个 dst index，log_prob 仍然计入。**梯度信号在那些样本上恒为 0**
+（action 没真的执行就没法学），dst probability mass 可以无成本地停留在 src 自己上。
+
+cross-attention 的天然偏好让 `dst_emb @ src_emb_query` 在 src 那一格分数最高
+（同一个 planet 的 embedding 跟自己最像），随训练越走 mass 越集中于 src，
+直到 inference argmax 时整个 mode collapse。
+
+**这是一个隐藏 bug**：训练 metric (`emits 4.0`、`WRr 0.91`、`pg_loss -0.008`) 全部健康，
+因为训练 sample dst 是从 categorical(分布) 来的，大部分时间 dst != src，**只有
+inference 用 argmax 才暴露**。env 把无效 action 默默清零让 bug 长期潜伏。
+
+### 11.4 修复
+
+**OPT B (inference-side, 临时救火)：**
+- `inference/numpy_forward.py` 的 `forward / greedy_action / greedy_multi_action`
+  在 argmax dst 之前 `d_logits[src_idx] = -1e9`。
+- `submission_rl_v4.py` 同步同样的 fallback。
+- **验证 (u999_fixed H2H)：vs v1 8→15, vs v4p2 10→11, vs v20 0→0**。
+  ↑ 救活了"非 v20"对手的成绩，但 vs v20 仍 0 因为 dst 第二大本身可能也烂。
+
+**OPT A (architectural fix, 永久)：**
+- `net/heads.py` 的 `DstHead.__call__` 新增可选 `src_idx` 参数；
+  当 `src_idx is not None`：`eff_mask = planet_mask & ~one_hot(src_idx, P)`。
+- `net/model.py` 在 `evaluate` 和 `__call__` 调用 `dst_head` 时传 `src_idx=src_t`。
+- `inference/test_parity.py` 现在自动从 ckpt 推断 `d_model/n_layers/n_heads/ff_dim`
+  （之前默认 64/2/4/128 撞 v6 ckpt 的 128 会 shape mismatch）。
+- **Parity 验证：trained ckpt u1899 上 8/8 OK**（OPT A JAX vs OPT B numpy 完美对齐）。
+
+### 11.5 v6p3：在 OPT A 基础上 resume from u1899
+
+新 config：`configs/multi_action_v6p3.yaml`
+- 从 v6p2 ckpt_001899.pkl 继续训（params shape 不变,resume 通过 shape check）
+- `ent_coef_dst` 0.0001 → 0.001（10x，让 mass 从 src 释放后能探索新 dst）
+- `selfplay.warmup_updates` 50 → 20（resuming from trained policy）
+- 其他不变
+
+**resume 后 u50-u95 观察到的关键变化：**
+```
+                u1899 (v6p2)    u50-u95 (v6p3)
+ent_dst         0.98            1.88-2.07    ← OPT A 生效：mass 重分布
+ent_src         0.46            0.56-0.70    ← 略升（更探索）
+emits           4.02            3.65-4.50    ← 几乎不变（emit_head 不受影响）
+pg_loss         -0.0079         -0.0068~-0.0099  ← healthy
+clip            0.17            0.11-0.20    ← healthy
+WRf             0.78            0.88         ← 不降反升
+tR              +0.72           +0.40~+0.65  ← 短暂下降（normal, pool 还是旧版）
+```
+
+`ent_dst` 从 0.98 → 1.90 是 **OPT A 在 work 的最强信号**——dst probability
+mass 从单一 src 那一格分散到了所有 non-src planets。预期 200 update 后
+自然回落到 1.3-1.5（policy 学到真正的优质 dst commit）。
+
+### 11.6 教训
+
+* **不要只看 metric**。`emits 4.0` 一直好看,但其中可能 1-2 个是 src==dst 的
+  "幽灵 fleet",真实有效 fleet 数被高估。下次记得加 `mean_effective_fleets_per_turn`
+  的指标（= emits - src==dst 计数）。
+* **env 不该 silent drop 无效 action**。`actions.py` 的 `different_target` 设计
+  让训练永远无法学到"不能打自己"。**v7+ 应该考虑**：要么 src/dst head 完全 mask
+  非法组合，要么让无效 action 带上 small negative reward 当作惩罚。
+* **inference smoke test 必须用 trained ckpt 而不是随机 fake_obs**。当前 smoke
+  obs 是 4-planet 静态，正好踩到 dst collapse 的边界；如果用真实 game step 1
+  的 obs（5 planet + comets + orbits），bug 可能再过几小时才暴露。
+* **parity test 必须自动推断架构**。v6 之前默认 d_model=64 写死，跟 v6 ckpt
+  (128) 一接就 OOM/shape mismatch；现在从 ckpt header 推断。
+
 
