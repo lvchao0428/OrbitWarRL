@@ -5,7 +5,7 @@ __pycache__/
 ckpt_selfplay/
 
 # 忽略日志
-logs/
+#logs/
 
 # 可选：添加Python项目通用忽略项
 *.py[cod]
