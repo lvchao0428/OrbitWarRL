@@ -20,17 +20,28 @@ from __future__ import annotations
 
 import argparse
 import importlib.util as iu
+import sys
+from pathlib import Path
 from typing import Dict, List, Any
 
 from kaggle_environments import make
 
 
 def _load_mod(path: str):
-    spec = iu.spec_from_file_location("_diag_sub_real", path)
+    # Use the file stem as the module name so the loaded module can refer to
+    # itself via ``sys.modules[__name__]`` -- required for things like
+    # @dataclass which look up ``cls.__module__`` during decoration.
+    name = Path(path).stem
+    spec = iu.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         raise SystemExit(f"cannot import {path}")
     mod = iu.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    sys.modules[name] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        sys.modules.pop(name, None)
+        raise
     return mod
 
 
