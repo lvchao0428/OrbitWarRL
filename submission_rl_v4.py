@@ -346,39 +346,62 @@ def _mask_logits(logits, mask):
     return np.where(mask, logits, _NEG).astype(np.float32)
 
 
-def _src_head(W, planet_emb, my_mask):
-    x = _dense(planet_emb, W["src_head/fc1/kernel"], W["src_head/fc1/bias"])
+def _src_head(W, planet_emb, my_mask, remaining_norm=None):
+    if remaining_norm is not None:
+        x = np.concatenate(
+            [planet_emb, remaining_norm.astype(np.float32)[..., None]], axis=-1,
+        )
+    else:
+        x = planet_emb
+    x = _dense(x, W["src_head/fc1/kernel"], W["src_head/fc1/bias"])
     x = _gelu(x)
     logits = _dense(x, W["src_head/src_score/kernel"], W["src_head/src_score/bias"])[..., 0]
     return _mask_logits(logits, my_mask.astype(bool))
 
 
-def _dst_head(W, planet_emb, src_emb, planet_mask, my_mask):
+def _dst_head(W, planet_emb, src_emb, planet_mask, my_mask, reserved_norm=None):
     del my_mask  # owned planets allowed as dst (reinforcement); only mask padding
     q = _project_qkv(src_emb[None, :], W["dst_head/cross_attn/query/kernel"], W["dst_head/cross_attn/query/bias"])
     k = _project_qkv(planet_emb, W["dst_head/cross_attn/key/kernel"], W["dst_head/cross_attn/key/bias"])
     v = _project_qkv(planet_emb, W["dst_head/cross_attn/value/kernel"], W["dst_head/cross_attn/value/bias"])
     attended = _attention(q, k, v, planet_mask.astype(bool))
     cond = _attention_out(attended, W["dst_head/cross_attn/out/kernel"], W["dst_head/cross_attn/out/bias"])[0]
-    joined = np.concatenate([planet_emb, np.broadcast_to(cond, (planet_emb.shape[0], cond.shape[0]))], axis=-1)
+    if reserved_norm is not None:
+        planet_rows = np.concatenate(
+            [planet_emb, reserved_norm.astype(np.float32)[..., None]], axis=-1
+        )
+    else:
+        planet_rows = planet_emb
+    joined = np.concatenate(
+        [planet_rows, np.broadcast_to(cond, (planet_rows.shape[0], cond.shape[0]))], axis=-1
+    )
     x = _dense(joined, W["dst_head/dst_fc1/kernel"], W["dst_head/dst_fc1/bias"])
     x = _gelu(x)
     logits = _dense(x, W["dst_head/dst_score/kernel"], W["dst_head/dst_score/bias"])[..., 0]
     return _mask_logits(logits, planet_mask.astype(bool))
 
 
-def _pct_head(W, src_emb, dst_emb, global_emb):
-    px = np.concatenate([src_emb, dst_emb, global_emb], axis=-1)
+def _pct_head(W, src_emb, dst_emb, global_emb, src_remaining_norm=None):
+    feats = [src_emb, dst_emb, global_emb]
+    if src_remaining_norm is not None:
+        s = np.asarray(src_remaining_norm, dtype=np.float32).reshape(())
+        feats.append(np.array([s], dtype=np.float32))
+    px = np.concatenate(feats, axis=-1)
     px = _dense(px, W["pct_head/fc1/kernel"], W["pct_head/fc1/bias"])
     px = _gelu(px)
     return _dense(px, W["pct_head/logits/kernel"], W["pct_head/logits/bias"])
 
 
-def _emit_head(W, global_emb, planet_pool, step_idx, max_steps=MAX_FLEETS_PER_TURN):
+def _emit_head(W, global_emb, planet_pool, step_idx, max_steps=MAX_FLEETS_PER_TURN,
+               total_remaining_norm=None):
     step_oh = np.zeros((max_steps,), dtype=np.float32)
     if 0 <= step_idx < max_steps:
         step_oh[step_idx] = 1.0
-    x = np.concatenate([global_emb, planet_pool, step_oh], axis=-1)
+    feats = [global_emb, planet_pool, step_oh]
+    if total_remaining_norm is not None:
+        t = np.asarray(total_remaining_norm, dtype=np.float32).reshape(())
+        feats.append(np.array([t], dtype=np.float32))
+    x = np.concatenate(feats, axis=-1)
     x = _dense(x, W["emit_head/fc1/kernel"], W["emit_head/fc1/bias"])
     x = _gelu(x)
     return _dense(x, W["emit_head/logits/kernel"], W["emit_head/logits/bias"])
@@ -407,7 +430,18 @@ def greedy_multi_action(W, enc) -> Tuple[List[int], List[int], List[int]]:
         no_options = not any_avail
         eff_mask = avail_mask if any_avail else my_mask
 
-        e_logits = _emit_head(W, global_emb, planet_pool, t)
+        # v7: reserved-aware features (must match training: log1p(.)/8)
+        remaining_clip = np.maximum(remaining, 0).astype(np.float32)
+        reserved_f = np.maximum(reserved, 0).astype(np.float32)
+        remaining_norm = np.log1p(remaining_clip) / 8.0
+        reserved_norm = np.log1p(reserved_f) / 8.0
+        total_remaining = float((remaining_clip * my_mask.astype(np.float32)).sum())
+        total_remaining_norm = np.float32(np.log1p(total_remaining) / 8.0)
+
+        e_logits = _emit_head(
+            W, global_emb, planet_pool, t,
+            total_remaining_norm=total_remaining_norm,
+        )
         if t == 0:
             decision = (not no_options)
         else:
@@ -415,14 +449,21 @@ def greedy_multi_action(W, enc) -> Tuple[List[int], List[int], List[int]]:
             decision = (emit_pred == 1) and (not no_options)
         emit_t = decision and still_emit
 
-        s_logits = _src_head(W, planet_emb, eff_mask)
+        s_logits = _src_head(W, planet_emb, eff_mask, remaining_norm)
         src_t = int(np.argmax(s_logits))
         src_emb = planet_emb[src_t]
-        d_logits = _dst_head(W, planet_emb, src_emb, planet_mask, my_mask)
+        d_logits = _dst_head(
+            W, planet_emb, src_emb, planet_mask, my_mask,
+            reserved_norm=reserved_norm,
+        )
         d_logits[src_t] = _NEG
         dst_t = int(np.argmax(d_logits))
         dst_emb = planet_emb[dst_t]
-        p_logits = _pct_head(W, src_emb, dst_emb, global_emb)
+        src_remaining_norm = float(remaining_norm[src_t])
+        p_logits = _pct_head(
+            W, src_emb, dst_emb, global_emb,
+            src_remaining_norm=src_remaining_norm,
+        )
         pct_t = int(np.argmax(p_logits))
 
         if emit_t:

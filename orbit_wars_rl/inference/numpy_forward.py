@@ -327,19 +327,32 @@ def greedy_action(
     my_planet_mask: np.ndarray,
     n_layers: int = 2,
 ) -> Tuple[int, int, int, float]:
-    """Legacy single-action greedy. Argmax src/dst/pct + value."""
+    """Legacy single-action greedy. Argmax src/dst/pct + value.
+
+    v7: forwards zero remaining/reserved features (since this single-action
+    path has no K-step state). Matches training's t=0 with fresh reserved=0.
+    """
     global_emb, planet_emb, fleet_emb, planet_pool, fleet_pool = encode_tokens(
         W, planet_feats, planet_mask, fleet_feats, fleet_mask, global_feats, n_layers=n_layers,
     )
-    s_logits = src_head(W, planet_emb, my_planet_mask)
+    P = planet_emb.shape[0]
+    # No ship state available here, so emulate "start of turn" (all-zero
+    # reserved). For src/dst we pass log1p(planet_ships)/8 if we have it;
+    # without ships info we pass zero-like masks. v7 networks pass these
+    # explicitly elsewhere; legacy code paths only used for tests.
+    zero_per_planet = np.zeros((P,), dtype=np.float32)
+    s_logits = src_head(W, planet_emb, my_planet_mask, zero_per_planet)
     src_idx = int(np.argmax(s_logits))
     src_emb = planet_emb[src_idx]
-    d_logits = dst_head(W, planet_emb, src_emb, planet_mask, my_planet_mask)
+    d_logits = dst_head(
+        W, planet_emb, src_emb, planet_mask, my_planet_mask,
+        reserved_norm=zero_per_planet,
+    )
     d_logits = d_logits.copy()
     d_logits[src_idx] = -1e9
     dst_idx = int(np.argmax(d_logits))
     dst_emb = planet_emb[dst_idx]
-    p_logits = pct_head(W, src_emb, dst_emb, global_emb)
+    p_logits = pct_head(W, src_emb, dst_emb, global_emb, src_remaining_norm=0.0)
     pct_idx = int(np.argmax(p_logits))
     v = value_head(W, global_emb, planet_emb, planet_mask, fleet_emb, fleet_mask)
     return src_idx, dst_idx, pct_idx, v
