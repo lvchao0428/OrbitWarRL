@@ -150,6 +150,32 @@ def _scatter_add(buf: jnp.ndarray, idx: jnp.ndarray, val: jnp.ndarray) -> jnp.nd
     return buf + val[..., None] * one_hot
 
 
+def _remaining_features(
+    ships_raw: jnp.ndarray,    # (..., P) int32 -- start-of-turn garrison
+    reserved: jnp.ndarray,     # (..., P) int32 -- already promised this turn
+    my_mask: jnp.ndarray,      # (..., P) bool  -- our planets
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Compute the per-step reserved-aware features fed into the heads.
+
+    Returns
+    -------
+    remaining_norm   : (..., P) float32  log1p(remaining)/8
+    reserved_norm    : (..., P) float32  log1p(reserved)/8
+    total_remaining_norm : (...,)  float32  log1p(sum_of_my_remaining)/8
+
+    All three use log1p / 8 normalisation -- same scaling as the planet
+    feature ``log_ships`` in features/encode.py so the heads see comparable
+    magnitudes.
+    """
+    remaining = jnp.maximum(ships_raw - reserved, jnp.int32(0)).astype(jnp.float32)
+    reserved_f = jnp.maximum(reserved, jnp.int32(0)).astype(jnp.float32)
+    remaining_norm = jnp.log1p(remaining) / jnp.float32(8.0)
+    reserved_norm = jnp.log1p(reserved_f) / jnp.float32(8.0)
+    my_remaining_total = (remaining * my_mask.astype(remaining.dtype)).sum(axis=-1)
+    total_remaining_norm = jnp.log1p(my_remaining_total) / jnp.float32(8.0)
+    return remaining_norm, reserved_norm, total_remaining_norm
+
+
 class ActorCritic(nn.Module):
     d_model: int = 64
     n_layers: int = 2
@@ -241,12 +267,26 @@ class ActorCritic(nn.Module):
             avail_mask = obs_my & (remaining > 0)
             fallback = jnp.logical_not(avail_mask.any(axis=-1, keepdims=True))
             eff_mask = jnp.where(fallback, obs_my, avail_mask)
-            src_logits_t = self.src_head(planet_emb, eff_mask)
-            emit_logits_t = self.emit_head(global_emb, planet_pool, jnp.int32(t))
+            remaining_norm, reserved_norm, total_remaining_norm = _remaining_features(
+                ships_raw_b, reserved, obs_my
+            )
+            src_logits_t = self.src_head(planet_emb, eff_mask, remaining_norm)
+            emit_logits_t = self.emit_head(
+                global_emb, planet_pool, jnp.int32(t), total_remaining_norm
+            )
             src_emb_t = _gather_planet_emb(planet_emb, src_t)
-            dst_logits_t = self.dst_head(planet_emb, src_emb_t, obs_pmask, obs_my, src_idx=src_t)
+            dst_logits_t = self.dst_head(
+                planet_emb, src_emb_t, obs_pmask, obs_my,
+                src_idx=src_t, reserved_norm=reserved_norm,
+            )
             dst_emb_t = _gather_planet_emb(planet_emb, dst_t)
-            pct_logits_t = self.pct_head(src_emb_t, dst_emb_t, global_emb)
+            # src_remaining_norm: scalar (per leading batch) = remaining at src
+            src_remaining_norm = jnp.take_along_axis(
+                remaining_norm, src_t[..., None], axis=-1
+            )[..., 0]
+            pct_logits_t = self.pct_head(
+                src_emb_t, dst_emb_t, global_emb, src_remaining_norm
+            )
 
             src_logits_list.append(src_logits_t)
             dst_logits_list.append(dst_logits_t)
@@ -328,8 +368,13 @@ class ActorCritic(nn.Module):
             no_options = jnp.logical_not(jnp.squeeze(any_avail, axis=-1)) if leading_shape else jnp.logical_not(any_avail[0])
             # broadcast the "no_options" fallback against the K-axis structure
             eff_mask = jnp.where(any_avail, avail_mask, obs_my)
-            src_logits_t = self.src_head(planet_emb, eff_mask)
-            emit_logits_t = self.emit_head(global_emb, planet_pool, jnp.int32(t))
+            remaining_norm, reserved_norm, total_remaining_norm = _remaining_features(
+                ships_raw, reserved, obs_my
+            )
+            src_logits_t = self.src_head(planet_emb, eff_mask, remaining_norm)
+            emit_logits_t = self.emit_head(
+                global_emb, planet_pool, jnp.int32(t), total_remaining_norm
+            )
 
             # Sample emit (1 = continue, 0 = stop). At t==0 force-continue; if
             # no_options force-stop. Once stopped, stay stopped.
@@ -361,7 +406,10 @@ class ActorCritic(nn.Module):
             src_entropy = jnp.where(emit_t, src_ent_full, jnp.float32(0.0))
 
             src_emb_t = _gather_planet_emb(planet_emb, src_t)
-            dst_logits_t = self.dst_head(planet_emb, src_emb_t, obs_pmask, obs_my, src_idx=src_t)
+            dst_logits_t = self.dst_head(
+                planet_emb, src_emb_t, obs_pmask, obs_my,
+                src_idx=src_t, reserved_norm=reserved_norm,
+            )
             if deterministic:
                 dst_t = jnp.argmax(dst_logits_t, axis=-1).astype(jnp.int32)
             else:
@@ -371,7 +419,12 @@ class ActorCritic(nn.Module):
             dst_entropy = jnp.where(emit_t, dst_ent_full, jnp.float32(0.0))
 
             dst_emb_t = _gather_planet_emb(planet_emb, dst_t)
-            pct_logits_t = self.pct_head(src_emb_t, dst_emb_t, global_emb)
+            src_remaining_norm = jnp.take_along_axis(
+                remaining_norm, src_t[..., None], axis=-1
+            )[..., 0]
+            pct_logits_t = self.pct_head(
+                src_emb_t, dst_emb_t, global_emb, src_remaining_norm
+            )
             if deterministic:
                 pct_t = jnp.argmax(pct_logits_t, axis=-1).astype(jnp.int32)
             else:

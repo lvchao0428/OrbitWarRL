@@ -1,0 +1,120 @@
+# v7 - FIX the per-step "head-blind to reserved-state" architectural bug found
+# in v6p3 replay analysis (see DAY2_PROGRESS.md §v6p3 replay-dump diagnosis).
+#
+# Root cause of v6p3 failing 0/20 vs v20 despite normal training metrics:
+#
+#   The K-step multi-action loop runs heads on input that is **invariant to
+#   the action history within the same turn**:
+#     - src_head sees `planet_emb` (constant per turn) + binary `my_mask`
+#       (also constant). It commits to one src and re-picks it at every t.
+#     - dst_head sees `planet_emb + src_emb` (both constant for that fixed
+#       src). It commits to one dst.
+#     - pct_head sees `src_emb + dst_emb + global_emb` (all constant). It
+#       commits to one pct.
+#     - emit_head sees `global_emb + planet_pool + step_oh`. It cannot tell
+#       that the mother planet is now empty -- only `step_oh` changes.
+#
+#   So the policy degenerates to "K identical fleets" -- all eight from the
+#   same src to the same dst at the same pct. Replay confirmed: 8 fleets x
+#   1 ship each, leaving mother planet empty by step 1.
+#
+# v7 architectural deltas vs v6p3
+# ================================
+# Each head gets a NEW input that changes within the K-loop, so the policy
+# can refine across t (e.g. "now mother planet is half-empty, switch src or
+# stop emitting"):
+#
+#   src_head : +remaining_norm   (P,)  log1p(remaining_ships) / 8
+#   dst_head : +reserved_norm    (P,)  log1p(reserved_ships)  / 8
+#   pct_head : +src_remaining_norm  () scalar = remaining_norm[src_t]
+#   emit_head: +total_remaining_norm () scalar = sum_my_remaining
+#
+# Param count delta: ~320 weights (4 tiny fc inputs added). Negligible.
+#
+# Float32 rounding fix
+# ====================
+# Side fix: numpy_forward.py and submission template now use float32
+# multiplication for ships_t calculation (was float64 -> 0.7*10=6.999...).
+# This silently dropped 1 ship per fleet across every prior submission.
+# v7 ckpts validated via test_parity = 16/16.
+#
+# Training plan
+# =============
+# v7 trains from scratch (architecture changed; v6p3 ckpts not loadable).
+# Reuse v6's hyperparameters since they were stable in v6p3 (emits 3-4,
+# clip 0.04, ent_pct < 1.0). The only delta is adding v20 to the frozen
+# opponent pool from upd 200 to force the policy to learn anti-v20 play.
+#
+# Launch
+# ======
+#   ORBITWARS_SHAPING_SCALE=0.0 \
+#       nohup python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v7.yaml \
+#       --log-dir logs/multi_action_v7 \
+#       > logs/multi_action_v7.log 2>&1 &
+#
+# Sign-of-life by upd
+# ===================
+#   upd 30 : adv_std > 0.30, pg_loss < -0.002, mean_emits 1.5-3.0
+#   upd 100: ent_pct < 1.0, ent_dst < 2.5, mean_emits 2.0-3.5
+#   upd 300: WRr > 0.85, mean_emits 2.5-3.5 (NOT pinned at 4.0!)
+#            CHECK: replay_dump shows different src/dst across K steps
+#   upd 1000: WRr_pool > 0.65, ent_dst > 1.5
+#   upd 5000: H2H vs v20 >= 3/20  (was 0/20 in v6p3; even 3/20 = bug fixed)
+#
+# Kill signals
+# ============
+#   * adv_std < 0.20 at upd 30  --> something fundamentally broken
+#   * mean_emits == 8.0 at upd 100  --> emit_head still ignoring remaining
+#   * mean_emits == 1.0 at upd 100  --> emit_head over-stops (less likely)
+#   * src_ent < 0.5 at upd 200  --> src still commit-locked (the v6p3 bug
+#                                   came back; means remaining_norm signal
+#                                   not strong enough)
+
+train:
+  num_envs: 128
+  rollout_length: 128
+  num_updates: 5000
+  num_groups: 5
+  episode_steps: 80
+  eval_every: 25
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v7
+  ckpt_every: 50
+  log_every: 1
+  seed: 70
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000      # KEY: this is OPTIMIZER STEPS not PPO updates
+                             # (see v6p2 lr-schedule-bug fix). 2000 opt steps =
+                             # ~125 PPO updates at 4 epochs * 4 minibatches.
+  lr_decay_steps: 100000     # KEEP near peak through most of run
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001        # KEY: bumped from v6p2's 0.0001 -> 0.001 so
+                             # dst doesn't collapse during early training
+                             # (proven helpful in v6p3 -- ent_dst recovered).
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.97
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

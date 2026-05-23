@@ -23,17 +23,29 @@ def _mask_logits(logits: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
 class SrcHead(nn.Module):
     """Score each planet as a launch source; only planets the agent owns survive.
 
-    Two-layer MLP: small per-planet MLP from planet_emb -> hidden -> 1 logit.
-    Top-team feedback (top_players_rl.txt §230: "Action head is pretty much
-    standard") suggests a single Dense is too thin -- needs at least one
-    non-linearity for the head to learn non-trivial src-selection patterns.
+    v7: input includes per-planet ``remaining_ships_norm`` so the K-step loop
+    can pick different src planets across steps (in v6 the head saw a static
+    planet_emb and would commit to the same src for all K iterations even
+    after that src's ships had been reserved).
     """
 
     hidden: int = 64
 
     @nn.compact
-    def __call__(self, planet_emb: jnp.ndarray, my_planet_mask: jnp.ndarray) -> jnp.ndarray:
-        x = nn.Dense(self.hidden, name="fc1")(planet_emb)
+    def __call__(
+        self,
+        planet_emb: jnp.ndarray,
+        my_planet_mask: jnp.ndarray,
+        remaining_norm: jnp.ndarray | None = None,
+    ) -> jnp.ndarray:
+        # ``remaining_norm`` has shape matching planet_emb leading dims + (P,)
+        if remaining_norm is not None:
+            x = jnp.concatenate(
+                [planet_emb, remaining_norm[..., None]], axis=-1,
+            )
+        else:
+            x = planet_emb
+        x = nn.Dense(self.hidden, name="fc1")(x)
         x = nn.gelu(x)
         logits = nn.Dense(1, name="src_score")(x)[..., 0]
         return _mask_logits(logits, my_planet_mask)
@@ -67,7 +79,13 @@ class DstHead(nn.Module):
         planet_mask: jnp.ndarray,
         my_planet_mask: jnp.ndarray,
         src_idx: jnp.ndarray | None = None,
+        reserved_norm: jnp.ndarray | None = None,
     ) -> jnp.ndarray:
+        """v7: ``reserved_norm`` (per-planet reserved ship ratio, same leading
+        dims as planet_emb but no embedding axis) is appended so that the head
+        can avoid sending the next fleet to a target that is already saturated
+        with our incoming ships.
+        """
         del my_planet_mask  # kept for backward-compatible call sites
         is_batched = planet_emb.ndim == 3
         if not is_batched:
@@ -76,6 +94,8 @@ class DstHead(nn.Module):
             planet_mask = planet_mask[None, ...]
             if src_idx is not None:
                 src_idx = src_idx[None, ...] if src_idx.ndim == 0 else src_idx
+            if reserved_norm is not None:
+                reserved_norm = reserved_norm[None, ...]
 
         q = src_emb[:, None, :]
         attn_mask = planet_mask[:, None, None, :]
@@ -87,7 +107,17 @@ class DstHead(nn.Module):
         )(q, planet_emb, mask=attn_mask)
         cond = attended[:, 0, :]
 
-        joined = jnp.concatenate([planet_emb, jnp.broadcast_to(cond[:, None, :], planet_emb.shape)], axis=-1)
+        # planet rows: include reserved_norm as an extra scalar feature
+        if reserved_norm is not None:
+            planet_rows = jnp.concatenate(
+                [planet_emb, reserved_norm[..., None]], axis=-1
+            )
+        else:
+            planet_rows = planet_emb
+        joined = jnp.concatenate(
+            [planet_rows, jnp.broadcast_to(cond[:, None, :], planet_rows.shape[:-1] + (cond.shape[-1],))],
+            axis=-1,
+        )
         x = nn.Dense(self.d_model, name="dst_fc1")(joined)
         x = nn.gelu(x)
         logits = nn.Dense(1, name="dst_score")(x)[..., 0]
@@ -116,8 +146,15 @@ class PctHead(nn.Module):
         src_emb: jnp.ndarray,
         dst_emb: jnp.ndarray,
         global_emb: jnp.ndarray,
+        src_remaining_norm: jnp.ndarray | None = None,
     ) -> jnp.ndarray:
-        x = jnp.concatenate([src_emb, dst_emb, global_emb], axis=-1)
+        """v7: ``src_remaining_norm`` is a scalar = log1p(remaining_at_src)/8
+        so the pct head knows how many ships are available right now.
+        """
+        feats = [src_emb, dst_emb, global_emb]
+        if src_remaining_norm is not None:
+            feats.append(src_remaining_norm[..., None])
+        x = jnp.concatenate(feats, axis=-1)
         x = nn.Dense(self.hidden, name="fc1")(x)
         x = nn.gelu(x)
         return nn.Dense(self.num_bins, name="logits")(x)
@@ -151,10 +188,19 @@ class EmitHead(nn.Module):
         global_emb: jnp.ndarray,
         planet_pool: jnp.ndarray,
         step_idx: jnp.ndarray,
+        total_remaining_norm: jnp.ndarray | None = None,
     ) -> jnp.ndarray:
+        """v7: ``total_remaining_norm`` (scalar) = log1p(sum of remaining ships
+        across my planets) / 8.  Tells the emit head how much firepower we
+        still have available this turn -- prevents the policy from emitting
+        a 6th fleet when the source planet is already empty.
+        """
         step_oh = jax.nn.one_hot(step_idx, self.max_steps, dtype=global_emb.dtype)
         step_oh = jnp.broadcast_to(step_oh, global_emb.shape[:-1] + (self.max_steps,))
-        x = jnp.concatenate([global_emb, planet_pool, step_oh], axis=-1)
+        feats = [global_emb, planet_pool, step_oh]
+        if total_remaining_norm is not None:
+            feats.append(total_remaining_norm[..., None])
+        x = jnp.concatenate(feats, axis=-1)
         x = nn.Dense(self.hidden, name="fc1")(x)
         x = nn.gelu(x)
         bias_init = lambda key, shape, dtype=jnp.float32: jnp.array(

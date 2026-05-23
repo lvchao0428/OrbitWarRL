@@ -150,12 +150,23 @@ def encode_tokens(
     return global_emb, planet_emb, fleet_emb, planet_pool, fleet_pool
 
 
-def src_head(W: Dict[str, np.ndarray], planet_emb: np.ndarray, my_planet_mask: np.ndarray) -> np.ndarray:
+def src_head(
+    W: Dict[str, np.ndarray],
+    planet_emb: np.ndarray,
+    my_planet_mask: np.ndarray,
+    remaining_norm: np.ndarray | None = None,
+) -> np.ndarray:
     """Returns src_logits of shape (P,) masked by my_planet_mask.
 
-    Mirrors the two-layer MLP SrcHead (v6+): fc1 -> gelu -> src_score.
+    v7: ``remaining_norm`` (P,) appended as a per-planet scalar feature.
     """
-    x = _dense(planet_emb, W["src_head/fc1/kernel"], W["src_head/fc1/bias"])
+    if remaining_norm is not None:
+        x = np.concatenate(
+            [planet_emb, remaining_norm.astype(np.float32)[..., None]], axis=-1
+        )
+    else:
+        x = planet_emb
+    x = _dense(x, W["src_head/fc1/kernel"], W["src_head/fc1/bias"])
     x = _gelu(x)
     logits = _dense(x, W["src_head/src_score/kernel"], W["src_head/src_score/bias"])[..., 0]
     return _mask_logits(logits, my_planet_mask.astype(bool))
@@ -167,12 +178,12 @@ def dst_head(
     src_emb: np.ndarray,
     planet_mask: np.ndarray,
     my_planet_mask: np.ndarray,
+    reserved_norm: np.ndarray | None = None,
 ) -> np.ndarray:
     """Cross-attention conditioned on src_emb. Returns dst_logits of shape (P,).
 
-    Any valid planet is a legal target (including own planets -- the game
-    treats same-owner arrivals as reinforcements). ``my_planet_mask`` is
-    accepted for signature compatibility but ignored.
+    v7: ``reserved_norm`` (P,) appended as per-planet feature so the head
+    avoids redundant strikes against already-reserved targets.
     """
     del my_planet_mask
     q = _project_qkv(src_emb[None, :], W["dst_head/cross_attn/query/kernel"], W["dst_head/cross_attn/query/bias"])
@@ -182,7 +193,15 @@ def dst_head(
     cond = _attention_out(attended, W["dst_head/cross_attn/out/kernel"], W["dst_head/cross_attn/out/bias"])[0]
 
     P = planet_emb.shape[0]
-    joined = np.concatenate([planet_emb, np.broadcast_to(cond, (P, cond.shape[0]))], axis=-1)
+    if reserved_norm is not None:
+        planet_rows = np.concatenate(
+            [planet_emb, reserved_norm.astype(np.float32)[..., None]], axis=-1
+        )
+    else:
+        planet_rows = planet_emb
+    joined = np.concatenate(
+        [planet_rows, np.broadcast_to(cond, (P, cond.shape[0]))], axis=-1
+    )
     x = _dense(joined, W["dst_head/dst_fc1/kernel"], W["dst_head/dst_fc1/bias"])
     x = _gelu(x)
     logits = _dense(x, W["dst_head/dst_score/kernel"], W["dst_head/dst_score/bias"])[..., 0]
@@ -195,8 +214,13 @@ def pct_head(
     src_emb: np.ndarray,
     dst_emb: np.ndarray,
     global_emb: np.ndarray,
+    src_remaining_norm: float | np.ndarray | None = None,
 ) -> np.ndarray:
-    x = np.concatenate([src_emb, dst_emb, global_emb], axis=-1)
+    feats = [src_emb, dst_emb, global_emb]
+    if src_remaining_norm is not None:
+        s = np.asarray(src_remaining_norm, dtype=np.float32).reshape(())
+        feats.append(np.array([s], dtype=np.float32))
+    x = np.concatenate(feats, axis=-1)
     x = _dense(x, W["pct_head/fc1/kernel"], W["pct_head/fc1/bias"])
     x = _gelu(x)
     return _dense(x, W["pct_head/logits/kernel"], W["pct_head/logits/bias"])
@@ -208,12 +232,17 @@ def emit_head(
     planet_pool: np.ndarray,
     step_idx: int,
     max_steps: int = 8,
+    total_remaining_norm: float | np.ndarray | None = None,
 ) -> np.ndarray:
     """Returns emit_logits of shape (2,). [stop, continue]."""
     step_oh = np.zeros((max_steps,), dtype=np.float32)
     if 0 <= step_idx < max_steps:
         step_oh[step_idx] = 1.0
-    x = np.concatenate([global_emb, planet_pool, step_oh], axis=-1)
+    feats = [global_emb, planet_pool, step_oh]
+    if total_remaining_norm is not None:
+        t = np.asarray(total_remaining_norm, dtype=np.float32).reshape(())
+        feats.append(np.array([t], dtype=np.float32))
+    x = np.concatenate(feats, axis=-1)
     x = _dense(x, W["emit_head/fc1/kernel"], W["emit_head/fc1/bias"])
     x = _gelu(x)
     return _dense(x, W["emit_head/logits/kernel"], W["emit_head/logits/bias"])
@@ -350,14 +379,27 @@ def greedy_multi_action(
     still_emit = True
 
     src_out, dst_out, pct_out, emit_out = [], [], [], []
+    my_mask_b = my_planet_mask.astype(bool)
     for t in range(max_fleets_per_turn):
         remaining = ships - reserved
-        avail_mask = my_planet_mask.astype(bool) & (remaining > 0)
+        avail_mask = my_mask_b & (remaining > 0)
         any_avail = bool(avail_mask.any())
         no_options = not any_avail
-        eff_mask = avail_mask if any_avail else my_planet_mask.astype(bool)
+        eff_mask = avail_mask if any_avail else my_mask_b
 
-        e_logits = emit_head(W, global_emb, planet_pool, t, max_steps=max_fleets_per_turn)
+        # v7: compute reserved-aware features for this step.
+        remaining_clip = np.maximum(remaining, 0).astype(np.float32)
+        reserved_f = np.maximum(reserved, 0).astype(np.float32)
+        remaining_norm = np.log1p(remaining_clip) / 8.0
+        reserved_norm = np.log1p(reserved_f) / 8.0
+        total_remaining = float((remaining_clip * my_mask_b.astype(np.float32)).sum())
+        total_remaining_norm = np.float32(np.log1p(total_remaining) / 8.0)
+
+        e_logits = emit_head(
+            W, global_emb, planet_pool, t,
+            max_steps=max_fleets_per_turn,
+            total_remaining_norm=total_remaining_norm,
+        )
         if t == 0:
             decision = (not no_options)
         else:
@@ -365,21 +407,31 @@ def greedy_multi_action(
             decision = (emit_pred == 1) and (not no_options)
         emit_t = decision and still_emit
 
-        s_logits = src_head(W, planet_emb, eff_mask)
+        s_logits = src_head(W, planet_emb, eff_mask, remaining_norm)
         src_t = int(np.argmax(s_logits))
         src_emb = planet_emb[src_t]
-        d_logits = dst_head(W, planet_emb, src_emb, planet_mask, my_planet_mask)
+        d_logits = dst_head(
+            W, planet_emb, src_emb, planet_mask, my_planet_mask,
+            reserved_norm=reserved_norm,
+        )
         d_logits = d_logits.copy()
         d_logits[src_t] = -1e9
         dst_t = int(np.argmax(d_logits))
         dst_emb = planet_emb[dst_t]
-        p_logits = pct_head(W, src_emb, dst_emb, global_emb)
+        src_remaining_norm = float(remaining_norm[src_t])
+        p_logits = pct_head(
+            W, src_emb, dst_emb, global_emb,
+            src_remaining_norm=src_remaining_norm,
+        )
         pct_t = int(np.argmax(p_logits))
 
         if emit_t:
             avail_at_src = max(int(ships[src_t]) - int(reserved[src_t]), 0)
-            pct = float(_PCT_BIN_TABLE_NP[pct_t])
-            ships_t = max(1, int(np.floor(avail_at_src * pct)))
+            # IMPORTANT: use float32 multiplication to match JAX's _ships_to_send
+            # logic exactly (otherwise float64 rounding of 0.70 -> 0.6999... causes
+            # 10*0.70 = 6.999.. and floor=6 instead of 7).
+            mult = np.float32(avail_at_src) * _PCT_BIN_TABLE_NP[pct_t]
+            ships_t = max(1, int(np.floor(mult)))
             ships_t = min(ships_t, avail_at_src)
             reserved[src_t] += ships_t
             src_out.append(src_t)

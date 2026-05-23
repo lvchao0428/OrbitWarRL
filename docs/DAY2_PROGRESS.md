@@ -1266,3 +1266,168 @@ mass 从单一 src 那一格分散到了所有 non-src planets。预期 200 upda
   (128) 一接就 OOM/shape mismatch；现在从 ckpt header 推断。
 
 
+## 12. v6p3 训练收尾 + 真实 game obs 诊断 + v7 设计
+
+### 12.1 v6p3 训练完整 5000 updates 的结果
+
+```
+upd 4999   WRr 0.92    WRf 0.78    mean_emits 2.10   ent_dst 1.31   clip 0.04
+upd 4500   WRr 0.92    WRf 0.77    mean_emits 2.30   ent_dst 1.31   clip 0.05
+upd 4000   WRr 0.91    WRf 0.78    mean_emits 2.58   ent_dst 1.40   clip 0.05
+upd 3500   WRr 0.90    WRf 0.77    mean_emits 3.10   ent_dst 1.42   clip 0.05
+upd 3000   WRr 0.91    WRf 0.76    mean_emits 3.42   ent_dst 1.51   clip 0.06
+upd 2500   WRr 0.91    WRf 0.76    mean_emits 3.66   ent_dst 1.65   clip 0.08
+upd 2000   WRr 0.90    WRf 0.74    mean_emits 4.10   ent_dst 2.09   clip 0.10
+```
+
+**emits 从 4.10 退到 2.10、ent_dst 从 2.09 退到 1.31、clip 从 0.10 退到 0.04**——
+这是经典的 PPO converge: policy 已经卡死在一个 local optimum,不再动了。
+
+### 12.2 export u4999 的 H2H 结果
+
+```
+vs submission_v1.py        W= 17/20 (vs v6p2 u999 的 8/20 大幅提升)
+vs submission_rl_v4p2.py   W= 15/20 (vs v6p2 u999 的 10/20 显著提升)
+vs submission_v20_0513.py  W=  0/20 (0!)
+overall: 32/60 = 0.533
+```
+
+vs v1/v4p2 大幅提升说明 OPT A (DstHead 加 src mask) **生效**;dst 不再 collapse 到 src。
+但 **vs v20 还是 0/20**,跟 v6p2/v4p2 一样,改进有限。
+
+第一直觉以为这是 "策略上限"——v6p3 policy 已经收敛,但对 v20 这种强对手仍然不够。
+**实际不是**。
+
+### 12.3 用 replay_dump 看 v6p3 vs v20 的真实游戏
+
+写了 `orbit_wars_rl/scripts/replay_dump.py`:跑两个 sub 互打,每步打印 state 和 action。
+v6p3 player=0 vs v20 player=1 (seed=0) 的实际表现:
+
+```
+[turn=  0] sub: P=1 sP= 10 F= 0 sF=  0    | action [(planet, angle, ships) ...]
+            -> 8 个 fleet 全从 planet 12 发,全 1 ship,8 个不同 dst
+[turn=  1] sub: P=1 sP=  3 F= 8           | (3 个 fleet 1 ship each)
+[turn=  2] sub: P=1 sP=  1 F=11           | (1 fleet, 1 ship)
+[turn=  5] sub: P=1 sP=  1 F=14           | (1 fleet, 1 ship)
+[turn= 10] sub: P=1 sP=  1 F=19           | (1 fleet, 1 ship)
+[turn= 20] sub: P=1 sP= 10 F=20           | (3 fleets, [7,2,1] ships)
+[turn= 50] sub: P=1 sP=  ? ... died       | game over
+```
+
+**问题清单**(v6p3 真实策略,不是 metric 上的 emit=4.0):
+1. **Bug 1 - src lock**: 起手 K=8 步全 src=12(player=0 的 mother planet),后期还是只用 12
+2. **Bug 2 - dst spray**: turn 0 emit 8 个 fleet 但 dst 一直变(spray pattern)
+3. **Bug 3 - pct stuck min**: turn 0 全 pct_bin=0 (0.10), `floor(10 * 0.10) = 1` 所以每个 1 ship
+4. **Bug 4 - emit max @ turn 0**: K=8 步全 emit,起手就发 8 个 1-ship fleet
+5. **Bug 5 - 母星掏空**: turn 1 mother planet 从 10 → 3,turn 2 → 1,后期一直卡 1 ship
+   永远拿不回来,但 v20 已经积累到 11 ship
+
+这跟 v4p2 的"始终只发 1 fleet"形成对比:v4p2 是 "1 ship per fleet, 1 fleet per turn",
+v6p3 是 "8 ship per turn 起手 + 1 ship per turn 后续"——**更糟**,因为 mother planet 被
+8 step 起手 emit 全部掏空。
+
+### 12.4 diag_real_game_obs.py 验证 root cause
+
+写了一个新工具 `orbit_wars_rl/scripts/diag_real_game_obs.py`,可以在真实游戏 obs 下
+打印 `greedy_multi_action` 的原始 `src_list` / `dst_list` / `pct_list`(在
+`decode_multi_to_kaggle_moves` 过滤之前)。
+
+```
+v6p3 u4999 player=0 seed=0:
+ turn |  src                       | dst                        | pct
+   0  | [12,12,12,12,12,12,12,12]  | [3,3,3,3,3,3,3,3]          | [0,0,0,0,0,0,0,0]   ← 8 个全一样
+   1  | [12,12,12]                 | [0,0,0]                    | [4,4,4]
+   2  | [12]                       | [7]                        | [4]
+   3  | [12]                       | [1]                        | [1]
+   ...
+  20  | [12,12,12,12]              | [1,1,1,1]                  | [5,5,5,5]   ← 又是 K 个全一样
+
+v6p3 u4999 player=1 seed=0:
+   0  | [15]                       | [7]                        | [7]   ← single fleet, 全发
+
+v4p2 player=0 seed=0:
+   0  | [12]                       | [19]                       | [3]   ← single fleet, pct_bin=3 (0.40)
+```
+
+**这暴露了 v6p3 vs v4p2 的真实差异**:
+- v4p2: 起手 single fleet (8 ship), 但每回合都 single,后续 1 ship
+- v6p3 player=0: 起手 emit 8 个 1-ship fleet, 母星全掏空
+- v6p3 player=1: **跟 v4p2 一样的策略**,起手 single fleet 全发
+
+**player=0 和 player=1 学到了完全不同的 policy**——dst 在 K=8 步内永远是同一个值,
+pct 也永远是同一个值。这不是 RL 学习问题,是**架构 bug**。
+
+### 12.5 Root cause: K-step heads 看不到 reserved state
+
+在 v6p2 的 `actor_critic.__call__` (sample loop) 里:
+
+```python
+for t in range(K):
+    src_logits_t = self.src_head(planet_emb, eff_mask)   # planet_emb 不变!
+    src_t = argmax(src_logits_t)                          # 总是同一个 src
+    dst_logits_t = self.dst_head(planet_emb, src_emb_t, ...)  # 都不变
+    dst_t = argmax(dst_logits_t)                          # 总是同一个 dst
+    pct_logits_t = self.pct_head(src_emb_t, dst_emb_t, global_emb)  # 不变
+    pct_t = argmax(pct_logits_t)                          # 总是同一个 pct
+    # reserved 更新但是只用于 ships_t 的计算,不传回 head
+```
+
+每个 head 在 K loop 里的输入都是**回合开始 state 的 embedding**,**对 reserved
+buffer 一无所知**。所以 argmax 出来必然是相同的 (src, dst, pct) 三元组。
+唯一变化的是 emit_head 的 `step_oh`——但只是 step index,不是兵力状态。
+
+**Emit head 也有类似问题**:它看不到 mother planet 已经空了,只能基于 `global_emb`
+和 `planet_pool` 决策,这两个都是 turn-start embedding。
+
+### 12.6 v7 修复方案
+
+每个 head 加一个新输入,告诉它当前 K-step 内 reserved 的状态:
+
+| Head | 当前输入 | v7 新增 | 形状 |
+|---|---|---|---|
+| SrcHead | `planet_emb, my_mask` | `+ remaining_norm` | (P,) |
+| DstHead | `planet_emb, src_emb, masks, src_idx` | `+ reserved_norm` | (P,) |
+| PctHead | `src_emb, dst_emb, global_emb` | `+ src_remaining_norm` | scalar |
+| EmitHead | `global_emb, planet_pool, step_oh` | `+ total_remaining_norm` | scalar |
+
+`remaining_norm[p] = log1p(max(0, ships_raw[p] - reserved[p])) / 8` —— 跟
+`features/encode.py` 里 `log_ships` 用同样的 normalisation。
+
+参数数量增加: **+320 weights** (4 个 small fc input edges)。可忽略。
+
+### 12.7 顺手修了 float32 rounding bug
+
+在 v6p2 inference 端 ships_t 计算:
+
+```python
+pct = float(_PCT_BIN_TABLE_NP[pct_t])  # float32 → float64 cast
+ships_t = max(1, int(np.floor(avail_at_src * pct)))
+```
+
+但 `0.70` 转 float64 后是 `0.6999999...`,`10 * 0.6999999 = 6.99999...`, floor = 6。
+JAX 端用 float32 乘法,`10.0 * 0.70 (f32) = 7.0`,floor = 7。
+
+**所有 v2-v6 inference 都 silently lose 1 ship per fleet**(对 pct_bin in {1,2,3,5,6} 的 fleet)。这是单独的一个 long-standing bug,不是 v7 引入的。
+
+修复:
+
+```python
+mult = np.float32(avail_at_src) * _PCT_BIN_TABLE_NP[pct_t]  # float32 全程
+ships_t = max(1, int(np.floor(mult)))
+```
+
+修复后 `test_parity --num-states 16 = 16/16` (之前是 7/8 或更差)。
+
+### 12.8 v7 yaml + launch
+
+- `multi_action_v7.yaml`: from scratch,d_model=128, n_layers=2, ff_dim=512,
+  ent_coef_dst 0.001 (v6p3 验证过有效), warmup_steps=2000 (修过的 LR 单位)
+- 5000 updates ≈ 6h on 5090
+- sign-of-life:
+  - upd 100: ent_pct < 1.0, mean_emits 2.0-3.5 (不能 pinned 在 4.0 或 1.0)
+  - upd 300: WRr > 0.85, replay_dump shows different src/dst across K
+  - upd 5000: H2H vs v20 >= 3/20 = bug fixed
+
+**Kill 信号**: src_ent < 0.5 at upd 200 = src 又 commit-lock 了,remaining_norm
+信号不够强,需要再加 reward shaping 或更大 head capacity。
+

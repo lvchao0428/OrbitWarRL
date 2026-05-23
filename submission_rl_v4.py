@@ -427,8 +427,8 @@ def greedy_multi_action(W, enc) -> Tuple[List[int], List[int], List[int]]:
 
         if emit_t:
             avail_at_src = max(int(ships[src_t]) - int(reserved[src_t]), 0)
-            pct = float(_PCT_BIN_TABLE_NP[pct_t])
-            ships_t = max(1, int(np.floor(avail_at_src * pct)))
+            mult = np.float32(avail_at_src) * _PCT_BIN_TABLE_NP[pct_t]
+            ships_t = max(1, int(np.floor(mult)))
             ships_t = min(ships_t, avail_at_src)
             reserved[src_t] += ships_t
             src_out.append(src_t)
