@@ -7,9 +7,15 @@
 
 ```
 upd  191  steps 3145728  sps 5471  opp rand  loss -0.012  pg -0.0068  v 0.018
-adv_std 0.198  tR +0.44  ent[s/d/p/e] 0.66/2.67/1.77/0.48  emits 2.62
-clip 0.11  kl +0.005
+ev +0.82  adv_std 0.198  tR +0.44  ent[s/d/p/e] 0.66/2.67/1.77/0.48
+emits 2.62  clip 0.11  kl +0.005
 ```
+
+**v8 update**: We now print `ev` (explained_variance) right after `v`
+(value_loss). This is the single best value-head health metric —
+top_players_rl.txt §307 says "should hit at least 0.8 in 100 iters".
+If `ev < 0.5` at upd 100, obs representation or architecture is
+broken.
 
 ---
 
@@ -42,6 +48,36 @@ clip 0.11  kl +0.005
 - 健康: 训练初期 0.05+;收敛后 0.01-0.03
 - ⚠️ **注意**: `v` 接近 0 **不是好事**,意味着 value head 完美 fit return → advantage ≈ 0 → policy 没东西学(参见 v5p2 失败)
 - 这就是为什么我们在 v5p3 把 `value_coef` 从 0.5 砍到 0.20——让 value head 学慢点
+
+### ⭐ `ev` (explained_variance) — v8 起新增
+
+- 计算: `1 − Var(returns − value_pred) / Var(returns)`
+- **物理意义**: value head 解释了 returns 多少方差。范围 [−∞, 1.0]。
+  - **`ev = 1.0`** = value 完美预测 returns (理论上限)
+  - **`ev = 0.0`** = value 等于 mean(returns)(基线,什么都没学)
+  - **`ev < 0`** = value head 比"常数 mean"还差(罕见,表示在 random 之下)
+
+| `ev` 区间 | 含义 | 行动 |
+|---|---|---|
+| `> 0.9` | value head 收敛到信号,advantage 几乎全来自策略层面的 noise | 健康 |
+| `0.6–0.9` | value head 学得 OK | 健康 |
+| `0.4–0.6` | value 刚 sane 但弱 | watch — 几十个 update 内应升 |
+| `0.2–0.4` | value 严重欠拟合,advantage 信号噪音大 | 检查 value_coef 是否太低 |
+| `< 0.2` | obs 表征或 architecture 问题 | **kill,debug obs/encoder** |
+| `< 0` | value head 在退化 | **立即 kill** |
+
+- **Top1 (top_players_rl.txt §307)**: "should go up to at least **0.8 in 100
+  iters**. 0.9 in 20 iters. If `ev` never gets past 0.5, you should check
+  your obs representation or architecture. I would suspect obs representations."
+- 跟 `v` 的区别: `v` 是 raw MSE,**跟 returns 的 scale 强相关**(reward shaping
+  改了 returns 范围 v 也跟着变);`ev` 是归一化的,**跨配置可比**。
+- 跟 `adv_std` 的区别: `adv_std` 衡量"policy 收到多少信号";`ev` 衡量"value
+  head 在多准确地 baseline 这些信号"。两者**互补**,不重复。
+- **v8 阶段 kill 准则**:
+  - `ev < 0.5` at upd 100 → 重检 obs 和 encoder。可能是 v7 加的 reserved-aware
+    输入 scale 不对(也可能是 reserved 信号根本没被 encoder 看到)。
+  - `ev` 在 upd 500+ 突然下跌 0.2+ → 值头 saturate / advantage 信号 vanish
+    的早期警告。看 `pg` 是不是也跟着塌(配合 v5p2 复盘)。
 
 ### `kl` (mean KL divergence)
 - 计算: `mean(old_logp − new_logp)`,跨 update_epochs 平均

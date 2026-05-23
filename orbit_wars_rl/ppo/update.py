@@ -210,9 +210,18 @@ def ppo_loss(
     clip_frac = jnp.mean((jnp.abs(ratio - 1.0) > cfg.clip_eps).astype(jnp.float32))
     approx_kl = jnp.mean(old_turn_logp - new_turn_logp)
 
+    # Explained variance: 1 - Var(returns - value) / Var(returns).
+    # Top1 (top_players_rl.txt §307): "should go up to at least 0.8 in 100
+    # iters. 0.9 in 20 iters." Below 0.5 = obs/architecture problem.
+    # This is the single most important value-head health signal.
+    var_returns = jnp.var(returns) + jnp.float32(1e-8)
+    var_residual = jnp.var(returns - value_pred)
+    explained_variance = jnp.float32(1.0) - var_residual / var_returns
+
     metrics = dict(
         pg_loss=pg_loss,
         v_loss=v_loss,
+        explained_variance=explained_variance,
         ent_src=ent_src,
         ent_dst=ent_dst,
         ent_pct=ent_pct,
@@ -288,7 +297,8 @@ def _gather_minibatch(rollout: Rollout, advs: jnp.ndarray, rets: jnp.ndarray, id
 
 
 _ZERO_METRICS_KEYS = (
-    "pg_loss", "v_loss", "ent_src", "ent_dst", "ent_pct", "ent_emit",
+    "pg_loss", "v_loss", "explained_variance",
+    "ent_src", "ent_dst", "ent_pct", "ent_emit",
     "clip_frac", "approx_kl", "ratio_mean", "value_mean", "return_mean",
     "adv_mean", "adv_std", "mean_emits_per_turn", "loss", "grad_norm",
 )

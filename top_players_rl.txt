@@ -1,5 +1,6 @@
 Skip to
 content
+Kaggle
 
 Create
 Home
@@ -13,6 +14,32 @@ Game Arena
 Data Hub
 
 More
+
+Your Work
+
+Viewed
+
+
+Orbit Wars
+
+
+Sharing our RL lessons so far
+
+
+Orbit Wars top-10% daily episode replay datasets
+
+
+Some considerations on evaluating targets
+
+
+🤖 Agents are coming for the leaderboard
+
+Edited
+
+Bookmarks
+
+
+Orbit Wars
 
 
 View Active Events
@@ -29,7 +56,7 @@ Orbit Wars
 Play in Browser
 
 Submit Agent
-Lin Myat Ko · 1st in this Competition · Posted 14 days ago
+Lin Myat Ko · 1st in this Competition · Posted 17 days ago
 Sharing our RL lessons so far
 I considered myself as an intermediate RL practitioner. So, take everything I said with a grain of salt.
 
@@ -85,8 +112,8 @@ GG transformer is the right line. The fix is on the other side of "Fine. I'll do
 GLHF, kagglers.
 
 
-2
-17 Comments
+4
+25 Comments
 1 appreciation comment
 Hotness
  
@@ -96,9 +123,9 @@ This comment will be made public once posted.
 
 Post Comment
 Gerar Del Toro
-Posted 14 days ago
+Posted 16 days ago
 
-· 445th in this Competition
+· 629th in this Competition
 
 The 10000 SPS is including model policy and forward pass or just kaggle environment empty with no actions?
 
@@ -108,7 +135,7 @@ Reply
 React
 Lin Myat Ko
 Topic Author
-Posted 13 days ago
+Posted 16 days ago
 
 · 1st in this Competition
 
@@ -119,7 +146,7 @@ Reply
 
 React
 junlee789
-Posted 13 days ago
+Posted 16 days ago
 
 Thanks lol. I was worried that opus could copy orbit wars perfectly and seems pretty good.
 
@@ -130,9 +157,9 @@ Reply
 
 1
 hykunnnn
-Posted 4 days ago
+Posted 6 days ago
 
-· 765th in this Competition
+· 692nd in this Competition
 
 Does this speed include the PPO update?
 
@@ -141,9 +168,9 @@ Reply
 
 React
 Gerar Del Toro
-Posted 4 days ago
+Posted 6 days ago
 
-· 445th in this Competition
+· 629th in this Competition
 
 I think he does include it… It's posible I can confirm that at least. There are some very interesting trade-offfs in action space, rollouts, memory, batching and many other things going on here to actually reach this SPS amount.
 
@@ -152,7 +179,7 @@ Reply
 
 React
 junlee789
-Posted 14 days ago
+Posted 16 days ago
 
 Thank you for sharing what you have learned with this high-quality and well compacted information! It will help me a lot!
 
@@ -161,7 +188,7 @@ Reply
 
 1
 Navneet
-Posted 12 days ago
+Posted 14 days ago
 
 Cool RL lessons @lightmk
 
@@ -169,12 +196,69 @@ Cool RL lessons @lightmk
 Reply
 
 React
-GUOHAOYANG
+Jonathan Wang2022
+Posted 14 hours ago
+
+· 141st in this Competition
+
+Solid points. I have a question though. Did you train train a separate policy head for ships to send (like how much fraction of source planet) or determine it using heuristics (min ships to send to capture the target given current fleets state)?
+
+
+Reply
+
+React
+Lin Myat Ko
+Topic Author
+Posted 12 hours ago
+
+· 1st in this Competition
+
+I have separate heads for each action components, fraction head included. RL policy is robust enough to learn the fraction to send.
+
+
+Reply
+
+React
+Billy Bradley
 Posted a day ago
 
-· 531st in this Competition
+· 108th in this Competition
 
-Hi, have you also implemented your model in JAX?
+Very noble of you to share all this advice. Don't you want to win? Or are you just that confident? 😂
+
+
+Reply
+
+1
+Lin Myat Ko
+Topic Author
+Posted 12 hours ago
+
+· 1st in this Competition
+
+There are more experienced competitors who know a lot more than me. 😃
+
+
+Reply
+
+React
+Billy Bradley
+Posted 7 hours ago
+
+· 108th in this Competition
+
+Too humble! You're number 1!
+
+
+Reply
+
+React
+alekh
+Posted 2 days ago
+
+· 2829th in this Competition
+
+Any insights on self-play? I see you do it from the start. I'm having issues with making self-play stable. Just turns the training degenerate over time…
 
 
 Reply
@@ -186,6 +270,76 @@ Posted a day ago
 
 · 1st in this Competition
 
+Yeah, self-play should work fine for this game. What reward structure do you use? how does it degenerate? entropy?
+
+
+Reply
+
+React
+alekh
+Posted 35 minutes ago
+
+· 2829th in this Competition
+
+i have a bit of shaped reward, score delta basically, and the terminal reward. nah, entropy stays fine, its more the winrate against the eval set that collapses… been struggling with it for 2 weeks now… could be something about the distribution shift when new self-play snapshots enters the opponent pool, idk.
+
+
+Reply
+
+React
+hykunnnn
+Posted 2 days ago
+
+· 692nd in this Competition
+
+May I ask, is it normal that the explained variance of the first few hundred updates is close to 0? I saw you say that 0.9 is considered good.
+
+
+Reply
+
+React
+Lin Myat Ko
+Topic Author
+Posted 2 days ago
+
+· 1st in this Competition
+
+It should go up to at least 0.8 in 100 iters. I checked my earliest run. It got to 0.9 in 20 iters. If explained variance never gets pass 0.5, you should check your obs representation or architecture. I would suspect obs representations. Start with simple features and simple model.
+
+
+Reply
+
+1
+
+1
+hykunnnn
+Posted 2 days ago
+
+· 692nd in this Competition
+
+Thank you for your patient answers; this has been very helpful to me!
+
+
+Reply
+
+React
+GUOHAOYANG
+Posted 3 days ago
+
+· 653rd in this Competition
+
+Hi, have you also implemented your model in JAX?
+
+
+Reply
+
+React
+Lin Myat Ko
+Topic Author
+Posted 3 days ago
+
+· 1st in this Competition
+
 Yes, end to end JAX
 
 
@@ -193,9 +347,9 @@ Reply
 
 React
 GUOHAOYANG
-Posted 6 hours ago
+Posted 3 days ago
 
-· 531st in this Competition
+· 653rd in this Competition
 
 Thanks for your reply. I have one more question: is the reward structure you use just a win/lose (+1/-1) signal?
 
@@ -209,9 +363,9 @@ Profile picture for Lin Myat Ko
 Profile picture for hykunnnn
 Profile picture for GUOHAOYANG
 Son Pham
-Posted a day ago
+Posted 4 days ago
 
-· 75th in this Competition
+· 2890th in this Competition
 
 Thank you very much for sharing.
 
@@ -223,7 +377,7 @@ Reply
 React
 Lin Myat Ko
 Topic Author
-Posted a day ago
+Posted 3 days ago
 
 · 1st in this Competition
 
@@ -234,9 +388,9 @@ Reply
 
 React
 Gerar Del Toro
-Posted 4 days ago
+Posted 6 days ago
 
-· 445th in this Competition
+· 629th in this Competition
 
 So 3 days of training at 10k SPS means that your competitive submission took around 2.6bn steps?
 
@@ -248,7 +402,7 @@ Reply
 React
 Lin Myat Ko
 Topic Author
-Posted a day ago
+Posted 3 days ago
 
 · 1st in this Competition
 
@@ -259,9 +413,9 @@ Reply
 
 React
 MarvinTMB
-Posted 13 days ago
+Posted 15 days ago
 
-· 2157th in this Competition
+· 2142nd in this Competition
 
 I'm doing a transformer solution with PPO. You don't need warmup if you handle your gradients correctly: Agents like to stack tweaks and patches on top of each other until something works. Its really dumb and you need to stop it with CLAUDE/AGENTS.md instructions.
 
@@ -272,7 +426,7 @@ Reply
 
 React
 junlee789
-Posted 14 days ago
+Posted 16 days ago
 
 Can I ask you the way how you have made orbit wars with JAX? I'm a newbie in RL, and While I was running every single episode in kaggle environments, I realized the time inefficiency.
 
@@ -282,7 +436,7 @@ Reply
 React
 Lin Myat Ko
 Topic Author
-Posted 13 days ago
+Posted 16 days ago
 
 · 1st in this Competition
 
@@ -293,9 +447,9 @@ Reply
 
 1
 skalermo
-Posted 14 days ago
+Posted 16 days ago
 
-· 72nd in this Competition
+· 29th in this Competition
 
 Thanks for sharing! If I read this right you are spending 50$ for gpu/day, that's a lot, are you using spot instances? Also, can you explain what's F12?
 
@@ -304,9 +458,9 @@ Reply
 
 React
 Boey
-Posted 14 days ago
+Posted 16 days ago
 
-· 61st in this Competition
+· 74th in this Competition
 
 Even with on-demand pricing, $50 for gpu/day for RTX 5090 is more than double the market price.
 
@@ -316,7 +470,7 @@ Reply
 React
 Lin Myat Ko
 Topic Author
-Posted 13 days ago
+Posted 16 days ago
 
 · 1st in this Competition
 
@@ -329,9 +483,9 @@ React
 
 Appreciation (1)
 Forrest_xlz
-Posted 18 hours ago
+Posted 3 days ago
 
-· 1850th in this Competition
+· 1989th in this Competition
 
 Thank your great work!
 

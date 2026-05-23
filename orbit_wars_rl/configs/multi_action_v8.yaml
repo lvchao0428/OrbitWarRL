@@ -1,0 +1,126 @@
+# v8 - "one delta at a time" course correction after re-reading top1's Kaggle
+# forum posts (top_players_rl.txt).
+#
+# Top1 (Lin Myat Ko) said:
+#   * "I don't write a heuristic agent" (§70) -- no BC warmstart, full self-play.
+#   * "Best model took ~3 days, self-play from the start" (§82) = 600M steps (§409).
+#   * "Add one architecture delta at a time. Always." (§92-96) -- F12 took a YEAR
+#     to evolve in tiny single-deltas. We've been shipping 5+ deltas per version.
+#   * "explained_variance should hit at least 0.8 in 100 iters, 0.9 in 20 iters.
+#     If it never gets past 0.5, your obs representation or architecture is wrong." (§307)
+#     -- THE single best value-head health signal. We were never logging it.
+#   * "clip_frac creep 0.10 -> 0.30+ is the most reliable warning sign. CUT LR
+#     when you see it, don't wait for entropy collapse." (§102)
+#
+# Where we went wrong on Day 3 evening:
+#   1. Drafted a BC bootstrap pipeline (4 new files). Top1 doesn't use BC at
+#      all -- pure self-play 600M steps gets to top1. We were chasing the wrong
+#      symptom (0/20 vs v20) with the wrong tool.
+#   2. We have only ~80M steps on v6p3 and ~8M on v7 u499. Top1 needed 600M.
+#      v7's "0/20 vs v20" is consistent with "not enough training", not "wrong
+#      architecture". Conclusion: train longer, not different.
+#   3. Never measured explained_variance. We may have been training a value
+#      head that's saturated at near-random (EV ~ 0.0-0.3), which would explain
+#      why advantages were so small and pg_loss was lukewarm. We literally
+#      can't tell without the metric.
+#
+# What v8 is (compared to v7):
+#   * SAME architecture as v7 (reserved-aware K-step heads, the only delta
+#     vs v6p3 that we've shipped). Don't touch this.
+#   * SAME hparams as v7.yaml (lr schedule, ent_coefs, etc.).
+#   * Train DURATION: 10000 updates instead of 5000 (= ~160M extra steps).
+#     Still half of top1's 600M but a 2x improvement on what v6p3 ran.
+#   * NEW: explained_variance is now in train metrics (update.py change).
+#     Log every update; watch the curve.
+#   * NEW: train log column added (`ev +0.42`) so we can read it at-a-glance.
+#   * NEW (Day 4 Reward Audit): rewards.py is now byte-identical-behaviour
+#     with kaggle_environments orbit_wars.py:684-715. Three fixes vs v7:
+#       (a) tie reward: was 0/0, now +1/+1 (when max_score > 0)
+#       (b) double wipeout: was 0/0, now -1/-1 (when max_score == 0)
+#       (c) terminate at state.step >= episode_steps - 2 (was >= episode_steps).
+#       (d) SHAPING_SCALE default 0.1 -> 0.0 (matches every v5p2+ run that
+#           launched with ORBITWARS_SHAPING_SCALE=0.0 env var).
+#     All four were silent train-test mismatches. Test in env/test_rewards.py.
+#   * Resume from v7 final ckpt instead of from scratch -- so we keep the
+#     first 80M steps of v7 (~u499) and just extend.
+#     IMPORTANT: v7 was trained with the old +1/0/-1 reward. v8 inherits
+#     that policy but trains it under the new +1/-1 (tie counts) reward.
+#     Expect a brief value-head adjustment in the first ~50 updates as
+#     it re-learns that ties are wins, not no-info events.
+#
+# What v8 is NOT:
+#   * Not a new architecture
+#   * Not a new reward shape (+1/-1 only, per top1 §73)
+#   * Not BC warmstart
+#   * Not v20-in-opp-pool (next experiment if v8 doesn't break 0/20)
+#
+# Sign of life by update (resume from v7 last ckpt):
+#   first 50: explained_variance should be 0.6-0.8 already (v7 has trained
+#             value head; it just hasn't shown up in our logs)
+#   upd 1000: explained_variance > 0.8, clip_frac < 0.20 (stable)
+#   upd 3000: WRr > 0.90, mean_emits 2-3.5 (matches v6p3 plateau)
+#   upd 5000: H2H vs v20 >= 3/20  (first sign of macro strategy learned)
+#   upd 10000: H2H vs v20 >= 8/20 (top1 trajectory, scaled down by 6x steps)
+#
+# Kill signals (from top1):
+#   * explained_variance < 0.5 at upd 100 -> obs/arch problem; revert to v6p3
+#     and try one small representational delta at a time
+#   * clip_frac > 0.25 sustained for 50 updates -> cut lr 2x (no need to kill)
+#   * clip_frac > 0.35 -> kill, debug, restart
+#
+# Launch (5090):
+#   nohup python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v8.yaml \
+#       --log-dir logs/multi_action_v8 \
+#       --resume-from ckpt_multi_action_v7/ckpt_004999.pkl \
+#       > logs/multi_action_v8.log 2>&1 &
+# (ORBITWARS_SHAPING_SCALE no longer needed — default is 0.0 now.)
+# Look for the "[reward] kaggle-aligned" banner in the log to confirm.
+#
+# (If v7 hasn't reached u4999 yet, resume from whichever is the latest --
+#  the schedule restarts so it doesn't matter much. The key is to NOT do
+#  --resume-from on a separately-architected ckpt.)
+
+train:
+  num_envs: 128
+  rollout_length: 128
+  num_updates: 10000     # 2x v7 — give self-play time to discover stockpile
+  num_groups: 5
+  episode_steps: 80
+  eval_every: 25
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v8
+  ckpt_every: 100        # less frequent than v7 (50): we won't H2H mid-run
+  log_every: 1
+  seed: 80
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 200000   # longer decay matches 10k-update run (~125 PPO updates per 2000 opt steps)
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.97
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8         # SAME as v7. One-delta-at-a-time.
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

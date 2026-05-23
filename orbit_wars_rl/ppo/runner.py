@@ -27,6 +27,7 @@ import jax
 import jax.numpy as jnp
 
 from orbit_wars_rl.env import OrbitWarsEnv, constants
+from orbit_wars_rl.env import rewards as env_rewards
 from orbit_wars_rl.features import encode
 from orbit_wars_rl.net.model import ActorCritic
 from orbit_wars_rl.ppo.rollout import make_rollout_fn, make_rollout_fn_with_frozen_opp
@@ -130,6 +131,17 @@ def train(
     (e.g. v4.2 ckpt -> v4.3 run with refreshed lr schedule and entropy)."""
     rng = jax.random.PRNGKey(cfg.seed)
     rng_init, rng_envs, rng_train = jax.random.split(rng, 3)
+
+    # Reward/term banner: surfaces what would otherwise be invisible config
+    # (env vars, defaults) directly into the train log. Anything that affects
+    # the reward signal must show up here.
+    kaggle_ep = 500
+    print(
+        "[reward] kaggle-aligned: terminal +1 win/+1 tie>0/-1 loss/-1 double-wipeout; "
+        f"is_terminal at step >= episode_steps-2; SHAPING_SCALE={env_rewards.SHAPING_SCALE}; "
+        f"episode_steps={cfg.episode_steps} (kaggle={kaggle_ep}, mismatch={cfg.episode_steps != kaggle_ep})",
+        flush=True,
+    )
 
     env = OrbitWarsEnv(num_groups=cfg.num_groups, episode_steps=cfg.episode_steps)
     model = ActorCritic(
@@ -260,10 +272,11 @@ def train(
             ent_emit = metrics_py.get("ent_emit", 0.0)
             adv_std = metrics_py.get("adv_std", 0.0)
             term_r = metrics_py.get("mean_terminal_reward", 0.0)
+            ev = metrics_py.get("explained_variance", 0.0)
             print(
                 f"upd {update:4d}  steps {total_env_steps:7d}  sps {metrics_py['sps']:.0f}  "
                 f"opp {opp_tag}  loss {metrics_py['loss']:+.3f}  "
-                f"pg {metrics_py['pg_loss']:+.4f}  v {metrics_py['v_loss']:.3f}  "
+                f"pg {metrics_py['pg_loss']:+.4f}  v {metrics_py['v_loss']:.3f}  ev {ev:+.2f}  "
                 f"adv_std {adv_std:.3f}  tR {term_r:+.2f}  "
                 f"ent[s/d/p/e] {metrics_py['ent_src']:.2f}/{metrics_py['ent_dst']:.2f}/{metrics_py['ent_pct']:.2f}/{ent_emit:.2f}  "
                 f"emits {emits:.2f}  "
