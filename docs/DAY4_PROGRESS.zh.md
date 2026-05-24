@@ -724,3 +724,38 @@ tail -f logs/monitor.log
 * `python -m orbit_wars_rl.bc.test_action_inverse` → 1/1 PASS
 * local smoke train 5 updates with full v2 shaping → spf 2.7 → 7.0, pS 0.06 → 0.17
 * monitor_train --once 解析 log → 字段全提取，warning/alert 触发正常
+
+### 13.9 OOM 调试与修复（2026-05-24 PM）
+
+**症状**：5090（32GB VRAM）跑 v9a：
+```
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying
+to allocate 28.11GiB. [executable_name='jit_train_step']
+```
+
+**根因**：单个 PPO update 的 activation peak 远超预算。计算：
+* rollout flatten → `N = T*B = 256 × 128 = 32768`
+* minibatch size = `N / num_minibatches = 32768 / 4 = 8192`
+* Transformer attention activation: `[8192, n_heads=4, tokens=169, tokens=169]`
+  = 8192 × 4 × 169² × 4 bytes = **3.75 GB per layer per direction**
+* 2 layers × forward + backward + K=8 autoregressive scan
+  → activation peak ≈ **28 GB**（匹配报错）
+
+**修复**：把 `num_minibatches` 从 4 改为 16，单 minibatch 从 8192 → 2048。
+PPO 数学上等价（`update_epochs * num_minibatches` 决定优化步数，
+单 mb 大小只影响梯度噪声），但 activation peak 缩小 4x → **~7GB**。
+
+**4 个 v9 config 同步改动**：
+* `num_minibatches: 4` → `num_minibatches: 16`
+* launch script `JAX_FRAC`：
+  - `N_CONCURRENT=1`: 0.50 → **0.85**（27GB cap，单 run 全力）
+  - `N_CONCURRENT=2`: 0.40 → **0.42**（13.4GB/job，2 jobs ~ 26.8GB）
+  - `N_CONCURRENT=4`: 0.20 → **0.21**（6.7GB/job，要求 minibatch fix）
+
+**重启**：
+```bash
+pkill -f "multi_action_v9"
+sleep 5
+nvidia-smi --query-gpu=memory.used,memory.free --format=csv
+bash scripts/run_v9_ablation.sh v9a v9b
+```

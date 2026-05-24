@@ -39,15 +39,17 @@ cd "$ROOT"
 PY="${PYTHON:-python}"
 N_CONCURRENT="${N_CONCURRENT:-2}"
 
-# JAX memory tuning: cap per-process VRAM so concurrent jobs coexist.
-# 0.22 * 32GB ~ 7GB per job, leaves ~4GB headroom for system + monitor.
-# If only ONE job at a time, you can bump this to 0.50 for faster compile.
+# JAX memory tuning: per-process VRAM CAP for concurrent jobs.
+#
+# After 2026-05-24 OOM debug: PPO update peak is ~7GB at num_minibatches=16,
+# rollout=256, ep_steps=350, d_model=128. JAX needs ~1.5GB workspace on top.
+# Conservative caps below leave headroom for compile cache + 1-2 GB system.
 case "$N_CONCURRENT" in
-  1) JAX_FRAC="${JAX_FRAC:-0.5}"  ;;
-  2) JAX_FRAC="${JAX_FRAC:-0.4}"  ;;  # 0.4*32 ~ 12.8GB per job; 2 jobs ~ 25.6GB
-  3) JAX_FRAC="${JAX_FRAC:-0.28}" ;;  # 0.28*32 ~ 9GB per job; 3 jobs ~ 27GB
-  4) JAX_FRAC="${JAX_FRAC:-0.20}" ;;  # 0.20*32 ~ 6.4GB per job; 4 jobs ~ 25.6GB
-  *) JAX_FRAC="${JAX_FRAC:-0.20}" ;;
+  1) JAX_FRAC="${JAX_FRAC:-0.85}" ;;  # ~27GB per job; single run, maximum compile speed
+  2) JAX_FRAC="${JAX_FRAC:-0.42}" ;;  # ~13.4GB per job; 2 jobs ~ 26.8GB total
+  3) JAX_FRAC="${JAX_FRAC:-0.28}" ;;  # ~9GB per job; 3 jobs ~ 27GB
+  4) JAX_FRAC="${JAX_FRAC:-0.21}" ;;  # ~6.7GB per job; tight -- only if no eval OOM
+  *) JAX_FRAC="${JAX_FRAC:-0.21}" ;;
 esac
 
 mkdir -p logs

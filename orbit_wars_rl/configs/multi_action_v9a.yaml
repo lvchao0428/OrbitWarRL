@@ -62,7 +62,12 @@ ppo:
   gamma: 0.99                 # bumped 0.97 -> 0.99 because horizon is 350 not 80 (DAY4 §13.2)
   gae_lambda: 0.95
   update_epochs: 4
-  num_minibatches: 4
+  # OOM fix (2026-05-24): orig num_minibatches=4 caused 28GiB activation peak
+  # on 32GB 5090 (8192-sample minibatch × transformer attention [B, 169, 169, 4heads]
+  # forward + backward). PPO is mathematically invariant to minibatch size as long
+  # as update_epochs * num_minibatches stays constant, so we 4x mb count to keep
+  # the same number of optimizer steps per update.
+  num_minibatches: 16
 
 selfplay:
   enabled: true
