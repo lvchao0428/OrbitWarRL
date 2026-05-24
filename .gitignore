@@ -13,3 +13,4 @@ ckpt_selfplay/
 .venv/
 .env
 *.pkl
+top10_episodes_2026-05-04/

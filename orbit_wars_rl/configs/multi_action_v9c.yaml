@@ -1,0 +1,73 @@
+# v9c -- FULL v2 shaping family.
+#
+# Identical to v9a except all three Day-4 v2 shaping terms are ON:
+#   prod_share   = 0.01   (main macro-strategy gradient; DAY4 §12.2)
+#   planet_share = 0.005  (early-game expansion signal; DAY4 §12.3)
+#   fleet_log    = 0.002  (per-launch fleet-size signal; DAY4 §11.2/§12.4)
+#
+# The "all-in" config. Use this as the headline experiment.
+#
+# Sign of life (compared to v9a/b):
+#   upd  500: spf > 10 (vs v9a ~5; fleet_log gives strong signal early)
+#   upd 1000: prod_share > 0.55, planet_share > 0.55, mean spf > 30
+#   upd 2000: H2H vs v8 last-ckpt > 14/20
+#   upd 4000: H2H vs v8 last-ckpt > 18/20  (THE ablation target)
+#
+# Kill signal:
+#   * clip_frac > 0.30 sustained 50 updates -> too many shaping gradients
+#     (lr 2x cut or drop fleet_log to 0.001)
+#   * value_loss exploding (> 1.0) -> shaping integral overpowering terminal
+#     +/-1; halve all three coefs
+#
+# Launch (5090):
+#   ORBITWARS_SHAPING_PROD_SHARE=0.01 \
+#   ORBITWARS_SHAPING_PLANET_SHARE=0.005 \
+#   ORBITWARS_SHAPING_FLEET_LOG=0.002 \
+#   nohup python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v9c.yaml \
+#       --log-dir logs/multi_action_v9c \
+#       > logs/multi_action_v9c.log 2>&1 &
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 4000
+  num_groups: 5
+  episode_steps: 350
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v9c
+  ckpt_every: 100
+  log_every: 1
+  seed: 92
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 100000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

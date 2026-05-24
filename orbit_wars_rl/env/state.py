@@ -53,6 +53,12 @@ class EnvState:
     planet_orbit_phase: chex.Array
     planet_is_orbiting: chex.Array
 
+    # Day 4 Track 3: home_planet_idx[p] = the slot index of player p's home
+    # at episode start. Stays fixed for the whole episode even if the home
+    # is captured (so the keep-home shaping signal goes to 0 when lost).
+    # Shape: [NUM_PLAYERS] int32. Filled by init.reset(); zeroed elsewhere.
+    home_planet_idx: chex.Array
+
 
 def empty_state(max_planets: int, max_fleets: int) -> EnvState:
     """All-zero placeholder; useful for shape probing or unit tests."""
@@ -77,4 +83,5 @@ def empty_state(max_planets: int, max_fleets: int) -> EnvState:
         planet_orbit_radius=jnp.zeros((max_planets,), dtype=jnp.float32),
         planet_orbit_phase=jnp.zeros((max_planets,), dtype=jnp.float32),
         planet_is_orbiting=jnp.zeros((max_planets,), dtype=jnp.bool_),
+        home_planet_idx=jnp.zeros((2,), dtype=jnp.int32),
     )

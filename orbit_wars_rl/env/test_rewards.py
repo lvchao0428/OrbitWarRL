@@ -89,6 +89,116 @@ def main() -> int:
     # --- SHAPING_SCALE default = 0.0 (Day 3 audit) ------------------
     _expect("SHAPING_SCALE default = 0.0", rewards.SHAPING_SCALE, 0.0)
 
+    # --- Day 4 shaping family defaults (must be 0 for backward compat) --
+    _expect("SHAPING_KEEP_HOME default = 0.0",  rewards.SHAPING_KEEP_HOME,  0.0)
+    _expect("SHAPING_FLEET_SIZE default = 0.0", rewards.SHAPING_FLEET_SIZE, 0.0)
+
+    # --- keep_home_reward: with default 0 coefficient must return 0 ---
+    s_home = _two_planet_state(p0_ships=50, p1_ships=50)
+    s_home = s_home.replace(home_planet_idx=jnp.array([0, 1], dtype=jnp.int32))
+    _expect("keep_home p0 (coef=0)", float(rewards.keep_home_reward(s_home, 0)), 0.0)
+    _expect("keep_home p1 (coef=0)", float(rewards.keep_home_reward(s_home, 1)), 0.0)
+
+    # --- keep_home_reward: with coef=1, home owned -> tanh(log1p(N)/8) ---
+    rewards.SHAPING_KEEP_HOME = 1.0
+    try:
+        got = float(rewards.keep_home_reward(s_home, 0))
+        want = float(jnp.tanh(jnp.log1p(jnp.float32(50.0)) / 8.0))
+        _expect("keep_home p0 (coef=1, owned)", got, want)
+
+        # Home captured -> reward = 0 regardless of garrison.
+        s_lost = s_home.replace(planet_owner=s_home.planet_owner.at[0].set(1))
+        _expect("keep_home p0 (home lost)", float(rewards.keep_home_reward(s_lost, 0)), 0.0)
+    finally:
+        rewards.SHAPING_KEEP_HOME = 0.0
+
+    # --- fleet_size_reward: with default 0 coefficient must return 0 ---
+    valid = jnp.array([True, True, False, False, False, False, False, False])
+    ships = jnp.array([10, 5, 0, 0, 0, 0, 0, 0], dtype=jnp.int32)
+    _expect("fleet_size (coef=0)", float(rewards.fleet_size_reward(valid, ships)), 0.0)
+
+    # --- fleet_size_reward: with coef=1, ships=10 (NORM=20, FLOOR=0.2) ---
+    rewards.SHAPING_FLEET_SIZE = 1.0
+    try:
+        # ships=10 -> 10/20 - 0.2 = 0.3; ships=5 -> 5/20 - 0.2 = 0.05
+        got = float(rewards.fleet_size_reward(valid, ships))
+        want = 0.3 + 0.05
+        _expect("fleet_size (coef=1, 10+5 ships)", round(got, 5), round(want, 5))
+
+        # Invalid launches contribute nothing even when ships>0.
+        valid_none = jnp.zeros_like(valid)
+        _expect("fleet_size (no valid)", float(rewards.fleet_size_reward(valid_none, ships)), 0.0)
+
+        # Tiny launch (1 ship) -> 1/20 - 0.2 = -0.15: negative penalty.
+        v1 = jnp.array([True, False, False, False, False, False, False, False])
+        s1 = jnp.array([1, 0, 0, 0, 0, 0, 0, 0], dtype=jnp.int32)
+        _expect("fleet_size (1 ship -> -0.15)",
+                round(float(rewards.fleet_size_reward(v1, s1)), 4), -0.15)
+    finally:
+        rewards.SHAPING_FLEET_SIZE = 0.0
+
+    # ============ Day 4 §12 v2 shaping (post-expert-replay) ==============
+    _expect("SHAPING_PROD_SHARE default = 0.0",   rewards.SHAPING_PROD_SHARE,   0.0)
+    _expect("SHAPING_PLANET_SHARE default = 0.0", rewards.SHAPING_PLANET_SHARE, 0.0)
+    _expect("SHAPING_FLEET_LOG default = 0.0",    rewards.SHAPING_FLEET_LOG,    0.0)
+
+    # --- prod_share_reward: build a state where p0 has 2 planets prod=3+5,
+    # p1 has 1 planet prod=4. total = 12. my_share = 8/12 = 0.667.
+    # reward (coef=1) = 0.667 - 0.5 = +0.167.
+    s_prod = state.empty_state(constants.MAX_PLANETS, constants.MAX_FLEETS)
+    s_prod = s_prod.replace(
+        planet_owner=s_prod.planet_owner.at[0].set(0).at[1].set(0).at[2].set(1),
+        planet_mask=s_prod.planet_mask.at[0].set(True).at[1].set(True).at[2].set(True),
+        planet_prod=s_prod.planet_prod.at[0].set(3).at[1].set(5).at[2].set(4),
+    )
+    _expect("prod_share p0 (coef=0)", float(rewards.prod_share_reward(s_prod, 0)), 0.0)
+    rewards.SHAPING_PROD_SHARE = 1.0
+    try:
+        _expect("prod_share p0 (coef=1)",
+                round(float(rewards.prod_share_reward(s_prod, 0)), 3), 0.167)
+        _expect("prod_share p1 (coef=1)",
+                round(float(rewards.prod_share_reward(s_prod, 1)), 3), -0.167)
+    finally:
+        rewards.SHAPING_PROD_SHARE = 0.0
+
+    # --- planet_share_reward: same state, p0 has 2/3 planets.
+    # reward (coef=1) = 0.667 - 0.5 = +0.167
+    _expect("planet_share p0 (coef=0)", float(rewards.planet_share_reward(s_prod, 0)), 0.0)
+    rewards.SHAPING_PLANET_SHARE = 1.0
+    try:
+        _expect("planet_share p0 (coef=1)",
+                round(float(rewards.planet_share_reward(s_prod, 0)), 3), 0.167)
+        _expect("planet_share p1 (coef=1)",
+                round(float(rewards.planet_share_reward(s_prod, 1)), 3), -0.167)
+    finally:
+        rewards.SHAPING_PLANET_SHARE = 0.0
+
+    # --- fleet_size_log_reward: log scale, REF=500, FLOOR=0.3 ---
+    rewards.SHAPING_FLEET_LOG = 1.0
+    try:
+        # ships=1 -> log1p(1)/log1p(500)=0.111 -> -0.189
+        v1m = jnp.array([True, False, False, False, False, False, False, False])
+        s1 = jnp.array([1, 0, 0, 0, 0, 0, 0, 0], dtype=jnp.int32)
+        _expect("fleet_log (1 ship -> -0.19)",
+                round(float(rewards.fleet_size_log_reward(v1m, s1)), 2), -0.19)
+
+        # ships=500 -> 1.000 - 0.3 = +0.7
+        s500 = jnp.array([500, 0, 0, 0, 0, 0, 0, 0], dtype=jnp.int32)
+        _expect("fleet_log (500 ship -> +0.70)",
+                round(float(rewards.fleet_size_log_reward(v1m, s500)), 2), 0.70)
+
+        # ships=2000 (above REF) -> clipped to 1.000 - 0.3 = +0.7 (no over-reward)
+        s2000 = jnp.array([2000, 0, 0, 0, 0, 0, 0, 0], dtype=jnp.int32)
+        _expect("fleet_log (2000 ship -> capped +0.70)",
+                round(float(rewards.fleet_size_log_reward(v1m, s2000)), 2), 0.70)
+
+        # invalid launch contributes nothing
+        v0 = jnp.zeros_like(v1m)
+        _expect("fleet_log (no valid)",
+                float(rewards.fleet_size_log_reward(v0, s500)), 0.0)
+    finally:
+        rewards.SHAPING_FLEET_LOG = 0.0
+
     print("\n[ALL PASS] reward function matches kaggle rules.")
     return 0
 

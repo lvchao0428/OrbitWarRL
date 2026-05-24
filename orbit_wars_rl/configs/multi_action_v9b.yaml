@@ -1,0 +1,67 @@
+# v9b -- prod_share-ONLY variant.
+#
+# Identical to v9a except for one env-var launch flag.
+# Tests the hypothesis: "prod_share is THE single best macro-strategy
+# reward signal (PERFECT 5/5 separator in expert replays, DAY4 §12.2)".
+#
+# If v9b clearly beats v9a but v9c/v9d give diminishing returns, we ship
+# v9b as the simplest possible victory: 3 lines of new code (one reward
+# function) on top of v8.
+#
+# Sign of life (compared to v9a control):
+#   upd 1000: prod_share (in train log) > 0.55 (vs v9a likely stuck at 0.5)
+#   upd 2000: WRr > 0.85, mean_planets in eval > 7
+#   upd 3000: H2H vs v8 last-ckpt > 12/20
+#
+# Launch (5090):
+#   ORBITWARS_SHAPING_PROD_SHARE=0.01 \
+#   nohup python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v9b.yaml \
+#       --log-dir logs/multi_action_v9b \
+#       > logs/multi_action_v9b.log 2>&1 &
+#
+# Confirm the "[reward] kaggle-aligned ... PROD_SHARE=0.01 ..." banner.
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 4000
+  num_groups: 5
+  episode_steps: 350
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v9b
+  ckpt_every: 100
+  log_every: 1
+  seed: 91
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 100000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

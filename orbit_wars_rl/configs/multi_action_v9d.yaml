@@ -1,0 +1,67 @@
+# v9d -- ablation: drop fleet_log, keep prod + planet share.
+#
+# Identical to v9a except:
+#   prod_share   = 0.01
+#   planet_share = 0.005
+#   fleet_log    = 0     (the term we ablate)
+#
+# Tests whether fleet_log is doing something the macro-strategy rewards
+# (prod_share / planet_share) can't already drive on their own. fleet_log
+# is the most "behaviour-tied" reward (per-launch instead of per-step), so
+# it's also the most prone to creating perverse incentives (e.g. emit only
+# when stockpile is huge so each launch is large).
+#
+# If v9d performs ≈ v9c, fleet_log is redundant -> drop it for simplicity.
+# If v9d clearly worse than v9c, fleet_log is providing distinct value.
+#
+# Launch (5090):
+#   ORBITWARS_SHAPING_PROD_SHARE=0.01 \
+#   ORBITWARS_SHAPING_PLANET_SHARE=0.005 \
+#   nohup python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v9d.yaml \
+#       --log-dir logs/multi_action_v9d \
+#       > logs/multi_action_v9d.log 2>&1 &
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 4000
+  num_groups: 5
+  episode_steps: 350
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v9d
+  ckpt_every: 100
+  log_every: 1
+  seed: 93
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 100000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

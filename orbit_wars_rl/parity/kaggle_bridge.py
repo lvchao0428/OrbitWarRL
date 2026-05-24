@@ -183,6 +183,9 @@ def kaggle_obs_to_envstate(obs: dict[str, Any]) -> EnvState:
         planet_orbit_radius=jnp.asarray(planet_orbit_radius),
         planet_orbit_phase=jnp.asarray(planet_orbit_phase),
         planet_is_orbiting=jnp.asarray(planet_is_orbiting),
+        # parity bridge can't recover the true home idx from a mid-game kaggle
+        # observation; zero is a safe sentinel (shaping not used in parity).
+        home_planet_idx=jnp.zeros((2,), dtype=jnp.int32),
     )
 
 

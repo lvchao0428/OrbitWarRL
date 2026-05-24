@@ -24,9 +24,13 @@ import jax
 import jax.numpy as jnp
 import optax
 
+from orbit_wars_rl.env import constants as env_constants
 from orbit_wars_rl.features import EncodedObs
 from orbit_wars_rl.net.model import ActorCritic
 from orbit_wars_rl.ppo.rollout import Rollout
+
+
+_PCT_BIN_TABLE_F32 = jnp.array(env_constants.PCT_BIN_VALUES, dtype=jnp.float32)
 
 
 class PPOConfig(NamedTuple):
@@ -218,6 +222,61 @@ def ppo_loss(
     var_residual = jnp.var(returns - value_pred)
     explained_variance = jnp.float32(1.0) - var_residual / var_returns
 
+    # ---- Behaviour metrics (Day 4 Track 1) -----------------------------
+    # All derived from the rollout we already have, no extra forward needed.
+    # Recreating decode_action's ships_to_send: floor(garrison[src] * pct).
+    # Tells us what the policy ACTUALLY tried to do, before env validity masks.
+    src_idx_clip = jnp.clip(rollout.src_idx, 0, env_constants.MAX_PLANETS - 1)
+    pct_clip = jnp.clip(rollout.pct_bin, 0, env_constants.NUM_PCT_BINS - 1)
+    pct_val = _PCT_BIN_TABLE_F32[pct_clip]                              # [N, K]
+    src_garrison = jnp.take_along_axis(
+        rollout.planet_ships_raw.astype(jnp.float32), src_idx_clip, axis=-1
+    )                                                                    # [N, K]
+    ships_per_step = jnp.floor(src_garrison * pct_val)                  # [N, K]
+    emit_f = rollout.emit_mask.astype(jnp.float32)                      # [N, K]
+    sent = ships_per_step * emit_f                                      # [N, K]
+    n_emit_total = jnp.maximum(emit_f.sum(), jnp.float32(1.0))
+    mean_ships_per_fleet = sent.sum() / n_emit_total
+
+    # zero-emit rate: fraction of turns where the policy did not launch anything
+    emits_per_turn = emit_f.sum(axis=-1)                                # [N]
+    zero_emit_rate = (emits_per_turn == jnp.float32(0.0)).mean()
+
+    # pct_bin distribution across actually-emitted fleets (8 bins).
+    # Shape: each scalar = fraction of emits whose pct_bin == b.
+    pct_bin_one_hot = jax.nn.one_hot(
+        rollout.pct_bin, env_constants.NUM_PCT_BINS, dtype=jnp.float32
+    )                                                                    # [N, K, B]
+    pct_bin_emits = (pct_bin_one_hot * emit_f[..., None]).sum(axis=(0, 1))  # [B]
+    pct_bin_dist = pct_bin_emits / n_emit_total                          # [B]
+
+    # Mean garrison ships on MY planets at turn-start. This is the indicator
+    # of "stockpile vs spend" behaviour -- v20 keeps this HIGH because it
+    # waits for production to accumulate, v7/v8 keep it LOW because they
+    # emit every turn. Use obs_my_planet_mask to restrict to player 0's planets.
+    my_planet_f = rollout.obs_my_planet_mask.astype(jnp.float32)        # [N, P]
+    planet_mask_f = rollout.obs_planet_mask.astype(jnp.float32)
+    my_alive_f = my_planet_f * planet_mask_f                            # [N, P]
+    ships_my = rollout.planet_ships_raw.astype(jnp.float32) * my_alive_f
+    n_my_planets = jnp.maximum(my_alive_f.sum(), jnp.float32(1.0))
+    mean_garrison_my = ships_my.sum() / n_my_planets
+
+    # Day 4 §12 v2 shaping-aligned metrics: prod_share, planet_share.
+    prod_f = rollout.planet_prod_raw.astype(jnp.float32)                # [N, P]
+    my_prod = (prod_f * my_alive_f).sum(axis=-1)                        # [N]
+    total_prod = jnp.maximum((prod_f * planet_mask_f).sum(axis=-1), jnp.float32(1.0))
+    prod_share = (my_prod / total_prod).mean()                          # scalar
+
+    my_planet_count = my_alive_f.sum(axis=-1)                           # [N]
+    total_planet_count = jnp.maximum(planet_mask_f.sum(axis=-1), jnp.float32(1.0))
+    planet_share = (my_planet_count / total_planet_count).mean()
+
+    # fleet_log "score" (average over emits) — same scaling rewards see, no coef.
+    # Re-uses ships_per_step computed for mean_ships_per_fleet above.
+    log_ref = jnp.log1p(jnp.float32(500.0))
+    fleet_log_norm = jnp.clip(jnp.log1p(jnp.maximum(ships_per_step, 0.0)) / log_ref, 0.0, 1.0)
+    fleet_log_score = (fleet_log_norm * emit_f).sum() / n_emit_total
+
     metrics = dict(
         pg_loss=pg_loss,
         v_loss=v_loss,
@@ -234,7 +293,17 @@ def ppo_loss(
         adv_mean=adv_mean,
         adv_std=adv_std,
         mean_emits_per_turn=mask_emit.sum(axis=-1).mean(),
+        # Day 4 Track 1: behaviour metrics (rollout-derived, free).
+        mean_ships_per_fleet=mean_ships_per_fleet,
+        zero_emit_rate=zero_emit_rate,
+        mean_garrison_my=mean_garrison_my,
+        # Day 4 §12 v2 shaping-aligned metrics.
+        prod_share=prod_share,
+        planet_share=planet_share,
+        fleet_log_score=fleet_log_score,
     )
+    for b in range(env_constants.NUM_PCT_BINS):
+        metrics[f"pct_bin{b}"] = pct_bin_dist[b]
     return total_loss, metrics
 
 
@@ -252,6 +321,8 @@ def _flatten_rollout(rollout: Rollout, advantages: jnp.ndarray, returns: jnp.nda
         obs_global_feats=f(rollout.obs_global_feats),
         obs_my_planet_mask=f(rollout.obs_my_planet_mask),
         planet_ships_raw=f(rollout.planet_ships_raw),
+        planet_prod_raw=f(rollout.planet_prod_raw),
+        planet_owner_raw=f(rollout.planet_owner_raw),
         src_idx=f(rollout.src_idx),
         dst_idx=f(rollout.dst_idx),
         pct_bin=f(rollout.pct_bin),
@@ -279,6 +350,8 @@ def _gather_minibatch(rollout: Rollout, advs: jnp.ndarray, rets: jnp.ndarray, id
         obs_global_feats=take(rollout.obs_global_feats),
         obs_my_planet_mask=take(rollout.obs_my_planet_mask),
         planet_ships_raw=take(rollout.planet_ships_raw),
+        planet_prod_raw=take(rollout.planet_prod_raw),
+        planet_owner_raw=take(rollout.planet_owner_raw),
         src_idx=take(rollout.src_idx),
         dst_idx=take(rollout.dst_idx),
         pct_bin=take(rollout.pct_bin),
@@ -300,7 +373,12 @@ _ZERO_METRICS_KEYS = (
     "pg_loss", "v_loss", "explained_variance",
     "ent_src", "ent_dst", "ent_pct", "ent_emit",
     "clip_frac", "approx_kl", "ratio_mean", "value_mean", "return_mean",
-    "adv_mean", "adv_std", "mean_emits_per_turn", "loss", "grad_norm",
+    "adv_mean", "adv_std", "mean_emits_per_turn",
+    # Day 4 Track 1 behaviour metrics
+    "mean_ships_per_fleet", "zero_emit_rate", "mean_garrison_my",
+    "prod_share", "planet_share", "fleet_log_score",
+    *(f"pct_bin{b}" for b in range(env_constants.NUM_PCT_BINS)),
+    "loss", "grad_norm",
 )
 
 

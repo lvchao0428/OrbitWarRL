@@ -103,6 +103,10 @@ def reset(rng: jnp.ndarray, num_groups: int = 5, shuffle_slots: bool | None = No
     radius = 1.0 + jnp.log(productions.astype(jnp.float32))
 
     is_home_group_planet = jnp.zeros((num_groups * 4,), dtype=jnp.bool_).at[0].set(True).at[3].set(True)
+    # Pre-permutation home slot ids: player 0 = slot 0, player 1 = slot 3.
+    # After the optional permutation we update these via the permutation
+    # inverse so they keep pointing at the actual home planets.
+    home_idx_pre = jnp.array([0, 3], dtype=jnp.int32)
 
     raw_ships = jax.random.randint(
         rng_ships,
@@ -149,6 +153,11 @@ def reset(rng: jnp.ndarray, num_groups: int = 5, shuffle_slots: bool | None = No
         orbit_radius_live = orbit_radius_live[perm]
         orbit_phase_live = orbit_phase_live[perm]
         is_orbiting_live = is_orbiting_live[perm]
+        # Map old-slot home idxs to their new positions. ``perm[i] = j`` means
+        # the planet that was at slot j now lives at slot i; we want the
+        # inverse: where did old slot 0 / slot 3 end up?
+        inv_perm = jnp.argsort(perm)
+        home_idx_pre = inv_perm[home_idx_pre]
 
     pad = constants.MAX_PLANETS - num_groups * 4
     planet_x = jnp.concatenate([xy[:, 0], jnp.zeros((pad,), dtype=jnp.float32)])
@@ -192,4 +201,5 @@ def reset(rng: jnp.ndarray, num_groups: int = 5, shuffle_slots: bool | None = No
         planet_orbit_radius=planet_orbit_radius,
         planet_orbit_phase=planet_orbit_phase,
         planet_is_orbiting=planet_is_orbiting,
+        home_planet_idx=home_idx_pre,
     )

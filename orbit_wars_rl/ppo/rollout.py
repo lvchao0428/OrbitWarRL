@@ -57,6 +57,8 @@ class Rollout:
     obs_my_planet_mask: chex.Array
 
     planet_ships_raw: chex.Array  # [T, B, P] int32 -- garrison at turn start
+    planet_prod_raw: chex.Array   # [T, B, P] int32 -- production at turn start
+    planet_owner_raw: chex.Array  # [T, B, P] int8  -- owner at turn start
 
     src_idx: chex.Array          # [T, B, K]
     dst_idx: chex.Array          # [T, B, K]
@@ -124,6 +126,8 @@ def _per_step_dict_from_sample(obs0, state, sampled, out):
         obs_global_feats=obs0.global_feats,
         obs_my_planet_mask=obs0.my_planet_mask,
         planet_ships_raw=state.planet_ships,
+        planet_prod_raw=state.planet_prod,
+        planet_owner_raw=state.planet_owner,
         src_idx=sampled.src_idx,
         dst_idx=sampled.dst_idx,
         pct_bin=sampled.pct_bin,
@@ -148,6 +152,8 @@ def _rollout_from_traj(traj_swapped: dict, last_values: jnp.ndarray) -> "Rollout
         obs_global_feats=traj_swapped["obs_global_feats"],
         obs_my_planet_mask=traj_swapped["obs_my_planet_mask"],
         planet_ships_raw=traj_swapped["planet_ships_raw"],
+        planet_prod_raw=traj_swapped["planet_prod_raw"],
+        planet_owner_raw=traj_swapped["planet_owner_raw"],
         src_idx=traj_swapped["src_idx"],
         dst_idx=traj_swapped["dst_idx"],
         pct_bin=traj_swapped["pct_bin"],

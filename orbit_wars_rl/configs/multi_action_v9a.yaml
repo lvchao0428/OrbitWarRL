@@ -1,0 +1,73 @@
+# v9a -- BASELINE / CONTROL for Day 4 v2 shaping ablation.
+#
+# All 4 v9 variants (v9a..v9d) share:
+#   * SAME architecture as v8 (no architectural changes; DAY4 §6).
+#   * episode_steps = 350  (vs v7/v8 = 80; expert replays show stockpile-
+#     then-release strategies are completely invisible inside 80 turns).
+#   * rollout_length = 256 (keeps PPO update size sane given 350-step eps).
+#   * From-scratch self-play (NO resume from v7/v8) because:
+#       1. v8 was trained with episode_steps=80 -> value head is fitted to
+#          a different terminal distribution
+#       2. v9 introduces new dense reward signals -> v8 advantage scaling
+#          would be wrong for first ~1000 updates anyway
+#       3. 4 ablations need identical starting point for fair comparison
+#   * 4000 updates (Day-4-budget; can extend to 10k if v9c wins clearly).
+#
+# v9a is the SHAPING-OFF control:
+#   * All Day-4 shaping env vars = 0 (default).
+#   * Tests "is the pure sparse +1/-1 signal alone enough at 350-step ep?"
+#   * If v9a converges as well as v9c, shaping was unnecessary.
+#   * If v9a stalls (low spf, low prod_share at upd 1000) -> shaping is
+#     pulling its weight in v9b/c/d.
+#
+# Launch (5090):
+#   nohup python -m orbit_wars_rl.scripts.train \
+#       --config orbit_wars_rl/configs/multi_action_v9a.yaml \
+#       --log-dir logs/multi_action_v9a \
+#       > logs/multi_action_v9a.log 2>&1 &
+#   # NO ORBITWARS_SHAPING_* env vars -- this is the control.
+
+train:
+  num_envs: 128
+  rollout_length: 256        # 2x v7/v8 (was 128) -- 350-step eps need bigger rollout to avoid
+                              # cross-episode GAE noise
+  num_updates: 4000
+  num_groups: 5
+  episode_steps: 350          # was 80; matches expert replay observed stockpile horizon
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v9a
+  ckpt_every: 100
+  log_every: 1
+  seed: 90
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 100000      # 4k updates × 4 epochs × 4 mbs = 64k optimizer steps; decay over ~2.5 epochs
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.99                 # bumped 0.97 -> 0.99 because horizon is 350 not 80 (DAY4 §13.2)
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 4
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.5
+  eval_vs_frozen: true

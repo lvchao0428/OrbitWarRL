@@ -1,26 +1,50 @@
-# DAY3 进度 — v7 架构修复：K 步「reserved 盲视」Bug
+# DAY3 PROGRESS — v7 architectural fix for the K-step "reserved-blind" bug
 
-> 写于 2026-05-23 晚间。DAY3_PLAN.md 描述的是 BC 引导路线。我们走了另一条路：在诊断出 v6p3 对 v20 失败的**架构**根因之后，又尝试了一轮纯 RL 迭代。若 v7 在 ≥5k updates 后仍对 v20 保持 0/20，BC 仍是 Plan B。
-
----
-
-## 0. 摘要（TL;DR）
-
-* **诊断**出 v6p3 训练指标健康却对 v20 最终 0/20 的真正原因：在 K 步（max=8）自回归采样循环中，**4 个 action head 都对回合内 reserved-ships 状态完全盲视**，策略因此坍缩为每回合「发出 K 个相同的 (src, dst, pct) 三元组」，多为 1 船编队，一回合内就把母星抽干。
-* **架构修复（v7）**：每个 head 现在接收 reserved 感知输入 — `remaining_norm`、`reserved_norm`、`src_remaining_norm`、`total_remaining_norm` — 以便在 K 循环从母星消耗舰船时逐步 refine 决策。
-* **同时修复了推理中长期存在的 float32 舍入 Bug**：每支舰队静默少发 1 船（例如 `pct=0.70, garrison=10` → `floor(10 * 0.6999..) = 6` 而非 `7`）。自 v2 起的所有提交均受影响。
-* **提交模板才是实际阻塞点。** 我忘了 `submission_rl_v4.py` 是 Kaggle 原样使用的推理代码**独立副本** — 它有自己的 head 函数拷贝，而非从 `numpy_forward.py` 导入。v7 首次导出在 JAX parity 下看起来完美，但每次推理调用都因 shape 不匹配而崩溃。已通过同步模板修复。
-* **v7 u499 最终结果**（含模板修复）：pct 现使用 bins 4-6 而非 0，dst 不再坍缩，emits 从 4.0 降至 1.65（每回合 1 支舰队，但是**有意义**的编队）。H2H 待定 — 训练指标暗示对 v1 很强，对 v20 尚不明。
+> Written 2026-05-23 evening. DAY3_PLAN.md described a BC bootstrap route. We
+> took a different path instead: we tried one more pure-RL iteration after
+> diagnosing the **architectural** root cause of v6p3's failure against v20.
+> BC remains Plan B if v7 ≥ 5k updates does not break 0/20 vs v20.
 
 ---
 
-## 1. v6p3 → v7 完整侦探故事
+## 0. TL;DR
 
-### 1.1 v6p3 在 u4999 结束
+* **Diagnosed** the actual reason v6p3 finished 0/20 vs v20 despite healthy
+  training metrics: **all 4 action heads were blind to the within-turn
+  reserved-ships state** in the K-step (max=8) autoregressive sample loop,
+  so the policy collapsed to "emit K identical (src, dst, pct) triples"
+  every turn, mostly 1-ship fleets that drained the mother planet within
+  one turn.
+* **Architectural fix (v7)**: each head now takes a reserved-aware input —
+  `remaining_norm`, `reserved_norm`, `src_remaining_norm`,
+  `total_remaining_norm` — so it can refine its decision as the K-loop
+  consumes ships from the mother planet.
+* **Also fixed a long-standing float32-rounding bug** in inference: every
+  fleet was silently emitting 1 fewer ship than training intended (e.g.
+  `pct=0.70, garrison=10` → `floor(10 * 0.6999..) = 6` instead of `7`).
+  This affected every submission from v2 onwards.
+* **Submission template was the actual blocker.** I forgot that
+  `submission_rl_v4.py` is a *standalone* copy of the inference code that
+  Kaggle uses verbatim — it had its own copies of the head functions, not
+  imports from `numpy_forward.py`. v7's first export looked perfect in JAX
+  parity but every inference call crashed with shape mismatch. Fixed by
+  syncing the template too.
+* **v7 u499 final result** (with template fix): pct now uses bins 4-6 not 0,
+  dst no longer collapses, emits drops from 4.0 to 1.65 (1 fleet/turn, but
+  *meaningful* fleets). H2H pending — train metrics suggest strong vs v1
+  but unclear vs v20.
 
-v6p3 在 Day 2 末启动，用于验证 OPT A 修复（DstHead 获得 `src_idx` 并 mask 掉 src，使 dst ≠ src）。在 5090 上约 6 小时跑完 5000 updates。
+---
 
-训练指标尾部（最后几百 updates）：
+## 1. The full v6p3 → v7 detective story
+
+### 1.1 v6p3 finished at u4999
+
+v6p3 was launched at the end of Day 2 to validate the OPT A fix (DstHead
+gets `src_idx` and masks src out so dst ≠ src). It ran the full 5000
+updates over ~6 hours on the 5090.
+
+Train metrics tail (last few hundred updates):
 ```
 upd 4999   WRr 0.92    WRf 0.78    mean_emits 2.10   ent_dst 1.31   clip 0.04
 upd 4500   WRr 0.92    WRf 0.77    mean_emits 2.30   ent_dst 1.31   clip 0.05
@@ -29,141 +53,176 @@ upd 3000   WRr 0.91    WRf 0.76    mean_emits 3.42   ent_dst 1.51   clip 0.06
 upd 2000   WRr 0.90    WRf 0.74    mean_emits 4.10   ent_dst 2.09   clip 0.10
 ```
 
-`mean_emits` 在 upd 2000 附近峰值 4.10，末段缓慢衰减至 2.10。PPO `clip_frac` 从 0.10 降至 0.04 — 策略收敛的明确信号。Self-play WRf 升至 0.78（对自家旧 snapshot 强势占优）。
+`mean_emits` peaked at 4.10 around upd 2000 and slowly decayed to 2.10 at
+the end. PPO `clip_frac` fell from 0.10 to 0.04 — clear sign of policy
+convergence. Self-play WRf rose to 0.78 (strong dominance over its own
+older snapshots).
 
-### 1.2 v6p3 u4999 H2H 大考
+### 1.2 v6p3 u4999 H2H gauntlet
 
 ```
-vs submission_v1.py         W= 17/20  (vs v6p2 u999 的 8/20  -- 大幅跃升)
-vs submission_rl_v4p2.py    W= 15/20  (vs v6p2 u999 的 10/20)
-vs submission_v20_0513.py   W=  0/20  (与 v6p2 相同)
+vs submission_v1.py         W= 17/20  (vs v6p2 u999's 8/20  -- big jump)
+vs submission_rl_v4p2.py    W= 15/20  (vs v6p2 u999's 10/20)
+vs submission_v20_0513.py   W=  0/20  (unchanged from v6p2)
 overall: 32/60 = 0.533
 ```
 
-击败 v1 和 v4p2 确认 OPT A 有效（dst 不再坍缩到 src；舰队确实出发）。但 **0/20 对 v20** — 与此前每次 RL 运行相同。
+Beating v1 and v4p2 confirmed OPT A worked (dst no longer collapses to
+src; fleets actually launch). But **0/20 vs v20** — same as every prior
+RL run.
 
-我最初解读：「策略收敛到 v4p2 级局部最优；5000 updates 纯 RL self-play 无法突破 v20」。这是错的。*指标*动态看起来像收敛，但*策略本身*以一种指标看不见的方式坏了。
+My first read: "policy converged to a v4p2-class local optimum; can't
+break v20 from pure RL self-play in 5000 updates". This was wrong. The
+*metric* dynamics looked like convergence, but the *policy itself* was
+broken in a way the metrics couldn't see.
 
-### 1.3 replay_dump 暴露真实行为
+### 1.3 replay_dump exposed the real behaviour
 
-运行 `replay_dump.py` 打印 v6p3 vs v20 每回合的 (state, action)。母星第一回合就从 10 船变为 1 船：
+I ran `replay_dump.py` to print every turn's (state, action) for v6p3 vs
+v20. The mother planet went from 10 ships to 1 ship in the first turn:
 
 ```
-[turn=  0] v6p3 sP=10 -> 发出 8 支舰队，各 1 船，dst 散布在 8 个不同行星  ("蚊子喷雾")
-[turn=  1] v6p3 sP= 3  -> 发出 3 支舰队，各 1 船
-[turn=  2] v6p3 sP= 1  -> 发出 1 支舰队，1 船
-[turn=  5] v6p3 sP= 1  -> 发出 1 支舰队，1 船
-[turn= 20] v6p3 sP=10  -> 发出 4 支舰队，各 1 船   (短暂恢复，随后再次被抽干)
+[turn=  0] v6p3 sP=10 -> emit 8 fleets, all 1 ship each, dst spread across
+                        8 different planets   ("spray of mosquitoes")
+[turn=  1] v6p3 sP= 3  -> emit 3 fleets, all 1 ship
+[turn=  2] v6p3 sP= 1  -> emit 1 fleet, 1 ship
+[turn=  5] v6p3 sP= 1  -> emit 1 fleet, 1 ship
+[turn= 20] v6p3 sP=10  -> emit 4 fleets, all 1 ship   (briefly recovered, then re-drained)
 ```
 
-Meanwhile v20 守在母星，累积 5-15 船，然后派出单一 decisive 8 船舰队。v6p3 每局皆负。
+Meanwhile v20 sat on its planet, accumulated 5-15 ships, then sent a
+single decisive 8-ship fleet. v6p3 lost every game.
 
-### 1.4 diag_real_game_obs 确认 K 步锁定
+### 1.4 diag_real_game_obs confirmed the K-step lock
 
-新诊断脚本打印*原始* `greedy_multi_action` 输出（在 `decode_multi_to_kaggle_moves` 过滤之前的 src_list、dst_list、pct_list）。v6p3 turn 0：
+I wrote a new diagnostic that prints the *raw* `greedy_multi_action`
+output (src_list, dst_list, pct_list before `decode_multi_to_kaggle_moves`
+filters anything). v6p3 turn 0:
 
 ```
 v6p3 u4999 player=0 seed=0:
-  turn 0: src=[12,12,12,12,12,12,12,12]   <- K=8 步，src 完全相同
-          dst=[3,3,3,3,3,3,3,3]            <- dst 完全相同
-          pct=[0,0,0,0,0,0,0,0]            <- pct 完全相同，pct_bin=0 (= 0.10)
-          每支舰队船数: floor(10*0.10) = 1，故 8 × 1 船编队
+  turn 0: src=[12,12,12,12,12,12,12,12]   <- K=8 steps, identical src
+          dst=[3,3,3,3,3,3,3,3]            <- identical dst
+          pct=[0,0,0,0,0,0,0,0]            <- identical pct_bin=0 (= 0.10)
+          ships per fleet: floor(10*0.10) = 1, so 8 × 1-ship fleets
 
 v4p2 u4999 player=0 seed=0:
-  turn 0: src=[12], dst=[19], pct=[3]      <- K=1，仅 1 次 emit，pct_bin=3 (= 0.40)
-          每支舰队船数: floor(10*0.40) = 4 船
+  turn 0: src=[12], dst=[19], pct=[3]      <- K=1, only 1 emit, pct_bin=3 (= 0.40)
+          ships per fleet: floor(10*0.40) = 4 ship
 ```
 
-在 K=8 自回归循环内，每个 head 在全部 8 步产生**相同**输出。智能体在 t=0 就锁定一个 src、一个 dst、一个 pct，从未 refine。
+Inside the K=8 autoregressive loop, every head produced the **same**
+output across all 8 steps. The agent committed to one src, one dst, one
+pct at t=0 and never refined.
 
-### 1.5 根因：head 对回合内 reserved 状态盲视
+### 1.5 Root cause: heads were blind to within-turn reserved state
 
-查看 `ActorCritic.__call__`（采样循环），每个 head 的输入*在回合起始状态下是确定的*：
+Looking at `ActorCritic.__call__` (the sample loop), each head's input
+was *deterministic given the turn-start state*:
 
 ```python
 for t in range(K):
-    src_logits_t = self.src_head(planet_emb, eff_mask)        # planet_emb 是回合起始
-    src_t = argmax(src_logits_t)                                # 始终同一 src
-    dst_logits_t = self.dst_head(planet_emb, src_emb_t, ...)   # src_emb_t 固定
-    dst_t = argmax(dst_logits_t)                                # 始终同一 dst
-    pct_logits_t = self.pct_head(src_emb_t, dst_emb_t, global_emb)  # 全部固定
-    pct_t = argmax(pct_logits_t)                                # 始终同一 pct
-    # reserved 会更新，但仅用于 `_ships_to_send` -- 未回传给任何 head
+    src_logits_t = self.src_head(planet_emb, eff_mask)        # planet_emb is turn-start
+    src_t = argmax(src_logits_t)                                # always same src
+    dst_logits_t = self.dst_head(planet_emb, src_emb_t, ...)   # src_emb_t fixed
+    dst_t = argmax(dst_logits_t)                                # always same dst
+    pct_logits_t = self.pct_head(src_emb_t, dst_emb_t, global_emb)  # all fixed
+    pct_t = argmax(pct_logits_t)                                # always same pct
+    # reserved gets updated, but only used in `_ships_to_send` -- not passed back to any head
 ```
 
-`reserved` 在舰船算术上记账正确，但**从未反馈给 head**。因此 K 次 argmax 迭代在构造上就产生 8 个相同的 (src, dst, pct) 三元组。
+`reserved` was bookkept correctly for ship arithmetic but **never fed
+back into the heads**. So argmax across K iterations gave 8 identical
+(src, dst, pct) triples by construction.
 
-对 `emit_head`，循环内只有 `step_oh` 变化 — emit 原则上可通过 `step_oh` 条件 logits 在后续步停止，但它不知道母星是否还有船。
+For `emit_head`, only `step_oh` changed within the loop — emit could in
+principle stop at later steps via `step_oh`-conditioned logits, but it
+had no idea whether the mother planet had ships left.
 
-这是**架构** Bug，不是训练信号 Bug。不改网络输入拓扑，再多的 RL 微调、BC 引导或 reward shaping 都无法修复。
+This was an **architectural** bug, not a training-signal bug. No amount
+of RL fine-tuning, BC bootstrap, or reward shaping would fix it without
+changing the network input topology.
 
 ---
 
-## 2. v7 架构变更
+## 2. v7 architectural changes
 
-每个 head 增加一个 reserved 感知输入（合计约 +320 参数）：
+Each head gains one new reserved-aware input (~320 params total):
 
-| Head | 新输入 | Shape | 来源 |
+| Head | New input | Shape | Source |
 |---|---|---|---|
 | SrcHead | `remaining_norm[p]` | (P,) | `log1p(ships - reserved) / 8` |
 | DstHead | `reserved_norm[p]` | (P,) | `log1p(reserved) / 8` |
 | PctHead | `src_remaining_norm` | scalar | `remaining_norm[src_t]` |
 | EmitHead | `total_remaining_norm` | scalar | `log1p(sum(remaining * my_mask)) / 8` |
 
-`log1p/8` 与 `features/encode.py` 中的行星特征归一化一致，使 head 看到的量级与现有 `log_ships` 特征可比。
+`log1p/8` matches the planet-feature normalisation in `features/encode.py`
+so the heads see comparable magnitudes to the existing `log_ships`
+feature.
 
-实现：
-* `orbit_wars_rl/net/heads.py` — 4 个 head 各接受可选新参数。
-* `orbit_wars_rl/net/model.py` — 新增 `_remaining_features()` 辅助函数；`evaluate()`（训练时 logp 重算）与 `__call__()`（采样循环）均逐步计算这些特征并传入。
-* `orbit_wars_rl/inference/numpy_forward.py` — 镜像 JAX 变更。
-* `orbit_wars_rl/inference/test_parity.py` — 仍 16/16 OK（parity 契约成立）。
+Implementation:
+* `orbit_wars_rl/net/heads.py` — 4 heads each take an optional new arg.
+* `orbit_wars_rl/net/model.py` — added `_remaining_features()` helper;
+  both `evaluate()` (training-time logp recompute) and `__call__()`
+  (sample loop) compute these features per-step and pass them in.
+* `orbit_wars_rl/inference/numpy_forward.py` — mirrored the JAX changes.
+* `orbit_wars_rl/inference/test_parity.py` — still 16/16 OK (the parity
+  contract held).
 
-实现后，fresh-init 冒烟测试：
+After implementation, fresh-init smoke test:
 ```
 [init] total params: 676,557      (v6: 676,237, delta = +320)
 [parity_check] arch d_model=128 n_layers=2 n_heads=4 ff_dim=512
                whole-turn action list match: 16/16
 ```
 
-### 2.1 附带修复：ships_t 的 float32 舍入
+### 2.1 Side fix: float32 rounding in ships_t
 
-检查 parity 时发现 numpy 推理对若干 pct bin 每支舰队少 1 船：
+While checking parity I noticed numpy inference dropping 1 ship per fleet
+for several pct bins:
 
 ```python
 # OLD (buggy):
 pct = float(_PCT_BIN_TABLE_NP[pct_t])   # f32 -> python float64
 ships_t = max(1, int(np.floor(avail_at_src * pct)))
-# pct=0.70 (存为 0.6999998 f32)，10 * 0.6999998 (f64) = 6.999998
-# floor(6.999998) = 6   <-- 期望 7
+# For pct=0.70 (stored as 0.6999998 f32), 10 * 0.6999998 (in f64) = 6.999998
+# floor(6.999998) = 6   <-- expected 7
 
 # NEW:
-mult = np.float32(avail_at_src) * _PCT_BIN_TABLE_NP[pct_t]   # 全 f32
+mult = np.float32(avail_at_src) * _PCT_BIN_TABLE_NP[pct_t]   # all f32
 ships_t = max(1, int(np.floor(mult)))
-# 10.0 * 0.6999998 (f32) = 7.0
+# 10.0 * 0.6999998 (in f32) = 7.0
 # floor(7.0) = 7    OK
 ```
 
-JAX 通过 XLA fusion 静默做对了。Numpy 没有。**v2 到 v6 的每次导出提交，对 pct ∈ {0.30, 0.50, 0.70, 0.85} 均比训练意图少发 1 船/舰队**。这是我们迄今最大的 train/eval 差距，数周未被发现，因为 parity_check 容差在 logits 上，而非 ship-count 输出。
+JAX silently did this correctly via XLA fusion. Numpy didn't. **Every
+exported submission from v2 through v6 sent 1 fewer ship per fleet than
+training intended** for pct ∈ {0.30, 0.50, 0.70, 0.85}. That's the
+*single biggest train/eval gap we've ever had*, and we missed it for
+weeks because the parity_check tolerance was on logits, not on
+ship-count outputs.
 
-已应用于 `numpy_forward.py` 与 `submission_rl_v4.py` 模板。
-
----
-
-## 3. v7 yaml + 启动
-
-`orbit_wars_rl/configs/multi_action_v7.yaml`：
-* 从零开始（不 resume — 架构因 `+320` 参数而变）。
-* 与 v6/v6p3 同架构：`d_model=128, n_layers=2, n_heads=4, ff_dim=512`。
-* `lr_warmup_steps=2000`, `lr_decay_steps=100000` — 与 v6p2 相同修复（这是*优化器*步而非 PPO updates，16x 缩放）。
-* `ent_coef_dst=0.001` — 与 v6p3 相同（v6p2 的 10x，防止 dst 再次坍缩）。
-* `num_updates=5000`，5090 上预计墙钟 ~6 h。
-* `selfplay.warmup_updates=50`，warmup 后 frozen pool 加入。
-
-已启动，运行正常。upd 200 时 SPS 达 5200（v6p3 为 3000 — 逐步特征计算几乎免费）。
+Applied to both `numpy_forward.py` and `submission_rl_v4.py` template.
 
 ---
 
-## 4. v7 训练指标至 u575
+## 3. v7 yaml + launch
+
+`orbit_wars_rl/configs/multi_action_v7.yaml`:
+* From scratch (no resume — architecture changed by `+320` params).
+* Same arch as v6/v6p3: `d_model=128, n_layers=2, n_heads=4, ff_dim=512`.
+* `lr_warmup_steps=2000`, `lr_decay_steps=100000` — same fix as v6p2
+  (these are *optimizer* steps not PPO updates, scaled 16x).
+* `ent_coef_dst=0.001` — same as v6p3 (10x v6p2 to prevent re-collapse).
+* `num_updates=5000`, expected wallclock ~6 h on 5090.
+* `selfplay.warmup_updates=50`, frozen pool joins after warmup.
+
+Launched, ran fine. SPS hit 5200 by upd 200 (vs v6p3's 3000 — the per-step
+feature compute is essentially free).
+
+---
+
+## 4. v7 training metrics through u575
 
 ```
 upd      0   adv_std 0.272  pg -0.0002  emits 1.55  ent[s/d/p/e] 0.31/2.89/1.97/0.67
@@ -177,46 +236,58 @@ upd    500   adv_std 0.114  pg -0.0077  emits 1.65  ent       0.59/2.04/1.77/0.4
 upd    575   adv_std 0.120  pg -0.0079  emits 1.56  ent       0.70/1.94/1.77/0.41       WRr 0.75 WRf 0.88
 ```
 
-### 4.1 v7 指标的实际含义（对比 v6p3）
+### 4.1 What the v7 metrics actually mean (vs v6p3)
 
-| 指标 | v6p3 u500 | v7 u500 | 变化说明 |
+| Metric | v6p3 u500 | v7 u500 | What changed |
 |---|---|---|---|
-| `WRf` | 0.45 | **0.97** | v7 97% 时间击败 frozen pool 中每个 snapshot |
-| `tR` | +0.30 | +0.72 | self-play return 强烈为正 |
-| `mean_emits` | 4.0+ | **1.65** | v7 每回合发 1-2 支舰队，而非 8 |
-| `ent_dst` | 1.31 (已坍缩) | 2.13 | dst 熵保持高 — head 仍有选项 |
-| `ent_pct` | 1.50 | 1.78 | pct 分布覆盖多个 bin |
-| `ent_src` | 0.50 | 0.69 | src 未 commit-lock |
-| `clip_frac` | 0.04 (已收敛) | 0.17 | v7 仍在积极学习 |
+| `WRf` | 0.45 | **0.97** | v7 beats every frozen snapshot 97% of the time |
+| `tR` | +0.30 | +0.72 | self-play return strongly positive |
+| `mean_emits` | 4.0+ | **1.65** | v7 emits 1-2 fleets per turn, not 8 |
+| `ent_dst` | 1.31 (collapsed) | 2.13 | dst entropy stays high — head still has options |
+| `ent_pct` | 1.50 | 1.78 | pct distribution covers multiple bins |
+| `ent_src` | 0.50 | 0.69 | src not commit-locked |
+| `clip_frac` | 0.04 (converged) | 0.17 | v7 still actively learning |
 
-**生命迹象解读**：
-* 熵三角测量：4 个 head 熵均未坍缩。
-* `WRf 0.97` 前所未有 — 意味着*当前* v7 策略几乎完美击败 frozen pool 中每个 snapshot，且持续数百 updates。
-* `mean_emits 1.65` *低于* v6p3，但每支舰队现在是真实、经过考虑的出击，而非重复喷雾。
+**Sign-of-life interpretation**:
+* Entropy triangulation: none of the 4 head entropies collapsed.
+* `WRf 0.97` is unprecedented — it means the *current* v7 policy beats
+  every snapshot in the frozen pool nearly perfectly, sustained across
+  hundreds of updates.
+* `mean_emits 1.65` is *lower than v6p3* but each fleet is now a real,
+  considered launch, not a duplicate spray.
 
-### 4.2 但我们仍不知道 v7 能否击败 v20
+### 4.2 But we still don't know if v7 beats v20
 
-训练信号是「v7 击败自己的过去版本」。这是健康的自我改进信号，但不能证明策略达到 v20 级水平。需要真实 H2H 才能知道。
+The training signal is "v7 beats its own past selves". That's a healthy
+self-improvement signal but it does not prove the policy reaches v20-class
+play. We need real H2H to know.
 
 ---
 
-## 5. 导出 Bug — 以及为何浪费 30 分钟
+## 5. The export bug — and why we lost 30 minutes
 
-首次 u499 H2H 运行：
+First u499 H2H run:
 ```
-vs submission_rl_v1.py        W= 1/40   <-- 不可能，应约 17
+vs submission_rl_v1.py        W= 1/40   <-- impossible, should be ~17
 ```
 
-`diag_real_game_obs` 揭示：
+`diag_real_game_obs` revealed:
 ```
 diag-ERR: matmul: Input operand 1 has a mismatch in its core dimension 0,
           with gufunc signature (n?,k),(k,m?)->(n?,m?)
           (size 265 is different from 264)
 ```
 
-根因：我更新了 `orbit_wars_rl/inference/numpy_forward.py`，但**未**更新 `submission_rl_v4.py`。提交模板是所有 head 函数的*独立*拷贝 — 必须如此，因为 Kaggle 只导入提交文件中的内容。模板 head 仍为 v6 shape (264)，ckpt 权重为 v7 shape (265)，每次推理崩溃 → `agent() returned []` → 空动作 → 输掉对局。
+Root cause: I had updated `orbit_wars_rl/inference/numpy_forward.py` but
+**not** `submission_rl_v4.py`. The submission template is a *standalone*
+copy of all the head functions — it has to be, because Kaggle imports
+only what's in the submission file. With template heads still at v6
+shape (264) and ckpt weights at v7 shape (265), every inference call
+crashed → `agent() returned []` → empty actions → games lost.
 
-**已修复**模板：同步全部 4 个 head 函数与 `greedy_multi_action` 至 v7 numpy_forward 逻辑。端到端 parity 确认：
+**Fix applied** to template: synced all 4 head functions and
+`greedy_multi_action` with the v7 numpy_forward logic. Parity confirmed
+end-to-end:
 
 ```
 $ python -m orbit_wars_rl.scripts.export_submission \
@@ -224,24 +295,30 @@ $ python -m orbit_wars_rl.scripts.export_submission \
 [export] running parity test against ckpt ..._u499.pkl (tol=0.005, num_states=16)
 [OK ] whole-turn action list match: 16/16
 [INFO] emit count match: 16/16
-[export] smoke moves: [[0, 0.0, 6]]    <-- 非空：推理可用
+[export] smoke moves: [[0, 0.0, 6]]    <-- non-empty: inference works
 ```
 
-### 5.1 流程教训
+### 5.1 Process lesson
 
-Kaggle 部署模型强制这种重复：部署时需要的推理逻辑必须存在于我们手工维护的*唯一*模板文件中。今后我将：
+The kaggle deploy model forces this duplication: any inference logic
+needed at deploy time must live in *exactly one* template file we
+maintain by hand. Going forward I will:
 
-1. **先**改 `submission_rl_v4.py` 模板（Kaggle 实际运行的）。
-2. 再镜像到 `orbit_wars_rl/inference/numpy_forward.py`（仅 parity 测试使用）。
-3. Parity 测试应比较*提交模板*的 head 与 JAX，而非 numpy_forward 的 head。
+1. Make every change to `submission_rl_v4.py` template *first* (it's
+   what Kaggle runs).
+2. Then mirror to `orbit_wars_rl/inference/numpy_forward.py` (used only
+   by parity test).
+3. The parity test should compare *the submission template's* heads
+   against JAX, not the numpy_forward heads.
 
-Day 4 将重构 parity 测试直接消费模板，避免此类 drift 复发。
+I'll refactor parity test on Day 4 to consume the template directly so
+this kind of drift can't recur.
 
 ---
 
-## 6. v7 u499 真实行为（实际胜利）
+## 6. v7 u499 real behaviour (the actual win)
 
-模板修复后，diag_real_game_obs vs v20（seed 0, player 0）：
+After the template fix, diag_real_game_obs vs v20 (seed 0, player 0):
 
 ```
 turn |  src    | dst   | pct_bin       | ships sent  | mother sP
@@ -252,116 +329,142 @@ turn |  src    | dst   | pct_bin       | ships sent  | mother sP
   10 |  [12]   | [19]  | [6]=0.85      | 1           |  2 -> 1
 ```
 
-与 v6p3 turn 0 对比（同 seed、同 player）：
+Comparison with v6p3 turn 0 (same seed, same player):
 
 ```
-v6p3:  src=[12]×8  dst=[3]×8   pct=[0]×8    -> 8 支舰队，各 1 船
-v7  :  src=[12]   dst=[19]    pct=[4]      -> 1 支舰队，5 船
+v6p3:  src=[12]×8  dst=[3]×8   pct=[0]×8    -> 8 fleets, all 1 ship
+v7  :  src=[12]   dst=[19]    pct=[4]      -> 1 fleet, 5 ship
 ```
 
-**Bug 修复记分板**：
+**Bug-fix scoreboard**:
 
-| 原 v6p3 Bug | v7 u499 状态 |
+| Original v6p3 bug | v7 u499 status |
 |---|---|
-| (1) K 步内 src commit-lock | 未变 — 仅 1 个己方行星，锁定正确 |
-| (2) pct 卡在最小 (0.10) → 1 船编队 | **已修复** — pct 现 0.55-0.85 |
-| (3) dst 喷雾（t=0 时 8 个不同 dst） | **已修复** — t=0 仅 1 次 emit |
-| (4) emit 打满（turn 0 时 K=8） | **已修复** — emits 1.65/回合 |
-| (5) 一回合抽干母星 | **已修复** — 约 3-5 回合抽干 |
+| (1) src commit-lock across K | unchanged — only 1 my-planet exists, lock is correct |
+| (2) pct stuck at min (0.10) → 1 ship fleets | **fixed** — pct now 0.55-0.85 |
+| (3) dst spray (8 different dst at t=0) | **fixed** — only 1 emit at t=0 |
+| (4) emit max (K=8 at turn 0) | **fixed** — emits 1.65/turn |
+| (5) mother planet drained in 1 turn | **fixed** — drained over ~3-5 turns |
 
-5 个 Bug 中 4 个可证消失。(1) 从来不是 Bug — 给定早期局面是唯一合法选择。
+4 of the 5 bugs are demonstrably gone. (1) was never a bug — it's the
+only legal choice given the early-game state.
 
-### 6.1 新观察：v7 仍未「累积后出击」
+### 6.1 New observation: v7 still doesn't "accumulate then strike"
 
-v7 每回合发 1 支舰队，每回合都发。母星长期接近空。v20 的制胜手法相反：*让母星累积到 5-15 船，再派一支大舰队*。v7 的*微观*对了（一次一支好舰队），*宏观*不对（何时囤 vs 何时花）。
+v7 emits 1 fleet per turn, every turn. That keeps mother planet near
+empty. v20's winning trick is the opposite: *let mother planet
+accumulate to 5-15 ships, then send one big fleet*. v7 has the *micro*
+right (one good fleet at a time) but not the *macro* (when to stockpile
+vs spend).
 
-这比「总是喷 1 船编队」的 gap 窄得多。可能通过以下方式缩小：
-* 将 v20 本身加入对手池，使策略在 self-play 中遇到囤兵策略。
-* 从 v20 BC 热启动（DAY3_PLAN.md 路线）。
-* 对「每支舰队发送船数」加 reward bonus，推动策略远离小编队。
+This is a much narrower gap than "always sprays 1-ship fleets". It
+might be closable by:
+* Adding v20 itself to the opponent pool so the policy meets a stockpile
+  strategy in self-play.
+* BC warmstart from v20 (the DAY3_PLAN.md path).
+* A reward bonus on "ships sent per fleet" to push the policy away from
+  tiny fleets.
 
-需等 v7 完整 5000-update 运行 + H2H 才知道需要哪条。
-
----
-
-## 7. Day 3 末状态快照（2026-05-23 22:55）
-
-* `v7` 在 5090 训练中：u575 / 5000。WRf 0.88-0.97，WRr 0.72-0.91，emits 1.5-1.7，4 个 ent 均高于 v6p3 坍缩点。
-* `submission_rl_v7_u499.py` 已导出（含模板修复）；smoke moves 非空；对 ckpt parity 16/16。
-* `diag_real_game_obs` 确认 v7 发出*有意义*编队（pct=0.55，船数 3-5）— 首次有 RL 运行做到。
-* v7_u499 H2H 大考是下一阻塞 — 关键数字是「vs v20」行。即使 **3/20 也意味架构修复端到端成功**，之后可决定为缩小 v20 级 gap 加什么。
-
-### 7.1 待定 H2H 决策树
-
-```
-v7_u499 vs v20 结果
-│
-├── ≥ 3/20  → 架构修复成功。
-│              计划：让 v7 跑完 5000 updates，在 u4999 重评。
-│              若 u4999 vs v20 ≥ 5/20：继续纯 RL。
-│              若 u4999 vs v20 卡在 3-4：试 v7p1，对手池加入 v20。
-│
-├── 1-2/20  → 修复有效但 RL self-play 无法桥接到 v20。
-│              计划：在 v7 架构上做 BC 热启动（DAY3_PLAN.md §2）。
-│
-└── 0/20    → 架构不够。另有原因。
-              计划：用 replay_dump 做 mid-game 更深诊断，
-              可能 reward shaping 或 BC。
-```
+We won't know which is needed until the full 5000-update v7 run + H2H.
 
 ---
 
-## 8. 今日从 top_players_rl.txt 学到的
+## 7. Status snapshot at end of Day 3 (2026-05-23 22:55)
 
-§65-§109 的 BC 引导讨论是明显动机，但**更有用的洞见**是 §230：
+* `v7` training running on 5090: at u575 / 5000.  WRf 0.88-0.97, WRr
+  0.72-0.91, emits 1.5-1.7, all 4 ent above their v6p3 collapse points.
+* `submission_rl_v7_u499.py` exported with template fix; smoke moves
+  non-empty; parity 16/16 against ckpt.
+* `diag_real_game_obs` confirms v7 emits *meaningful* fleets (pct=0.55,
+  ship counts 3-5) — first time any RL run has done this.
+* H2H gauntlet for v7_u499 is the next blocker — number to watch is
+  "vs v20" line. Even **3/20 means the architectural fix worked end to
+  end**, after which we can decide what to add for the v20-class gap.
+
+### 7.1 Decision tree pending H2H
+
+```
+v7_u499 vs v20 result
+│
+├── ≥ 3/20  → architecture fix succeeded.
+│              Plan: let v7 finish 5000 updates, re-evaluate at u4999.
+│              If u4999 vs v20 ≥ 5/20: keep going with RL.
+│              If u4999 vs v20 stuck at 3-4: try v7p1 with v20 in opponent pool.
+│
+├── 1-2/20  → fix worked but RL self-play can't bridge to v20.
+│              Plan: BC warmstart (DAY3_PLAN.md §2) on top of v7 arch.
+│
+└── 0/20    → architecture isn't enough. Something else is wrong.
+              Plan: deeper diagnosis with replay_dump in mid-game,
+              probably reward shaping or BC.
+```
+
+---
+
+## 8. What we learned from top_players_rl.txt today
+
+The §65-§109 BC bootstrap discussion was the obvious motivation but the
+**more useful insight** turned out to be §230:
 
 > "Action head is pretty much standard."
 
-这句话暗示 top 队伍的 action head 在 K 循环中能看到*足够状态*以做出不同决策。我们不行。我们隐式假设 head 是标准的，因为命名相同。结合上下文重读架构后清楚：「transformer encoder」之上的「action head」意味着 head 看到行星/舰队状态的*动态*视图，而非静态回合起始 token。
+That sentence implied top teams' action heads see *enough state* to
+make different decisions across the K loop. We were not. We'd implicitly
+assumed our heads were standard because they were named the same way.
+Re-reading the architecture in context made it clear that "action head"
+on top of "transformer encoder" implies the head sees a *dynamic* view
+of the planet/fleet state, not the static turn-start tokens.
 
-§2 的架构修复本应在 v3 就建好。我们在 fundamentally K-blind 网络上花了 4 个版本（v3 → v6p3）调超参。
+The architectural fix in §2 is what we should have built in v3. We
+spent 4 versions (v3 → v6p3) tweaking hyperparameters around a
+fundamentally K-blind network.
 
-### 8.1 Day 4 将从 top_players_rl.txt 检查的内容
+### 8.1 What we will check from top_players_rl.txt for Day 4
 
-若 v7_u4999 仍负 v20，文档中的下一优先级：
+If v7_u4999 still loses to v20, the next priorities from the doc:
 
-| 章节 | 主题 | 为何现在 |
+| Section | Topic | Why now |
 |---|---|---|
-| §75-109 | 从启发式 BC | Plan B（DAY3_PLAN.md 可执行） |
-| §170-200 | 舰队规模 reward shaping | 若 emits 仍 1/回合，奖励更大编队 |
-| §230 起 | Action head 细节 | 重读找遗漏 |
-| §145-165 | 对手池 curation | 注入 v20 学反囤兵打法 |
+| §75-109 | BC from heuristic | Plan B (DAY3_PLAN.md ready to execute) |
+| §170-200 | Reward shaping for fleet size | If emits stays at 1/turn, reward bigger fleets |
+| §230 onwards | Action head details | Re-read to find anything else we missed |
+| §145-165 | Opponent pool curation | Inject v20 to learn anti-stockpile play |
 
 ---
 
-## 9. v7 在整体脉络中的状态
+## 9. Status of v7 in context
 
-| 运行 | 对 v20 最终结果 | 诊断 |
+| Run | Final result vs v20 | Diagnosis |
 |---|---|---|
-| v4.2 | 0/20 | mean_emits 卡在 1.4（无法对 K-step credit-assign） |
-| v5.3 | 0/20 | 同上 — 纯 RL credit assignment 时间预算太小 |
-| v6p2 u999 | 0/20 | dst 坍缩到 src（"smoke moves: []"） |
-| v6p3 u4999 | 0/20 | K-step head 对 reserved 盲视 — *真正 Bug* |
-| **v7 u499** | **?** | K-step head 见 remaining/reserved；pct 现用高 bin |
+| v4.2 | 0/20 | mean_emits stuck at 1.4 (couldn't credit-assign K-step) |
+| v5.3 | 0/20 | same — pure-RL credit assignment time budget too small |
+| v6p2 u999 | 0/20 | dst collapsed to src ("smoke moves: []") |
+| v6p3 u4999 | 0/20 | K-step heads blind to reserved state — *the actual bug* |
+| **v7 u499** | **?** | K-step heads see remaining/reserved; pct now uses high bins |
 
-5 个版本未断的 0/20  streak 误导了我们。看起来像策略天花板。实际是系列 distinct、越来越 subtle 的 Bug — 每个用相同 end metric（0/20 vs v20）掩盖下一个。v7 未必是最终突破天花板的版本，但按 replay 分析是首个*策略本身*非退化的版本。
+The unbroken 0/20 streak across 5 versions was misleading us. It looked
+like a strategy ceiling. It was actually a series of distinct, increasingly
+subtle bugs — each one masked the next by producing the same end metric
+(0/20 vs v20). v7 may or may not be the version that finally lifts the
+ceiling, but it's the first one whose *policy itself* is non-degenerate
+according to replay analysis.
 
 ---
 
-## 10. 今日修改的文件
+## 10. Files touched today
 
-* `orbit_wars_rl/net/heads.py` — 4 个 head 现可选接收 reserved 感知输入。
-* `orbit_wars_rl/net/model.py` — 新增 `_remaining_features()`；sample + evaluate 已更新。
-* `orbit_wars_rl/inference/numpy_forward.py` — 镜像；float32 ships_t 修复。
-* `submission_rl_v4.py` — **相同**变更镜像（这是坑点）。
-* `orbit_wars_rl/scripts/diag_real_game_obs.py` — 修复 python 3.13 dataclass 模块加载 Bug。
-* `orbit_wars_rl/configs/multi_action_v7.yaml` — 新运行，ent_dst 0.001，warmup_steps 2000。
-* `docs/DAY2_PROGRESS.md` §12 — 完整 v6p3 → v7 链条文档。
-* `docs/DAY3_PROGRESS.md` — 本文档。
+* `orbit_wars_rl/net/heads.py` — 4 heads now optionally take reserved-aware inputs.
+* `orbit_wars_rl/net/model.py` — added `_remaining_features()`; sample + evaluate updated.
+* `orbit_wars_rl/inference/numpy_forward.py` — mirror; float32 ships_t fix.
+* `submission_rl_v4.py` — **same** changes mirrored (this was the gotcha).
+* `orbit_wars_rl/scripts/diag_real_game_obs.py` — fixed dataclass module-loading bug for python 3.13.
+* `orbit_wars_rl/configs/multi_action_v7.yaml` — new run, ent_dst 0.001, warmup_steps 2000.
+* `docs/DAY2_PROGRESS.md` §12 — full v6p3 → v7 chain documented.
+* `docs/DAY3_PROGRESS.md` — this doc.
 
-## 11. v7_u499 H2H 结果 + BC 并行轨道
+## 11. v7_u499 H2H result + BC parallel track
 
-### 11.1 结果
+### 11.1 The result
 
 ```
 vs submission_rl_v1.py     W=14/20   WR=0.70   avg_steps=424
@@ -370,51 +473,61 @@ vs submission_v20_0513.py  W= 0/20   WR=0.00   avg_steps=159
                                    overall  0.55
 ```
 
-对比 v6p3 u4999（此前最佳）：
+Comparison vs v6p3 u4999 (the previous best):
 
-| 对手 | v6p3 u4999 | v7 u499 | delta | 解读 |
+| Opponent | v6p3 u4999 | v7 u499 | delta | interpretation |
 |---|---|---|---|---|
-| v1   | 17/20 (0.85) | 14/20 (0.70) | −0.15 | 每回合 1 舰队对 v1 蛮力压制较弱 |
-| v4p2 | 15/20 (0.75) | 19/20 (0.95) | **+0.20** | 架构修复对自家系列明显见效 |
-| v20  | 0/20  (0.00) | 0/20  (0.00) | 0.00  | 策略天花板未抬升 |
+| v1   | 17/20 (0.85) | 14/20 (0.70) | −0.15 | 1-fleet-per-turn means less brute-force pressure vs v1 |
+| v4p2 | 15/20 (0.75) | 19/20 (0.95) | **+0.20** | architectural fix pays off vs our own family |
+| v20  | 0/20  (0.00) | 0/20  (0.00) | 0.00  | strategy ceiling not lifted |
 
-**v4p2 +20%** 确认 v7 修复使策略在*微观*上严格更强（一支好舰队 > 八支 1 船编队）。但*宏观*策略 — 囤后出击 — 从未学到，因为：
+**v4p2 +20%** confirms the v7 fix made the policy strictly stronger at the
+*micro* level (one good fleet > eight 1-ship fleets). But the *macro*
+strategy — stockpile then strike — was never learned because:
 
-1. v7 的 self-play 对手（frozen v7 snapshot）都每回合 emit 1 舰队，v7 actor 在训练中从未*见到*囤后出击对手。
-2. v20 对局 avg_steps=159，即 v20 约在 turn 80 击杀 v7 母星 — v7 来不及在长 horizon 生产上竞争。
+1. v7's self-play opponents (frozen v7 snapshots) all emit 1 fleet/turn,
+   so the v7 actor never *sees* a stockpile-then-strike opponent during
+   training.
+2. v20 ends games at avg_steps=159, i.e. v20 kills v7's mother planet around
+   turn 80 — too early for v7 to compete on long-horizon production.
 
-这正是 `top_players_rl.txt` §75-§109：**纯 RL self-play 无法对 800 步延迟 reward credit-assign**。需要从 v20 BC 播种宏观策略。
+That's textbook §75-§109 of `top_players_rl.txt`: **pure-RL self-play
+can't credit-assign across 800-step delayed rewards**. We need BC from
+v20 to seed the macro strategy.
 
-### 11.2 为何没有单纯继续 v7
+### 11.2 Why we did not just continue with v7
 
-若 v7 跑到 u5000 将烧 5h GPU。即使乐观估计 u5000 对 v20 +3/20，overall 仍 0.55（= u499）。等待的边际期望值低。
+If we ran v7 to u5000 we would burn 5h GPU. Even an optimistic +3/20 vs v20
+at u5000 would still leave us at 0.55 overall (= u499). The marginal
+expected value of waiting is low.
 
-我们让 v7 在后台继续训练，并行承诺 BC — 即 §0 顶部提到的 **Plan D**。
+Instead we kept v7 training in the background and committed to BC in
+parallel — this is the **Plan D** mentioned at top of §0.
 
-### 11.3 BC 流水线状态（当晚）
+### 11.3 BC pipeline status (this evening)
 
-今日实现并冒烟测试：
+Implemented and smoke-tested today:
 
-| 文件 | 状态 | 备注 |
+| File | Status | Notes |
 |---|---|---|
-| `bc/action_inverse.py` | **完成** | 5 个单元测试通过（单步、同 src 两步 reserved、空 moves、无效 src、K-overflow） |
-| `bc/collect_data.py`   | **完成** | 2 局 smoke 产生 466 samples — v20 统计见 §11.4 |
-| `bc/train_bc.py`       | **完成** | 1 epoch smoke 训练 loss 10.06 → 8.93；val acc src/dst/pct/emit 上升；ckpt export+inject 可用 |
-| 100 局采集 | **运行中** | 后台，PID 13902，总计 ~50 min |
-| BC 训练（正式） | 待定 | 采集完成后，~30 min 训练 |
-| BC 验证 H2H | 待定 | 目标：仅 BC 对 v20 ≥ 5/20 |
-| RL 微调（Day 4） | 待定 | 若 BC 达 5/20 vs v20，微调推高 |
+| `bc/action_inverse.py` | **done** | 5 unit tests pass (single move, two moves same src reserved, empty moves, invalid src, K-overflow) |
+| `bc/collect_data.py`   | **done** | 2-game smoke produced 466 samples — see §11.4 for the v20 stats |
+| `bc/train_bc.py`       | **done** | 1-epoch smoke training drops loss 10.06 → 8.93; val acc src/dst/pct/emit climbing; ckpt export+inject works |
+| 100-game collection    | **running** | Background, PID 13902, ~50 min total |
+| BC training (real)     | TBD       | After collection finishes, ~30 min of training |
+| BC validation H2H      | TBD       | Goal: ≥ 5/20 vs v20 from BC alone |
+| RL fine-tune (Day 4)   | TBD       | If BC reaches 5/20 vs v20, fine-tune to push higher |
 
-### 11.4 v20 self-play 统计（2 局 smoke）
+### 11.4 v20 self-play statistics (2-game smoke)
 
-数据说明 v7 策略为何结构上错误：
+The data tells us why v7's strategy is structurally wrong:
 
 ```
 total samples: 466 (= 2 games × ~120 turns × 2 perspectives)
 total emits  : 406 (avg 0.87 per sample)
 
 emits-per-sample histogram:
-  0 emits: 64.4%   ← v20 多数回合在囤兵！
+  0 emits: 64.4%   ← v20 STOCKPILES the majority of turns!
   1 emits: 15.0%
   2 emits:  8.8%
   3 emits:  4.3%
@@ -422,135 +535,168 @@ emits-per-sample histogram:
   5 emits:  0.6%
   6 emits:  0.9%
   7 emits:  0.2%
-  8 emits:  2.1%   ← v20 偶尔猛攻（一回合 8 支舰队）
+  8 emits:  2.1%   ← v20 occasionally swings hard (8 fleets in one turn)
 
 pct_bin distribution (across actually-emitted fleets):
-  bin 0 (0.10):  6.7%   ← 小侦察/佯攻
+  bin 0 (0.10):  6.7%   ← small scouts/feints
   bin 1 (0.20):  8.1%
   bin 2 (0.30): 11.3%
   bin 3 (0.40): 17.5%
-  bin 4 (0.55): 26.1%   ← 最常见
+  bin 4 (0.55): 26.1%   ← single most common
   bin 5 (0.70): 20.2%
   bin 6 (0.85):  8.9%
-  bin 7 (1.00):  1.2%   ← 全押几乎不用
+  bin 7 (1.00):  1.2%   ← all-in is almost never used
 ```
 
-v20 三分之二的回合是*无动作*。这与任何通过 self-play 学到「每回合 emit 有用东西」的策略 fundamentally 不兼容。0-emit 率是 BC 必须克隆的宏观行为，也正是 RL 训练从未见到 reward 信号的行为（0-emit 回合在 self-play 中既不立即进步也无明显 downside，因为双方都不动）。
+Two-thirds of v20 turns are *no-action*. That is fundamentally
+incompatible with any policy that learns "emit something useful every
+turn" via self-play. The 0-emit rate is the macro behaviour the BC must
+clone, and it is exactly the behaviour our RL training never sees a
+reward signal for (a 0-emit turn produces neither immediate progress
+nor an obvious downside in self-play, since both sides do nothing).
 
-`top_players_rl.txt` §75-§109 说所有高分 RL 队伍正因如此从强启发式 bootstrap。
+`top_players_rl.txt` §75-§109 says all top-scoring RL teams bootstrapped
+from a strong heuristic for exactly this reason.
 
 ---
 
-## 12. 路线修正 — 重读 top1 论坛帖
+## 12. Course correction — re-read top1's forum posts
 
-深夜，用户分享了 `top_players_rl.txt` 更新版，含 Lin Myat Ko（top1）回复论坛问题的新内容。三条陈述颠覆计划：
+Late evening, user shared an updated version of `top_players_rl.txt` with
+new replies from Lin Myat Ko (top1) to forum questions. Three statements
+flip our plan upside down:
 
-### 12.1 top1 实际说了什么
+### 12.1 What top1 actually said
 
 * §70 — "Do you need to write heuristic agent? **I don't.**"
-  → Top1 **完全不**用 BC 热启动。纯 self-play。
+  → Top1 does **not** use BC warmstart at all. Pure self-play.
 
 * §82 + §409 — "Best model took ~3 days, self-play from the start" =
-  **600M steps**。v6p3 约 80M。v7 u499 约 8M。
-  → 我们不是架构不足，是**训练不足**。
+  **600M steps**. v6p3 ran ~80M. v7 u499 ran ~8M.
+  → We are not under-architected, we are **under-trained**.
 
 * §92–§96 — "Add one architecture delta at a time. Always. I shipped 7
   changes vs F12 in two days. ... lost 1 baseline."
-  → 我们每版 ship 5+ delta（v6→v7 改 4 head、加 float32 修复、加 src_idx mask）。Top1 的 F 系列用一年 tiny single-delta 演化。
+  → We've been shipping 5+ deltas per version (v6→v7 changed 4 heads,
+  added float32 fix, added src_idx mask). Top1's F-series took a year
+  to evolve in tiny single-deltas.
 
 * §102 — "**clip_frac creep 0.10 → 0.30+ is the most reliable warning
   sign**. Cut lr or revert capacity. Don't wait."
-  → 我们看 clip_frac 但未设硬阈值行动。
+  → We watch clip_frac but never set a hard threshold for action.
 
 * §307 — "**explained_variance should hit at least 0.8 in 100 iters**,
   0.9 in 20 iters. If it never gets past 0.5, your obs representation
   or architecture is wrong."
-  → **我们从未测量。** 在最重要的 value-head 健康指标上盲飞。
+  → **We never measured this.** We've been flying blind on the
+  single most important value-head health metric.
 
 * §216 — "RL policy is robust enough to learn the fraction"
-  → 确认我们的 pct head + bins 正确，非启发式。
+  → confirms our pct head with bins is correct, not a heuristic.
 
 * §73 — "+1 −1 is enough for 2p mode"
-  → 确认我们的 `ORBITWARS_SHAPING_SCALE=0.0` 选择。
+  → confirms our `ORBITWARS_SHAPING_SCALE=0.0` choice.
 
-### 12.2 本次对话中的变化
+### 12.2 What changed in this conversation
 
-| 之前 | 之后 |
+| Before | After |
 |---|---|
-| 计划：BC bootstrap（DAY3_PLAN.md, §2.1–§2.4） | **取消 BC 路线。** Top1 明确不用 BC。 |
-| 计划：kill v7，写 v8 启发式 seed | **v8 = "v7 + 记录 explained_variance + 2x 训练预算"。** 无架构 delta。 |
-| 指标：显示 clip_frac，无阈值 | **`clip_frac > 0.25` 持续 50 updates ⇒ lr 砍半。> 0.35 ⇒ kill。** |
-| 指标：无 explained_variance | **`explained_variance` 加入 PPO loss 与 train log 列。** |
-| BC 流水线（`bc/action_inverse.py` 等） | **代码保留磁盘作 Plan B**，未使用。测试仍通过。 |
+| Plan: BC bootstrap (DAY3_PLAN.md, §2.1–§2.4) | **Cancelled BC route.** Top1 explicitly does not use BC. |
+| Plan: kill v7, write v8 with heuristic seed | **v8 = "v7 + log explained_variance + 2x training budget".** No architecture delta. |
+| Metric: clip_frac shown, no threshold | **`clip_frac > 0.25` sustained 50 updates ⇒ cut lr 2x. > 0.35 ⇒ kill.** |
+| Metric: no explained_variance | **`explained_variance` added to PPO loss and train log column.** |
+| BC pipeline (`bc/action_inverse.py`, `bc/collect_data.py`, `bc/train_bc.py`) | **Code kept on disk as Plan B**, not used. Tests still pass. |
 
-### 12.3 v8 规格
+### 12.3 v8 spec
 
-* `configs/multi_action_v8.yaml`：
-  * 与 v7 **相同**架构（reserved 感知 head，相对 v6p3 单一 delta）。
-  * **相同** hparams（lr peak、ent_coefs、clip_eps，均来自 v7）。
-  * `num_updates` 5000 → 10000（= ~160M 额外 steps）。
-  * `lr_decay_steps` 100000 → 200000（匹配更长运行）。
-  * `ckpt_every` 50 → 100（运维变更，非学习）。
-  * 从 v7 最终 ckpt resume 而非从零，保留已投入的 80M steps。
-  * `seed` 70 → 80（resume 后新 RNG）。
+* `configs/multi_action_v8.yaml`:
+  * SAME architecture as v7 (reserved-aware heads, single delta from v6p3).
+  * SAME hparams (lr peak, ent_coefs, clip_eps, all from v7).
+  * `num_updates` 5000 → 10000 (= ~160M extra steps).
+  * `lr_decay_steps` 100000 → 200000 (matches longer run).
+  * `ckpt_every` 50 → 100 (operational change, not learning).
+  * Resume from v7 final ckpt instead of from scratch so we keep
+    the 80M steps already invested.
+  * `seed` 70 → 80 (new RNG since resuming).
 
-* 代码变更（单一 delta：仅 instrumentation）：
-  * `orbit_wars_rl/ppo/update.py`：
+* Code changes (one delta: instrumentation only):
+  * `orbit_wars_rl/ppo/update.py`:
     `explained_variance = 1 - Var(returns - value) / Var(returns)`
-    加入 metrics dict 与 static `_ZERO_METRICS_KEYS` tuple。
-  * `orbit_wars_rl/ppo/runner.py`：打印格式现含 `ev +0.42` 在 `v 0.012` 旁。
-  * 本地 smoke（3 updates）：`ev +0.13 → +0.24 → +0.49`。曲线如预期上升 — 代码可用。
+    added to metrics dict and the static `_ZERO_METRICS_KEYS` tuple.
+  * `orbit_wars_rl/ppo/runner.py`: print format now includes `ev +0.42`
+    next to `v 0.012`.
+  * Local smoke (3 updates): `ev +0.13 → +0.24 → +0.49`. Curve climbs
+    as expected — code works.
 
-### 12.4 v8 生命迹象预期
+### 12.4 Sign-of-life expectations for v8
 
-| Update | 指标 | 预期 | 未达标则 |
+| Update | Metric | Expected | Action if not met |
 |---|---|---|---|
-| upd 50  | explained_variance | ≥ 0.6 | 若 ≤ 0.3，value head 坏 — 查 obs |
-| upd 100 | explained_variance | ≥ 0.8 | 若 < 0.5，obs/arch 问题（top1 §307） |
-| upd 1000 | clip_frac | < 0.20 | 若 ≥ 0.25 持续，lr 砍半 |
-| upd 3000 | WRr | > 0.90 | （匹配 v6p3 plateau） |
-| upd 5000 | H2H vs v20 | ≥ 3/20 | 宏观策略学到的首个信号 |
-| upd 10000 | H2H vs v20 | ≥ 8/20 | top1 轨迹按 1/6 缩放 |
+| upd 50  | explained_variance | ≥ 0.6 | If ≤ 0.3, value head broken — debug obs |
+| upd 100 | explained_variance | ≥ 0.8 | If < 0.5, obs/arch problem (top1 §307) |
+| upd 1000 | clip_frac | < 0.20 | If ≥ 0.25 sustained, cut lr 2x |
+| upd 3000 | WRr | > 0.90 | (matches v6p3 plateau) |
+| upd 5000 | H2H vs v20 | ≥ 3/20 | first sign macro strategy learned |
+| upd 10000 | H2H vs v20 | ≥ 8/20 | top1 trajectory scaled by 1/6 |
 
-### 12.5 v8 仍无法测试的内容
+### 12.5 What v8 still cannot test
 
-若 v8 u10000 **仍 0/20 vs v20**，四个剩余假设（按成本排序）：
+If v8 u10000 is **still 0/20 vs v20**, the four remaining hypotheses
+(in order of cost):
 
-1. **更多训练**：拉到 20k updates（= 320M steps，仍 half top1 的 600M）。
-2. **v20 进 opp pool**：upd 200 注入 v20 ckpt 作 frozen 对手。强制策略见到囤后出击行为。相对 v8 单一 delta — 可做。
-3. **F12 架构 sweep**（top1 帖 §92–§96）：TypedInputProjection、sun mask、MLP FireHead、per-source TargetMix、multi-query ValueHead。各为单一 delta，可测。
-4. **BC 作 Plan B**：代码已在磁盘（`bc/`）；前三失败则 BC clone v20，再 RL 微调。
+1. **More training**: bring it to 20k updates (= 320M steps, still
+   half top1's 600M).
+2. **v20 in opp pool**: inject v20 ckpt as a frozen opponent at upd 200.
+   Forces policy to actually see stockpile-then-strike behaviour. This
+   is a single delta vs v8 — we can do it.
+3. **F12 architectural sweeps** documented in §92–§96 of top1's post:
+   TypedInputProjection, sun mask, MLP FireHead, per-source TargetMix,
+   multi-query ValueHead. Each is a single delta, testable.
+4. **BC as Plan B**: code already on disk (`bc/`); if the previous
+   three fail, BC clone v20, then RL fine-tune.
 
-Top1 对此路径的教训：
+Top1's lesson on this exact path:
   > "F12's single-Dense FireHead, global head_mix_logits, missing sun
   > mask — those weren't bugs to fix. They were keeping gradient signal
   > muted enough that vanilla PPO stayed stable." (§95)
 
-即对每个架构 delta 应*非常怀疑* — 纸上正确也可能炸训练。
+i.e. we should be *very suspicious* of each architectural delta — they
+can blow up training even when each looks correct on paper.
 
 ---
 
-## 13. 待办
+## 13. Open todos
 
-* 用户在 5090 启动 v8：从最新 v7 ckpt resume，log 到 `logs/multi_action_v8.log`，盯 `ev` 与 `clip` 列。
-* 监控者：clip_frac ≥ 0.25 持续 50 updates，或 upd 100 时 explained_variance < 0.5 则告警。
-* Day 4：重构 parity 测试对 submission 模板（防 §5 drift 复发）。
-* Day 4：写 `monitor_train.py` — tail log，算 clip_frac 与 EV 滚动均值，阈值突破时打印告警。
-* Day 4：log 加 `mean_ships_per_fleet` 与 `pct_bin_distribution`（现仅 `mean_emits` — 有用但不够）。
-* BC 流水线保留磁盘作 Plan B；勿删 `bc/`。
-  测试套件：`python -m orbit_wars_rl.bc.test_action_inverse` 仍通过（已验证）。
+* User launches v8 on 5090: resume from latest v7 ckpt, log to
+  `logs/multi_action_v8.log`, watch `ev` and `clip` columns.
+* Whoever monitors: alert at clip_frac ≥ 0.25 sustained 50 updates,
+  or explained_variance < 0.5 at upd 100.
+* Day 4: refactor parity test against submission template (prevents
+  §5 drift recurrence).
+* Day 4: write `monitor_train.py` — tails the log, computes rolling
+  averages of clip_frac and EV, prints an alert when thresholds break.
+* Day 4: add `mean_ships_per_fleet` and `pct_bin_distribution` to log
+  (currently only `mean_emits` — useful but not sufficient).
+* BC pipeline kept on disk as Plan B; do not delete `bc/`.
+  Test suite: `python -m orbit_wars_rl.bc.test_action_inverse` still
+  passes (verified).
 
 ---
 
-## 14. v8 前 Reward 审计（2026-05-23 夜）
+## 14. Pre-v8 Reward Audit (2026-05-23 night)
 
-v8 启动前用户 pushback：*「现在这个阶段我觉得还没到 one-at-a-time 的时候，属于基本的 reward 信号还存在问题，修一个没有意义，先按照现在没对齐的部分改彻底。」*
+User pushback before v8 launch: *"现在这个阶段我觉得还没到 one-at-a-time
+的时候,属于基本的 reward 信号还存在问题,修一个没有意义,先按照现在没对
+齐的部分改彻底把."*
 
-对照 `kaggle_environments/envs/orbit_wars/orbit_wars.py:684-715` 审计 `orbit_wars_rl/env/rewards.py`。**发现四处静默不一致。** 自 v3 起即存在。Day 4 早晨 v8 启动前已在单一 PR 中全部修复。
+Audited `orbit_wars_rl/env/rewards.py` against
+`kaggle_environments/envs/orbit_wars/orbit_wars.py:684-715`. **Four
+silent mismatches found.** All four had been there since at least v3.
+All four are now fixed in a single PR (Day 4 morning) before v8 launches.
 
-### 14.1 terminal_reward：平局曾是 0/0，应为 +1/+1
+### 14.1  terminal_reward: tie was 0/0, should be +1/+1
 
-Kaggle（710-715 行）：
+Kaggle (line 710-715):
 ```python
 max_score = max(scores)
 for i in range(num_agents):
@@ -560,61 +706,86 @@ for i in range(num_agents):
         state[i].reward = -1
 ```
 
-故 75 vs 75 船平局给**双方 +1**，非 0/0。
+So a 75-vs-75 ship tie gives **+1 to BOTH players**, not 0/0.
 
-我们代码（Day 4 前）：
+Our code (pre-Day-4):
 ```python
 win = me > opp
 loss = me < opp
 return (win - loss)  # tie -> 0
 ```
 
-**为何重要。** 80-turn episode 与 v6p3/v7 策略类下，~10-15% episode 近平局（双方母星仍活，mid-game）。旧 reward 标 0；新 reward 双方 +1。value head 被告知「我可能进入平局态，无信号」；应被告知「平局算赢，要规划否则输」。
+**Why this matters.** With 80-turn episodes and the v6p3/v7 policy class,
+~10-15% of episodes ended in a near-tie (both home planets still alive,
+mid-game). Old reward marked those as 0; new reward marks both as +1.
+The value head was being told "I might end up in a tie state, no signal";
+it should have been told "ties are wins, plan for them or lose."
 
-### 14.2 双灭：0/0 应为 -1/-1
+### 14.2  Double wipeout: 0/0 should be -1/-1
 
-Kaggle `max_score > 0` 子句：双方皆 0 船时，**双方 -1**（「无物之胜者」不存在）。
+Kaggle's `max_score > 0` clause: if both players are reduced to 0 ships,
+**both get -1** (neither is "the winner of nothing").
 
-我们代码：0 平局 → 0/0。
+Our code: tie at 0 → 0/0.
 
-80-turn episode 中罕见但可能（自杀交换至最后一 turn）。修复：对齐 kaggle。
+In 80-turn episodes this is rare but possible (suicide trades into the
+final turn). Fix: aligned with kaggle.
 
-### 14.3 终止于 step >= episodeSteps - 2
+### 14.3  Termination at step >= episodeSteps - 2
 
-Kaggle（686 行）：`if step >= configuration.episodeSteps - 2: terminated = True`。
+Kaggle (line 686): `if step >= configuration.episodeSteps - 2: terminated = True`.
 
-我们代码：`state.step >= episode_steps`。差 2。
+Our code: `state.step >= episode_steps`. Off by 2.
 
-实际影响小（episode 比以为短 2 tick）但**对 log 解读有意义**：说「episode 在 step 78 结束」应为 step 78（= 80 − 2）。现已修正 env 行为与 spec 完全一致。
+Minor practical impact (episode is 2 ticks shorter than I thought) but
+**meaningful for log interpretation**: when we said "episodes end at step
+78" we should have said step 78 (= 80 − 2). Now corrected so the env's
+behaviour matches the spec exactly.
 
-### 14.4 SHAPING_SCALE 默认 0.1 → 0.0
+### 14.4  SHAPING_SCALE default 0.1 → 0.0
 
-`rewards.py` 曾为 `SHAPING_SCALE = float(os.environ.get(..., "0.1"))`。
+`rewards.py` had `SHAPING_SCALE = float(os.environ.get(..., "0.1"))`.
 
-自 v5p2 起每次启动命令行设 `ORBITWARS_SHAPING_SCALE=0.0`，因 top1 §73 说 +1/-1 足够。但*默认*若忘 env var 是 0.1 — 隐藏陷阱。
+Every launch since v5p2 set `ORBITWARS_SHAPING_SCALE=0.0` on the command
+line because top1 §73 says +1/-1 is enough. But the *default* if you
+forget the env var was 0.1 — a hidden trap.
 
-修复：默认现 `0.0`。要 shaping 设 env var 为 `0.1`。启动 banner 现 echo `SHAPING_SCALE=X.X` 可审计。
+Fixed: default is now `0.0`. Set env var to `0.1` if you want shaping
+back. The startup banner now echoes `SHAPING_SCALE=X.X` so it's auditable.
 
-### 14.5 审计验证
+### 14.5  Audit verification
 
-* 新单元测试：`orbit_wars_rl/env/test_rewards.py`。运行 `python -m orbit_wars_rl.env.test_rewards`。**15 / 15 通过**。
-* `ppo/runner.py:train()` 新运行时 banner：
+* New unit test: `orbit_wars_rl/env/test_rewards.py`. Run with
+  `python -m orbit_wars_rl.env.test_rewards`. **15 / 15 pass**.
+* New runtime banner in `ppo/runner.py:train()`:
   `[reward] kaggle-aligned: terminal +1 win/+1 tie>0/-1 loss/-1 double-wipeout; ...`
-* Env-parity（30 steps, seed 42）仍干净 — 仅 reward/done 逻辑变，动力学未变。
-* Rollout smoke（4 envs × 128 steps）：无 NaN，所有 done reward ∈ {-1, +1}，所有非 done reward = 0（因 SHAPING_SCALE=0）。
+* Env-parity (30 steps, seed 42) still clean — only reward/done logic
+  changed, dynamics unchanged.
+* Rollout smoke (4 envs × 128 steps): no NaN, all done rewards in
+  {-1, +1}, all non-done rewards = 0 (since SHAPING_SCALE=0).
 
-### 14.6 刻意未改的内容
+### 14.6  What we deliberately did NOT change
 
-* `episode_steps: 80`（非 500）。这是**超参**，非 reward bug。80 steps 使每 rollout 有 terminal 信号（rollout_length=128 > 80），对 GAE credit assignment 关键。Top1 用 500 + 600M 训练 steps；我们用 80 + ~100M steps。权衡见 `multi_action_v8.yaml` 头注释。
-* `shaping_potential` 数学。默认不用；保留以便 pure +1/-1 卡住时 A/B。
+* `episode_steps: 80` (not 500). This is a **hyperparameter**, not a
+  reward bug. 80 steps gives terminal signal in every rollout
+  (rollout_length=128 > 80) which is critical for GAE credit assignment.
+  Top1 used 500 + 600M training steps; we use 80 + ~100M steps. Trade-off
+  is documented in `multi_action_v8.yaml` header comments.
+* `shaping_potential` math. Not used by default; kept so we can A/B it
+  later if pure +1/-1 stalls.
 
-### 14.7 v8 重跑计划
+### 14.7  Re-run plan for v8
 
-这些修复后，v8 启动时：
-* 与 kaggle 完全对齐的新 reward landscape。
-* 从 v7 最终 ckpt resume → value head 须重学 ties=win（~50 updates value-head 调整后指标才稳定）。
-* 相同架构（v7 reserved 感知 K-step head）。
-* 相同超参（lr schedule、ent_coefs、episode_steps=80）。
-* log banner 每次启动确认 reward 配置。
+After these fixes, v8 launches with:
+* New reward landscape that matches kaggle exactly.
+* Resume from v7 final ckpt → value head must re-learn ties=win (~50
+  updates of value-head adjustment expected before metrics stabilise).
+* Same architecture (v7 reserved-aware K-step heads).
+* Same hyperparams (lr schedule, ent_coefs, episode_steps=80).
+* Banner in log confirms reward config at every launch.
 
-这才是*正确*的「一次一个 delta」：架构 delta（v6p3 → v7）固定；仅**reward 函数与 day 1 就该对齐的 spec 对齐**。v8 之后可自信恢复「一次一个架构 delta」，reward 信号已正确。
+This is now "one delta at a time" *properly*: the architecture delta
+(v6p3 → v7) is held fixed; only the **reward function is being aligned
+with the spec it should have been aligned with from day 1**. After v8
+we can resume "one architecture delta at a time" with confidence that
+the reward signal is correct.

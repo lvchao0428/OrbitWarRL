@@ -63,6 +63,7 @@ def _make_state(
         planet_orbit_radius=jnp.zeros((P,), dtype=jnp.float32),
         planet_orbit_phase=jnp.zeros((P,), dtype=jnp.float32),
         planet_is_orbiting=jnp.zeros((P,), dtype=jnp.bool_),
+        home_planet_idx=jnp.zeros((2,), dtype=jnp.int32),
     )
 
 

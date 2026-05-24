@@ -81,6 +81,7 @@ def _build_mvp_state_from_kaggle(kobs, num_players: int = 2) -> EnvState:
         planet_orbit_radius=jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.float32),
         planet_orbit_phase=jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.float32),
         planet_is_orbiting=jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.bool_),
+        home_planet_idx=jnp.zeros((2,), dtype=jnp.int32),
     )
 
 

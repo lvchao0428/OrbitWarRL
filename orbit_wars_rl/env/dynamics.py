@@ -108,13 +108,17 @@ def _launch_one_player_multi(
     state: EnvState,
     action: MultiPlayerAction,
     player: int,
-) -> EnvState:
+) -> tuple[EnvState, jnp.ndarray, jnp.ndarray]:
     """Launch up to K fleets sequentially for a single player.
 
     Uses lax.scan over K so the unroll is static and JIT-friendly. A running
     ``reserved_ships[MAX_PLANETS]`` counter tracks how much garrison has
     already been spent earlier in the same turn so a later step from the same
     src never oversubscribes the planet (the decoder downgrades ships to 0).
+
+    Returns ``(new_state, valid_mask[K], ships_per_launch[K])``. The two
+    arrays are useful for downstream shaping rewards that need to know what
+    actually got dispatched. Callers that don't care can ignore them.
     """
     k = action.src_idx.shape[0]
 
@@ -137,11 +141,13 @@ def _launch_one_player_multi(
             s, valid, player, ships_eff, src_x, src_y, src_radius, angle, src_idx
         )
         new_reserved = reserved.at[src_idx].add(ships_eff)
-        return (s_new, new_reserved), None
+        return (s_new, new_reserved), (valid, ships_eff)
 
     reserved0 = jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.int32)
-    (final_state, _), _ = jax.lax.scan(step, (state, reserved0), jnp.arange(k))
-    return final_state
+    (final_state, _), (valid_per_step, ships_per_step) = jax.lax.scan(
+        step, (state, reserved0), jnp.arange(k)
+    )
+    return final_state, valid_per_step, ships_per_step
 
 
 def launch_fleets(
@@ -156,11 +162,29 @@ def launch_fleets(
     inside ``_insert_one_fleet``, plus a per-turn ``reserved_ships`` buffer
     prevents two steps emitted by the same player from oversubscribing the
     same source planet (decoder downgrades ships to 0).
+
+    Convenience wrapper that discards the per-launch metadata. Use
+    ``launch_fleets_with_info`` when you need ``(valid_mask, ships)`` arrays
+    for shaping rewards.
     """
-    cur = state
-    for p, a in enumerate(actions):
-        cur = _launch_one_player_multi(cur, a, p)
+    cur, _, _ = launch_fleets_with_info(state, actions)
     return cur
+
+
+def launch_fleets_with_info(
+    state: EnvState,
+    actions: tuple[MultiPlayerAction, MultiPlayerAction],
+) -> tuple[EnvState, tuple[jnp.ndarray, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray]]:
+    """Like ``launch_fleets`` but also returns ``(valid, ships)`` arrays per player.
+
+    Returns:
+      * ``new_state``
+      * ``valid``  -- tuple ``(valid_p0[K], valid_p1[K])`` bool arrays
+      * ``ships``  -- tuple ``(ships_p0[K], ships_p1[K])`` int32 arrays
+    """
+    cur, valid_p0, ships_p0 = _launch_one_player_multi(state, actions[0], 0)
+    cur, valid_p1, ships_p1 = _launch_one_player_multi(cur, actions[1], 1)
+    return cur, (valid_p0, valid_p1), (ships_p0, ships_p1)
 
 
 # ---------- production -----------------------------------------------------

@@ -139,6 +139,12 @@ def train(
     print(
         "[reward] kaggle-aligned: terminal +1 win/+1 tie>0/-1 loss/-1 double-wipeout; "
         f"is_terminal at step >= episode_steps-2; SHAPING_SCALE={env_rewards.SHAPING_SCALE}; "
+        f"v1: KEEP_HOME={env_rewards.SHAPING_KEEP_HOME} "
+        f"FLEET_SIZE={env_rewards.SHAPING_FLEET_SIZE}/norm{env_rewards.SHAPING_FLEET_NORM}; "
+        f"v2 (expert-replay calibrated): PROD_SHARE={env_rewards.SHAPING_PROD_SHARE} "
+        f"PLANET_SHARE={env_rewards.SHAPING_PLANET_SHARE} "
+        f"FLEET_LOG={env_rewards.SHAPING_FLEET_LOG}/ref{env_rewards.SHAPING_FLEET_LOG_REF}/"
+        f"floor{env_rewards.SHAPING_FLEET_LOG_FLOOR}; "
         f"episode_steps={cfg.episode_steps} (kaggle={kaggle_ep}, mismatch={cfg.episode_steps != kaggle_ep})",
         flush=True,
     )
@@ -273,13 +279,28 @@ def train(
             adv_std = metrics_py.get("adv_std", 0.0)
             term_r = metrics_py.get("mean_terminal_reward", 0.0)
             ev = metrics_py.get("explained_variance", 0.0)
+            # Day 4 Track 1: behaviour metrics.
+            #   spf  = mean ships per launched fleet (small ⇒ "spray of mosquitoes")
+            #   z0   = zero-emit-turn rate (v20 ≈ 0.64; v7/v8 ≈ 0.0)
+            #   garr = mean garrison on MY planets (stockpile indicator)
+            spf = metrics_py.get("mean_ships_per_fleet", 0.0)
+            z0 = metrics_py.get("zero_emit_rate", 0.0)
+            garr = metrics_py.get("mean_garrison_my", 0.0)
+            # Day 4 §12 v2 metrics:
+            #   pS / ptS = prod_share / planet_share for player 0 (expert
+            #              winners hit 0.49 mean; ours start ~0.5 then drift)
+            #   fLog     = mean log-scale fleet score across emits (0=tiny, 1=500+)
+            pshare = metrics_py.get("prod_share", 0.0)
+            ptshare = metrics_py.get("planet_share", 0.0)
+            flog = metrics_py.get("fleet_log_score", 0.0)
             print(
                 f"upd {update:4d}  steps {total_env_steps:7d}  sps {metrics_py['sps']:.0f}  "
                 f"opp {opp_tag}  loss {metrics_py['loss']:+.3f}  "
                 f"pg {metrics_py['pg_loss']:+.4f}  v {metrics_py['v_loss']:.3f}  ev {ev:+.2f}  "
                 f"adv_std {adv_std:.3f}  tR {term_r:+.2f}  "
                 f"ent[s/d/p/e] {metrics_py['ent_src']:.2f}/{metrics_py['ent_dst']:.2f}/{metrics_py['ent_pct']:.2f}/{ent_emit:.2f}  "
-                f"emits {emits:.2f}  "
+                f"emits {emits:.2f}  spf {spf:.1f}  z0 {z0:.2f}  garr {garr:.1f}  "
+                f"pS {pshare:.2f}  ptS {ptshare:.2f}  fLog {flog:.2f}  "
                 f"clip {metrics_py['clip_frac']:.2f}  kl {metrics_py['approx_kl']:+.3f}"
                 + wr_str
             )

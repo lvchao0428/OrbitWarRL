@@ -54,7 +54,7 @@ class OrbitWarsEnv:
         that only has single ``PlayerAction``s can wrap them via
         ``actions.single_to_multi`` (kept jit-pure).
         """
-        s1 = dynamics.launch_fleets(state, actions)
+        s1, (valid_p0, _), (ships_p0, _) = dynamics.launch_fleets_with_info(state, actions)
         s2 = dynamics.produce(s1)
         # Fleet movement uses swept-pair collision against each planet's
         # *future* (post-rotation) segment. This is how the Kaggle env
@@ -74,7 +74,22 @@ class OrbitWarsEnv:
         # the step counter advances*. Suppressed on the terminal step so the
         # +/-1 isn't double-counted by the value head.
         shaping = rewards.shaping_delta(state, s4, 0)
-        reward_p0 = jnp.where(done_now, terminal_r, shaping)
+        # Day 4 Track 3 shaping family. Each term defaults off via env var
+        # so v8 ckpt resume is reward-bit-exact. All terms operate on player 0.
+        #
+        #   keep_home / fleet_size : v1 family (DAY4 §11.1-§11.2, kept for
+        #     parity / ablation; default off since v9, replaced below).
+        #   prod_share / planet_share / fleet_size_log : v2 family motivated
+        #     by 5-episode top10 expert analysis (DAY4 §12). prod_share has
+        #     PERFECT 5-of-5 separator between winners and losers in expert
+        #     replays.
+        keep_r = rewards.keep_home_reward(s4, 0)
+        fleet_r = rewards.fleet_size_reward(valid_p0, ships_p0)
+        prod_r = rewards.prod_share_reward(s4, 0)
+        planet_r = rewards.planet_share_reward(s4, 0)
+        fleet_log_r = rewards.fleet_size_log_reward(valid_p0, ships_p0)
+        non_terminal_r = shaping + keep_r + fleet_r + prod_r + planet_r + fleet_log_r
+        reward_p0 = jnp.where(done_now, terminal_r, non_terminal_r)
 
         out = EnvOutput(
             reward=reward_p0,
