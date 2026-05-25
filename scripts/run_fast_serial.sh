@@ -16,7 +16,8 @@
 #   bash scripts/run_fast_serial.sh                       # run default queue
 #   bash scripts/run_fast_serial.sh r1 r2_release         # subset, in order
 #   POLL_SEC=180 MIN_UPD=300 bash scripts/run_fast_serial.sh
-#   RESUME_FROM=ckpt_multi_action_v9b/u003999.pkl bash scripts/run_fast_serial.sh r1
+#   bash scripts/run_day5_fast_from_v9c.sh              # kill v9c/d + resume v9c + serial
+#   RESUME_FROM=ckpt_multi_action_v9c/ckpt_003199.pkl bash scripts/run_fast_serial.sh r1_only
 #
 # Env knobs:
 #   POLL_SEC      seconds between gate checks      (default 120)
@@ -24,8 +25,8 @@
 #   MIN_UPD       min upd before gate can decide   (default 300)
 #   JAX_FRAC      per-process VRAM cap             (default 0.85, serial)
 #   RESUME_FROM   ckpt path to warm-start from     (default none = scratch)
-#   BASELINE_SPF  v9b train-log spf                (default 21.0)
-#   BASELINE_GARR v9b train-log garr               (default 50.0)
+#   BASELINE_SPF  frozen-base train-log spf        (default 30.0, v9c@~3200)
+#   BASELINE_GARR frozen-base train-log garr       (default 44.0, v9c@~3200)
 #
 # Notes:
 #   * Runs are SERIAL by design -- the gpu gets all of VRAM, training is
@@ -46,26 +47,28 @@ WINDOW="${WINDOW:-50}"
 MIN_UPD="${MIN_UPD:-300}"
 JAX_FRAC="${JAX_FRAC:-0.85}"
 RESUME_FROM="${RESUME_FROM:-}"
-BASELINE_SPF="${BASELINE_SPF:-21.0}"
-BASELINE_GARR="${BASELINE_GARR:-50.0}"
+BASELINE_SPF="${BASELINE_SPF:-30.0}"
+BASELINE_GARR="${BASELINE_GARR:-44.0}"
 BASELINE_PDELTA="${BASELINE_PDELTA:-0.0}"
+
+# v9c full v2 family -- all FAST variants resume from v9c ckpt and keep
+# planet_share; R1/R2 swap prod_share / fleet_log for v3 terms.
+V9C_BASE="ORBITWARS_SHAPING_PLANET_SHARE=0.005"
 
 CFG="orbit_wars_rl/configs/multi_action_v10_fast.yaml"
 SUMMARY="logs/fast_serial_summary.tsv"
 
 mkdir -p logs
 
-# Variant -> ENV_VARS for ORBITWARS_SHAPING_*. Each variant inherits the
-# v9b prod_share=0.01 base (so we measure ADDITIONAL gain from the new
-# reward, not "new reward vs no shaping at all").
-#
-# R1 (prod_share_delta) is mutually exclusive with the level prod_share,
-# so r1_only DROPS PROD_SHARE and uses DELTA instead.
+# Variant -> ENV_VARS for ORBITWARS_SHAPING_*.
+# Resume weights from v9c; each variant swaps in ONE (or combo) v3 term.
+# R1: prod_share level -> delta (mutually exclusive).
+# R2: fleet_log -> release_bonus (mutually exclusive per DAY5_TRAINING_ACTIONS).
 declare -A LAUNCH=(
-  [r1_only]="ORBITWARS_SHAPING_PROD_SHARE=0.0 ORBITWARS_SHAPING_PROD_SHARE_DELTA=1.0"
-  [r2_release]="ORBITWARS_SHAPING_PROD_SHARE=0.01 ORBITWARS_SHAPING_RELEASE=0.05 ORBITWARS_SHAPING_RELEASE_K=20.0"
-  [r4_emit]="ORBITWARS_SHAPING_PROD_SHARE=0.01 ORBITWARS_SHAPING_EMIT_LOG=0.01"
-  [r1_r2_r4]="ORBITWARS_SHAPING_PROD_SHARE=0.0 ORBITWARS_SHAPING_PROD_SHARE_DELTA=1.0 ORBITWARS_SHAPING_RELEASE=0.05 ORBITWARS_SHAPING_RELEASE_K=20.0 ORBITWARS_SHAPING_EMIT_LOG=0.01"
+  [r1_only]="${V9C_BASE} ORBITWARS_SHAPING_PROD_SHARE=0.0 ORBITWARS_SHAPING_FLEET_LOG=0.002 ORBITWARS_SHAPING_PROD_SHARE_DELTA=1.0"
+  [r2_release]="${V9C_BASE} ORBITWARS_SHAPING_PROD_SHARE=0.01 ORBITWARS_SHAPING_FLEET_LOG=0.0 ORBITWARS_SHAPING_RELEASE=0.05 ORBITWARS_SHAPING_RELEASE_K=20.0"
+  [r4_emit]="${V9C_BASE} ORBITWARS_SHAPING_PROD_SHARE=0.01 ORBITWARS_SHAPING_FLEET_LOG=0.002 ORBITWARS_SHAPING_EMIT_LOG=0.01"
+  [r1_r2_r4]="${V9C_BASE} ORBITWARS_SHAPING_PROD_SHARE=0.0 ORBITWARS_SHAPING_FLEET_LOG=0.0 ORBITWARS_SHAPING_PROD_SHARE_DELTA=1.0 ORBITWARS_SHAPING_RELEASE=0.05 ORBITWARS_SHAPING_RELEASE_K=20.0 ORBITWARS_SHAPING_EMIT_LOG=0.01"
 )
 
 VARIANTS=("$@")
@@ -213,9 +216,9 @@ echo ""
 echo "Next steps for any PROMOTE'd variant:"
 echo "  1. Export the latest ckpt:"
 echo "       python -m orbit_wars_rl.scripts.export_submission \\"
-echo "           --ckpt ckpt_multi_action_v10_<variant>/u000XXX.pkl \\"
+echo "           --ckpt ckpt_multi_action_v10_<variant>/ckpt_000XXX.pkl \\"
 echo "           --out ckpt_multi_action_v10_<variant>/submission.py"
-echo "  2. h2h vs v20 and frozen v9b -- see docs/H2H_EVAL_RUNBOOK.md"
-echo "  3. If h2h beats v9b, run the OVERNIGHT 4000-update version"
+echo "  2. h2h vs v20 and frozen v9c -- see docs/H2H_EVAL_RUNBOOK.md"
+echo "  3. If h2h beats v9c, run the OVERNIGHT 4000-update version"
 echo "     by re-launching with num_updates=4000 (edit the v10 fast yaml,"
 echo "     or use the existing run_v9_ablation.sh harness)."

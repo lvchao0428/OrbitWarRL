@@ -193,18 +193,17 @@ A2 改坐标系 → **from scratch 500 upd**。
 **串行 launcher（推荐入口）：**
 
 ```bash
-# 默认队列：r1_only → r2_release → r4_emit → r1_r2_r4
-# 每个 variant 最多 1000 upd；gate 每 POLL_SEC 秒判一次
-# 命中 PROMOTE(0) 或 KILL(2) 立即停掉当前 run，继续下一个
-bash scripts/run_fast_serial.sh
+# 一键：kill v9c/d → 自动找最新 v9c ckpt → 串行 R1/R2/R4/combo
+bash scripts/run_day5_fast_from_v9c.sh
 
-# 只跑 R1 单项，从 v9b@3999 ckpt 暖启动
-RESUME_FROM=ckpt_multi_action_v9b/u003999.pkl \
-  bash scripts/run_fast_serial.sh r1_only
+# 只跑 R1 + R2
+bash scripts/run_day5_fast_from_v9c.sh r1_only r2_release
 
-# 调整 gate 节奏 / baseline（v9c 跑完后用 v9c 的 spf/garr 替换）
-POLL_SEC=180 MIN_UPD=400 BASELINE_SPF=27.0 BASELINE_GARR=38.6 \
-  bash scripts/run_fast_serial.sh
+# v9c/d 已手动 kill 时
+SKIP_KILL=1 bash scripts/run_day5_fast_from_v9c.sh
+
+# 底层 launcher（需自行 RESUME_FROM / baseline）
+POLL_SEC=180 MIN_UPD=400 bash scripts/run_fast_serial.sh
 ```
 
 输出：
@@ -216,12 +215,13 @@ POLL_SEC=180 MIN_UPD=400 BASELINE_SPF=27.0 BASELINE_GARR=38.6 \
 
 实现：
 
+- `scripts/run_day5_fast_from_v9c.sh` — **kill v9c/d + 自动 resume v9c 最新 ckpt + 串行**
 - `scripts/run_fast_serial.sh` — 串行调度 + 轮询 + kill
 - `orbit_wars_rl/scripts/check_fast_gate.py` — 末窗口均值 + 2/3 票决（spf/garr/pdelta）+ 硬 kill（ev/clip）
 
 | ID | 假设 | 状态 | upd | ev@500 | replay vs v20 (first-80) | 决策 |
 |---|---|---|---|---|---|---|
-| — | Phase 0 收尾 | 🔄 | — | — | — | 阻塞中 |
+| — | Phase 0 收尾 | ⏸️ v9c/d @~3200 已 kill，改走 FAST | — | — | — | frozen base = **v9c ckpt** |
 | r1_only | prod_share_delta 替换 level | ⏳ | — | — | — | — |
 | r2_release | release_bonus (src_garr/src_prod) | ⏳ | — | — | — | — |
 | r4_emit | emit_log_reward | ⏳ | — | — | — | — |
