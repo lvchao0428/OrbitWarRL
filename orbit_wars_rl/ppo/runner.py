@@ -145,6 +145,10 @@ def train(
         f"PLANET_SHARE={env_rewards.SHAPING_PLANET_SHARE} "
         f"FLEET_LOG={env_rewards.SHAPING_FLEET_LOG}/ref{env_rewards.SHAPING_FLEET_LOG_REF}/"
         f"floor{env_rewards.SHAPING_FLEET_LOG_FLOOR}; "
+        f"v3 (top10-2630ep calibrated): "
+        f"PROD_SHARE_DELTA={env_rewards.SHAPING_PROD_SHARE_DELTA} "
+        f"EMIT_LOG={env_rewards.SHAPING_EMIT_LOG} "
+        f"RELEASE={env_rewards.SHAPING_RELEASE}/K{env_rewards.SHAPING_RELEASE_K}; "
         f"episode_steps={cfg.episode_steps} (kaggle={kaggle_ep}, mismatch={cfg.episode_steps != kaggle_ep})",
         flush=True,
     )
@@ -293,6 +297,12 @@ def train(
             pshare = metrics_py.get("prod_share", 0.0)
             ptshare = metrics_py.get("planet_share", 0.0)
             flog = metrics_py.get("fleet_log_score", 0.0)
+            # Day 5 (post-top10) metrics:
+            #   pdΔ  = mean(prod_share_t - prod_share_{t-1}) per rollout step;
+            #          sum across the rollout ~ change in territory share
+            #   pkR  = peak/mean my-side garrison per env (top10 winners ~4.3)
+            pdelta = metrics_py.get("prod_share_delta", 0.0)
+            pk_ratio = metrics_py.get("peak_over_mean_garr", 0.0)
             print(
                 f"upd {update:4d}  steps {total_env_steps:7d}  sps {metrics_py['sps']:.0f}  "
                 f"opp {opp_tag}  loss {metrics_py['loss']:+.3f}  "
@@ -301,6 +311,7 @@ def train(
                 f"ent[s/d/p/e] {metrics_py['ent_src']:.2f}/{metrics_py['ent_dst']:.2f}/{metrics_py['ent_pct']:.2f}/{ent_emit:.2f}  "
                 f"emits {emits:.2f}  spf {spf:.1f}  z0 {z0:.2f}  garr {garr:.1f}  "
                 f"pS {pshare:.2f}  ptS {ptshare:.2f}  fLog {flog:.2f}  "
+                f"pdΔ {pdelta:+.4f}  pkR {pk_ratio:.2f}  "
                 f"clip {metrics_py['clip_frac']:.2f}  kl {metrics_py['approx_kl']:+.3f}"
                 + wr_str
             )

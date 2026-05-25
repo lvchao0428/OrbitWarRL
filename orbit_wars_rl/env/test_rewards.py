@@ -199,6 +199,116 @@ def main() -> int:
     finally:
         rewards.SHAPING_FLEET_LOG = 0.0
 
+    # ============ Day 5 (post-top10) shaping ===============================
+    _expect("SHAPING_PROD_SHARE_DELTA default = 0.0",
+            rewards.SHAPING_PROD_SHARE_DELTA, 0.0)
+    _expect("SHAPING_EMIT_LOG default = 0.0", rewards.SHAPING_EMIT_LOG, 0.0)
+    _expect("SHAPING_RELEASE default = 0.0",  rewards.SHAPING_RELEASE,  0.0)
+
+    # --- R1 prod_share_delta_reward: state where we go from p0_share=0.5
+    # (3/3+3) to p0_share=0.667 (8/8+4); delta = +0.167.
+    s_prev = state.empty_state(constants.MAX_PLANETS, constants.MAX_FLEETS)
+    s_prev = s_prev.replace(
+        planet_owner=s_prev.planet_owner.at[0].set(0).at[1].set(1),
+        planet_mask=s_prev.planet_mask.at[0].set(True).at[1].set(True),
+        planet_prod=s_prev.planet_prod.at[0].set(3).at[1].set(3),
+    )
+    s_next = s_prev.replace(
+        planet_owner=s_prev.planet_owner.at[0].set(0).at[1].set(0).at[2].set(1),
+        planet_mask=s_prev.planet_mask.at[0].set(True).at[1].set(True).at[2].set(True),
+        planet_prod=s_prev.planet_prod.at[0].set(3).at[1].set(5).at[2].set(4),
+    )
+    _expect("prod_share_delta (coef=0)",
+            float(rewards.prod_share_delta_reward(s_prev, s_next, 0)), 0.0)
+    rewards.SHAPING_PROD_SHARE_DELTA = 1.0
+    try:
+        # share_prev = 3/6 = 0.5; share_next = 8/12 = 0.667; delta = +0.167
+        _expect("prod_share_delta p0 (+0.167)",
+                round(float(rewards.prod_share_delta_reward(s_prev, s_next, 0)), 3),
+                0.167)
+        # p1 sees the opposite sign.
+        _expect("prod_share_delta p1 (-0.167)",
+                round(float(rewards.prod_share_delta_reward(s_prev, s_next, 1)), 3),
+                -0.167)
+        # zero delta when state is unchanged.
+        _expect("prod_share_delta zero on no-op",
+                float(rewards.prod_share_delta_reward(s_next, s_next, 0)), 0.0)
+    finally:
+        rewards.SHAPING_PROD_SHARE_DELTA = 0.0
+
+    # --- R4 emit_log_reward: log1p of number of valid launches ---
+    v0 = jnp.zeros((8,), dtype=jnp.bool_)
+    v2 = jnp.array([True, True, False, False, False, False, False, False])
+    v8 = jnp.ones((8,), dtype=jnp.bool_)
+    _expect("emit_log (coef=0)", float(rewards.emit_log_reward(v2)), 0.0)
+    rewards.SHAPING_EMIT_LOG = 1.0
+    try:
+        _expect("emit_log (0 valid)", float(rewards.emit_log_reward(v0)), 0.0)
+        # log1p(2) = ln(3) ~= 1.0986
+        _expect("emit_log (2 valid -> log1p(2))",
+                round(float(rewards.emit_log_reward(v2)), 4),
+                round(float(jnp.log1p(jnp.float32(2.0))), 4))
+        # log1p(8) ~= 2.197
+        _expect("emit_log (8 valid -> log1p(8))",
+                round(float(rewards.emit_log_reward(v8)), 4),
+                round(float(jnp.log1p(jnp.float32(8.0))), 4))
+    finally:
+        rewards.SHAPING_EMIT_LOG = 0.0
+
+    # --- R2 release_bonus_reward: src_prod=5, src_garr=200 → 200/5/20=2.0
+    #     -> tanh(2.0 - 1) = tanh(1) ~= 0.762
+    #     ships=100 -> log_size = log1p(100)/log1p(500) ~= 0.741
+    #     per_launch = 0.741 * 0.762 = 0.565
+    s_rel = state.empty_state(constants.MAX_PLANETS, constants.MAX_FLEETS)
+    s_rel = s_rel.replace(
+        planet_owner=s_rel.planet_owner.at[0].set(0),
+        planet_mask=s_rel.planet_mask.at[0].set(True),
+        planet_ships=s_rel.planet_ships.at[0].set(200),
+        planet_prod=s_rel.planet_prod.at[0].set(5),
+    )
+    src_idx = jnp.zeros((8,), dtype=jnp.int32)
+    ships = jnp.array([100, 0, 0, 0, 0, 0, 0, 0], dtype=jnp.int32)
+    valid = jnp.array([True, False, False, False, False, False, False, False])
+    _expect("release_bonus (coef=0)",
+            float(rewards.release_bonus_reward(s_rel, src_idx, valid, ships)), 0.0)
+    rewards.SHAPING_RELEASE = 1.0
+    try:
+        log_size = float(jnp.log1p(jnp.float32(100.0))
+                         / jnp.log1p(jnp.float32(rewards.SHAPING_FLEET_LOG_REF)))
+        release_factor = float(jnp.tanh(jnp.float32(2.0 - 1.0)))
+        want = log_size * release_factor
+        got = float(rewards.release_bonus_reward(s_rel, src_idx, valid, ships))
+        _expect("release_bonus stockpiled launch",
+                round(got, 4), round(want, 4))
+
+        # Same launch but the source has only 5 ships (=1 turn of prod);
+        # generations = 5/5/20 = 0.05 -> tanh(0.05-1) = tanh(-0.95) ~= -0.74
+        # -> negative bonus (penalty for releasing too early).
+        s_low = s_rel.replace(planet_ships=s_rel.planet_ships.at[0].set(5))
+        got_low = float(rewards.release_bonus_reward(s_low, src_idx, valid, ships))
+        assert got_low < 0.0, f"expected negative early release, got {got_low}"
+        print(f"[OK ] release_bonus early launch < 0 (got {got_low:+.3f})")
+
+        # Invalid launches contribute nothing.
+        v_none = jnp.zeros_like(valid)
+        _expect("release_bonus (no valid)",
+                float(rewards.release_bonus_reward(s_rel, src_idx, v_none, ships)),
+                0.0)
+    finally:
+        rewards.SHAPING_RELEASE = 0.0
+
+    # --- R3: prod_share / planet_share use constants.NUM_PLAYERS, not
+    #     a hard-coded 2.0. Verify the live formula matches our derivation
+    #     for the 2P case (matches §141-§174 tests above) AND symbolically
+    #     references NUM_PLAYERS so changing constants.NUM_PLAYERS would
+    #     update the baseline automatically.
+    import inspect as _inspect
+    src_p = _inspect.getsource(rewards.prod_share_reward)
+    src_pl = _inspect.getsource(rewards.planet_share_reward)
+    assert "constants.NUM_PLAYERS" in src_p, "prod_share_reward must use constants.NUM_PLAYERS"
+    assert "constants.NUM_PLAYERS" in src_pl, "planet_share_reward must use constants.NUM_PLAYERS"
+    print("[OK ] prod_share / planet_share use constants.NUM_PLAYERS (no hard-coded 2.0)")
+
     print("\n[ALL PASS] reward function matches kaggle rules.")
     return 0
 

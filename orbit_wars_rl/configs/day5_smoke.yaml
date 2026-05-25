@@ -1,0 +1,46 @@
+# Day 5 smoke config: tiny CPU run to verify R1/R2/R3/R4 reward paths.
+# Don't commit any results; just check no NaN.
+
+train:
+  num_envs: 8
+  rollout_length: 32
+  num_updates: 3
+  num_groups: 5
+  episode_steps: 80
+  eval_every: 999
+  eval_num_envs: 4
+  ckpt_dir: /tmp/ckpt_day5_smoke
+  ckpt_every: 999
+  log_every: 1
+  seed: 0
+  d_model: 64
+  n_layers: 1
+  n_heads: 2
+  ff_dim: 128
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.0001
+  lr_warmup_steps: 50
+  lr_decay_steps: 1000
+  lr_floor: 0.00001
+  clip_eps: 0.2
+  value_clip_eps: 0.2
+  value_coef: 0.5
+  ent_coef_src: 0.005
+  ent_coef_dst: 0.005
+  ent_coef_pct: 0.005
+  ent_coef_emit: 0.005
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 2
+  num_minibatches: 2
+
+selfplay:
+  enabled: false
+  warmup_updates: 0
+  snapshot_every: 999
+  pool_capacity: 2
+  frozen_ratio: 0.0
+  eval_vs_frozen: false

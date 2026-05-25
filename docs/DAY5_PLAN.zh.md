@@ -1,8 +1,13 @@
 # DAY5 规划 — 激进快速迭代 + 架构主线
 
-> 写于 2026-05-25。Day4 v9 ablation 已给出足够证据：**macro reward shaping 在 self-play 内有效，但对 v20 不够**。
+> 写于 2026-05-25，修订 2026-05-25 PM。Day4 v9 ablation 已给出足够证据：**macro reward shaping 在 self-play 内有效，但对 v20 不够**。
 > Day5 目标不是「再训一个 4000-update 的 v9x」，而是 **2–4 小时筛 hypothesis → 每晚 1 条 overnight 主线**，
 > 同时并行推进 **obs/架构 + 局部 reward + opponent curriculum**。
+>
+> **配套文档**：
+> - 现状 SSOT → [`DAY5_PROGRESS.zh.md`](DAY5_PROGRESS.zh.md)
+> - FAST 操作 → [`FAST_ITER_RUNBOOK.md`](FAST_ITER_RUNBOOK.md)
+> - Eval 流程 → [`H2H_EVAL_RUNBOOK.md`](H2H_EVAL_RUNBOOK.md)
 
 ---
 
@@ -18,10 +23,12 @@
 
 **Day5 杀手指标（vs v20，replay 3 局 first-80 窗口）**：
 
-- `mean_ships_per_fleet` **> 10**（v9b 实测 4.76）
-- `mean_garrison_my` **> 60**（v9b 实测 31.85）
-- `fleet_flip_rate` **> 6%**（v9b 实测 3.88%）
-- emit≥2 的 turn 占比 **> 5%**（v9b ≈ 0%）
+- `mean_ships_per_fleet` **> 10**（v9b 基线 4.76）
+- `mean_garrison_my` **> 60**（v9b 基线 31.85）
+- `flip_proxy`（= `fleet_arrival_rate`）**> 6%**（v9b 基线 3.88%）
+- emit≥2 占比 **> 5%**（v9b 基线 2.8%；训练 log 里 z0≈0 与此一致）
+
+> **Phase 0 完成前**，FAST gate 基线暂用 v9b@3999 replay；frozen base 定稿后替换（见 DAY5_PROGRESS §4）。
 
 **WR 不是 2–4h 的主 gate**；破 **1/20 gauntlet** 留给 overnight winner。
 
@@ -33,8 +40,9 @@
 
 - **训练机制健康**：ev 0.97+、clip 收敛、无 NaN/OOM（num_minibatches=32 后稳定）
 - **shaping sign of life**：v9b gauntlet vs v9a **17/20**；prod_share 单独足够（v9b ≈ v9d 中期 macro）
-- **fleet_log 推 spf**：v9c @ upd1158 spf **21.5** > v9b final 21.2
+- **fleet_log 推 spf**：v9c @ u2620 spf **27.2** > v9b final **21.2** > v9d **20.9**
 - **episode_steps=350** 必要：v4 自对弈 500 步全 tie；v9 能早终、能打仗
+- **v9c/d 早期 clip spike 已恢复**：u136–342 clip≈0.36 告警后 u500+ clip→0.08（非崩溃）
 
 ### 1.2 已证伪 / 触顶
 
@@ -49,8 +57,8 @@
 |---|---|---|
 | 前 80 turn 就被压制 | garr 32 vs v20 132 | early game 失守 |
 | 舰队绝对规模小 | spf 4.76 vs v20 15.88 | garrison 基数低 + bin7×小garr |
-| 几乎不 multi-launch | 95% turn 只 emit 1 | emit 头 + 无 multi 信号 |
-| 舰队大多白干 | flip_rate 3.9% | 目标选择 / 时机 |
+| 几乎不 multi-launch | emit=1 占 **95.3%**，emit≥2 **2.8%** | emit 头 + 无 multi 信号 |
+| 舰队大多白干 | flip_proxy **3.9%** | 目标选择 / 时机 |
 | 中后期停手 | full-game z0 41% | losing spiral |
 | 无换家/转移 | （未量化） | dst 偏攻、缺 threat obs |
 
@@ -111,9 +119,9 @@
 
 | 层 | 现状 | Day5 方向 |
 |---|---|---|
-| Obs | 缺「incoming threat per planet」 | **v10-A1**：每星 `nearest_enemy_fleet_ships`, `eta_turns`, `threat_ratio` |
+| Obs | 已有 `in_foe_norm`/`in_friend_norm`（粗归因）；**缺 ETA 与 garr 比值** | **A1'**：`threat_ratio`, `eta_foe_min`, `net_inbound`（不重复堆 inbound） |
 | 架构 | dst head 全局 argmax，偏攻 | 可选 **threat-gated dst bias**（只架构，不改规则） |
-| Reward | 无 | 暂不主做；**先看 A1 是否抬 garr/降 early loss** |
+| Reward | 无 | 暂不主做；**先看 A1' 是否抬 garr/降 early loss** |
 
 ### 3.3 留守军 vs 敌方舰队规模
 
@@ -128,7 +136,7 @@
 | 层 | 现状 | Day5 方向 |
 |---|---|---|
 | Reward | prod_share + planet_share（v9c 已有） | **不再加强**；用 **capture/flip** 作 eval |
-| Eval | fleet_flip_rate | gate **> 6%** |
+| Eval | `flip_proxy` = `fleet_arrival_rate` | gate **> 6%** |
 
 ### 3.5 囤→放周期（stockpile-then-release）
 
@@ -150,16 +158,17 @@
 
 ### Track A — 架构 / Obs（**Day5 主线，最激进**）
 
-**假设**：v9 触顶 because policy 对 **绝对坐标 + 无威胁特征** 过拟合 self-play；player 位不对称是症状。
+**假设**：v9 触顶 because policy 对 **绝对坐标 + 威胁特征不够用** 过拟合 self-play；player 位不对称是症状。
+（`encode.py` 已有 `in_foe_norm`，但无 ETA/比值 → policy「看得见但看不清」。）
 
 | ID | Delta | FAST 500 upd | 2–4h 看什么 | 风险 |
 |---|---|---|---|---|
-| **A1** | Planet threat features（敌舰队 ships/ETA 聚合到每星） | base=v9c | vs v20 replay：garr↑ spf↑ | obs 维度变，需 parity |
-| **A2** | Relative / egocentric coords（去绝对 x,y 或加 relative fleet/planet） | base=v9c | 自对弈 gauntlet 双色 **WR→50/50** | 大改 encode |
-| **A3** | Sun mask / 遮挡感知（overview 机制） | base=v9c | flip_rate↑ | 实现成本 |
-| **A4** | TypedInputProjection / MLP FireHead（top1 §92 列表） | base=v9c | ev 不降 + spf↑ | 容量↑ |
+| **A1'** | Planet threat **比值+ETA**（`threat_ratio`, `eta_foe_min`, `net_inbound`） | resume frozen base | vs v20 replay：garr↑ spf↑ | obs +3 维，需 parity |
+| **A2** | Relative / egocentric coords | **from scratch** | 自对弈 gauntlet 双色 **WR→50/50** | 大改 encode |
+| **A3** | Sun mask / 遮挡感知（overview 机制） | resume base | flip_proxy↑ | 实现成本 |
+| **A4** | TypedInputProjection / MLP FireHead（top1 §92 列表） | resume base | ev 不降 + spf↑ | 容量↑ |
 
-**推荐顺序**：**A1 → A2**（A1 更贴「换家/留兵」，A2 修 asymmetry）；A3/A4 看 A1/A2 结果。
+**推荐顺序**：**C1 ∥ A1'**（并行）→ **B1** → **A2**；A3/A4 看 A1'/C1 结果。
 
 **Overnight 条件**：A* 在 FAST 中 **至少 2/4 replay metric 过 gate**，且 ev@500 > 0.7。
 
@@ -172,7 +181,7 @@ base = v9c shaping 系数不变，**只加一个 term**。
 | ID | Term | 目的 | Kill if |
 |---|---|---|---|
 | **B1** | multi_emit bonus | multi-launch | emit≥2 仍 < 2% @ upd500 |
-| **B2** | capture_success | flip_rate | flip_rate 无 +2pp vs v9c@500 |
+| **B2** | capture_success | flip_proxy | flip_proxy 无 +2pp vs base@500（实现成本高，优先级低于 B1） |
 | **B3** | fleet_log gated（garr>θ 才奖大 launch） | 囤放周期 | z0 仍 < 5% 且 spf 无升 |
 | **B4** | local_defense（可选，依赖 A1 threat） | 留兵 | 无 A1 时不跑 |
 
@@ -192,7 +201,7 @@ base = v9c shaping 系数不变，**只加一个 term**。
 
 **注意**：v20 作 **对手** ≠ BC；不反向传播 v20 动作。
 
-**C1 可与 A1 并行**（一个改 obs，一个改 selfplay config，不同文件）。
+**C1 可与 A1' 并行**（一个改 selfplay yaml，一个改 encode.py，不同文件）。
 
 ---
 
@@ -228,7 +237,7 @@ base = v9c shaping 系数不变，**只加一个 term**。
 - vs v20 replay（3 局 first-80）**至少 2/4**：
   - spf > 10
   - garr > 60
-  - flip_rate > 6%
+  - flip_proxy > 6%
   - emit≥2 占比 > 5%
 
 **KILL（立即停，不 export）**
@@ -277,28 +286,32 @@ Day5 典型一天：
 
 ## 7. Day5 执行顺序（建议）
 
-### Phase 0 — 收尾 v9（≤1 天，不阻塞 FAST）
+### Phase 0 — 收尾 v9（~4–5h 剩余，**建议完成后再开 FAST**）
 
-1. v9c/v9d 跑完 4000（已在跑）
-2. export + gauntlet + replay v9c vs v20
-3. **书面结论**：v9c vs v9b vs v9d 选一个 **frozen base tag**（预期 v9c）
-4. **不再**开 v9e/v9f 长训
+当前进度（2026-05-25）：v9c **u2620/4000**，v9d **u2619/4000**（~65%）。
 
-### Phase 1 — FAST 架构（Day5 主战场，Day 1 起）
+1. ⏳ v9c/v9d 跑完 4000
+2. ⏳ export v9a/b/c/d @3999 + gauntlet + replay vs v20
+3. ⏳ **书面 frozen base 决策**（规则见 [`DAY5_PROGRESS.zh.md` §4](DAY5_PROGRESS.zh.md)）
+4. ✅ **不再**开 v9e/v9f 长训
 
-1. **A1** threat features + v9c base，500 upd
-2. 并行 **C1** curriculum v20 替身，500 upd
+> Phase 0 完成前可用 v9b@3999 作 FAST 基线；frozen base 定稿后以 v9c@3999 为准。
+
+### Phase 1 — FAST 架构 + curriculum（Day5 主战场）
+
+1. **C1** curriculum v20 替身 ~25%，500 upd（可与 Phase 0 收尾并行准备 yaml）
+2. 并行 **A1'** threat_ratio + eta，500 upd，resume frozen base
 3. 读 gate → overnight 最多 1 条
 
 ### Phase 2 — FAST reward v3（Day 5–7，与 Phase 1 交错）
 
-1. **B1** multi_emit（若 A1 未解决 emit≥2）
+1. **B1** multi_emit（若 A1'/C1 未解决 emit≥2）
 2. **B2** capture
 3. **B3** gated fleet_log（若 z0 仍≈0）
 
 ### Phase 3 — 坐标 / 容量（Day 6–10）
 
-1. **A2** relative coords（若 A1 promote 但 asymmetry 仍存）
+1. **A2** relative coords（若 A1' promote 但 asymmetry 仍存）
 2. **A4** MLP FireHead（若 ev 健康但 spf 仍顶）
 
 ### Phase 4 — 4P Track C（Week 2+）
@@ -313,21 +326,22 @@ Day5 典型一天：
 | 风险 | 概率 | 缓解 |
 |---|---|---|
 | FAST 500 upd 噪声大，误杀好 hypothesis | 中 | 同 config retry 1 次；replay 3 局 + 固定 seed |
-| A1/A2 改动破坏 ckpt resume | 高 | **from scratch 500**，不 resume v9c weights（one-delta） |
+| A1'/A2 改动破坏 ckpt resume | 中 | A1' 加维 → resume；A2 改坐标 → from scratch |
 | C1 v20 对手导致 ev 崩溃 | 中 | v20 比例 20–30%，不是 100% |
 | 并行 FAST 抢 GPU | 低 | N_CONCURRENT=2，JAX_FRAC=0.42 |
 | 2P 练成只能打 2P | 中 | Track C 单列；Kaggle 提交前 4P smoke |
 
 ---
 
-## 9. 文档与工具（Day5 待补，仍不写代码）
+## 9. 文档与工具
 
-| 产物 | 用途 |
-|---|---|
-| `docs/FAST_ITER_RUNBOOK.md` | 500 upd 命令、gate 表、kill 规则 |
-| `docs/DAY5_PROGRESS.zh.md` | 每日 FAST 结果 log |
-| `H2H_EVAL_RUNBOOK.md` 增补 | gauntlet-only、parity skip 流程、replay gate |
-| monitor 扩展（可选） | 打印 vs-v20 replay 阈值告警 |
+| 产物 | 状态 | 用途 |
+|---|---|---|
+| [`docs/DAY5_PROGRESS.zh.md`](DAY5_PROGRESS.zh.md) | ✅ | 现状 SSOT、Phase 0 checklist、eval 数字 |
+| [`docs/FAST_ITER_RUNBOOK.md`](FAST_ITER_RUNBOOK.md) | ✅ | 500 upd 命令、gate 表、PROMOTE/KILL |
+| [`H2H_EVAL_RUNBOOK.md`](H2H_EVAL_RUNBOOK.md) | 🔄 增补 FAST §8 | gauntlet / replay 全流程 |
+| [`docs/TOP10_REPLAY_METRICS.zh.md`](TOP10_REPLAY_METRICS.zh.md) | ✅ | 2630 局高手 replay 指标 + Day5 对照 |
+| monitor 扩展（可选） | ⏳ | 打印 vs-v20 replay 阈值告警 |
 
 ---
 
@@ -343,7 +357,7 @@ Day5 典型一天：
 
 - vs v20 gauntlet **≥ 1/20**
 - 自对弈 gauntlet 双色 WR **45–55%**（修 asymmetry）
-- 明确 **A1 vs C1** 谁对 v20 更关键 → Day6 10k 方向
+- 明确 **A1' vs C1** 谁对 v20 更关键 → Day6 10k 方向
 
 **未达成则**：
 
@@ -354,18 +368,26 @@ Day5 典型一天：
 
 ## 附录 A — v9 基线数字（复制粘贴用）
 
+完整表格见 [`DAY5_PROGRESS.zh.md` 附录 A](DAY5_PROGRESS.zh.md)。
+
 ```
-v9b gauntlet:  vs v9a 17/20, vs v20 0/20
-v9b replay vs v20 (first-80): spf=4.76, garr=31.85, flip=3.88%, z0=0.98%
-v9b replay vs v20 (full):     spf=4.81, garr=21.68, z0=41.52%
-v9b train final:              spf=21.2, pS=0.41, garr=49.9
-v9c @1158:                   spf=21.5, fLog=0.40, pS=0.38
+# EVAL (v9b only, done)
+v9b gauntlet vs v9a: 17/20 (10×2色)
+v9b gauntlet vs v20: 0/40 (20×2色)
+v9b replay vs v20 first-80: spf=4.76 garr=31.85 flip_proxy=3.88% emit2=2.8%
+v9b train @3999:            spf=21.2 garr=49.9 pS=0.41
+
+# TRAIN (live 2026-05-25)
+v9c @2620: spf=27.2 garr=38.6 fLog=0.43 ev=0.97 clip=0.08
+v9d @2619: spf=20.9 garr=56.9 fLog=0.37 ev=0.97 clip=0.08
 ```
 
 ## 附录 B — FAST gate 速查
 
+详见 [`FAST_ITER_RUNBOOK.md` §5](FAST_ITER_RUNBOOK.md)。
+
 ```
-PROMOTE if: ev@500>0.7 AND (2 of 4): spf>10, garr>60, flip>6%, emit2+>5%
-KILL if:    ev@200<0.3 OR all 4 metrics worse than v9c@500 baseline
-OVERNIGHT:  only PROMOTE configs, 4000 upd, then gauntlet
+PROMOTE if: ev@500>0.7 AND clip<0.2 AND (2/4): spf>10 garr>60 flip_proxy>6% emit2>5%
+KILL if:    ev@200<0.3 OR clip@200>0.4 sustained OR 4/4 worse than v9b baseline
+OVERNIGHT:  only PROMOTE, 4000 upd, gauntlet 20×2色
 ```

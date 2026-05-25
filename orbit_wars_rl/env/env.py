@@ -88,7 +88,29 @@ class OrbitWarsEnv:
         prod_r = rewards.prod_share_reward(s4, 0)
         planet_r = rewards.planet_share_reward(s4, 0)
         fleet_log_r = rewards.fleet_size_log_reward(valid_p0, ships_p0)
-        non_terminal_r = shaping + keep_r + fleet_r + prod_r + planet_r + fleet_log_r
+        # Day 5 (post-top10 deep-analysis) shaping family. All default 0 so
+        # adding the call sites is reward-bit-exact for existing configs.
+        #
+        #   prod_share_DELTA : credit-assigning version of prod_share. Sum
+        #     over an episode telescopes to ``coef * (share_end - share_start)``.
+        #   emit_log         : log1p of valid launches this turn -- no
+        #     "multi-emit >=K" threshold, just monotone reward for emitting.
+        #   release_bonus    : log_size * tanh(src_garr/src_prod/K - 1).
+        #     Normalizes stockpile by each planet's own production; no
+        #     ship-count threshold and no stored EMA state.
+        prod_d_r = rewards.prod_share_delta_reward(state, s4, 0)
+        emit_log_r = rewards.emit_log_reward(valid_p0)
+        # Use src_idx from p0's action directly (matches the launches we just
+        # applied to obtain valid_p0/ships_p0 above).
+        release_r = rewards.release_bonus_reward(
+            state, actions[0].src_idx, valid_p0, ships_p0
+        )
+        non_terminal_r = (
+            shaping
+            + keep_r + fleet_r
+            + prod_r + planet_r + fleet_log_r
+            + prod_d_r + emit_log_r + release_r
+        )
         reward_p0 = jnp.where(done_now, terminal_r, non_terminal_r)
 
         out = EnvOutput(

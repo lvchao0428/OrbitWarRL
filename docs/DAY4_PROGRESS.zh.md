@@ -316,15 +316,16 @@ agent 之间对比**，绝对值不可解读为单一物理事件。
 1. ✅ **Track 1.1 训练 log 加 metric**（`ppo/update.py`, `ppo/runner.py`）
 2. ✅ **Track 1.2 `replay_analyze.py`**
 3. ✅ **Track 1.3 跑 3 组对比 + 诊断**（v7-vs-v7, v7-vs-v20, v20-vs-v20）
-4. 🔄 **写 Day 4 progress 文档（本文）**
-5. ⏳ **Track 3.1 实现 reward shaping family**：`env/rewards.py` 加
-   `homeworld_keep_reward`、`fleet_size_reward`，env vars 控制，banner echo，
-   单元测试覆盖 OFF / KEEP-only / FLEET-only / both 4 种 config
-6. ⏳ **Track 3.2 写 `multi_action_v9a.yaml ~ v9d.yaml`**（4 个 ablation 配置）
-7. ⏳ **本地 smoke**（10 updates each）确认 shaping 数学正确、不爆 NaN
-8. ⏳ **GPU 启动 4 个 500-update ablation**，看 `garr` / `spf` / `ev` / `clip`
-9. ⏳ **挑选最优 shaping，10k updates 主线训练**
-10. ⏳ **训练完毕 H2H gauntlet vs v1 / v4p2 / v20** + replay_analyze 复测
+4. ✅ **写 Day 4 progress 文档（本文）**
+5. ✅ **Track 3.1 实现 reward shaping family**（v1 keep/fleet + v2 prod/planet/fleet_log）
+6. ✅ **Track 3.2 写 `multi_action_v9a.yaml ~ v9d.yaml`**
+7. ✅ **本地 smoke + 单元测试**（35/35 PASS）
+8. ✅ **GPU 启动 4 路 ablation**（v9a/b DONE @3999；v9c/d ~65% 仍在跑）
+9. ⏳ **Ablation 结论 + frozen base** → 移交 [`DAY5_PROGRESS.zh.md`](DAY5_PROGRESS.zh.md) Phase 0
+10. ⏳ **v9b H2H gauntlet + replay vs v20 已完成**；v9c/d eval 待跑完
+
+> Day4 杀手指标（§7 原第三条「garr 翻倍」）在 self-play 内已满足（v9b garr 7→50）；
+> 但对 v20 无效 → Day5 转架构/curriculum，见 [`DAY5_PLAN.zh.md`](DAY5_PLAN.zh.md)。
 
 ### Day 4 杀手指标（任一触发即 abort 当前路线）
 
@@ -361,11 +362,43 @@ TypedInputProjection、sun mask、MLP FireHead（top1 §92 列表）。
 ## 10. 待整理（次要）
 
 * `DAY3_PROGRESS.md` 还有未提交的 zh→en 同步翻译修改
-* `DAY3_PROGRESS.zh.md` 已写好但 untracked
-* `monitor_train.py` 还没写（DAY3 §13 留下的）—— Track 3 启动前必须有，
-  否则 4 个 500-update ablation 没人盯
+* `DAY3_PROGRESS.zh.md` 已写好
+* ✅ `monitor_train.py` 已落地并在 v9 ablation 中使用
 
 ---
+
+## 14. Day4 收口结论（2026-05-25）
+
+### 14.1 Ablation 训练状态
+
+| Run | 状态 | 关键结论 |
+|---|---|---|
+| v9a | ✅ u3999 | control；spf 11.4，无 shaping |
+| v9b | ✅ u3999 | **prod-only 足够 beat v9a**；唯一完整 eval run |
+| v9c | 🔄 u2620/4000 | 训练 spf 最高（27.2）；预期 frozen base |
+| v9d | 🔄 u2619/4000 | 训练 garr 最高（56.9）；无 fleet_log |
+
+v9c/d 早期 clip spike（u136–342）已恢复，ev 0.97+，**非 abort 信号**。
+
+### 14.2 已证实 / 已证伪
+
+**证实**：
+
+* v2 shaping（prod/planet/fleet_log）在 self-play 产生 sign of life
+* episode_steps=350 + gamma=0.99 训练机制健康
+* 训练 metric（spf/garr/pS）有判别力
+
+**证伪**：
+
+* 「训练 log 外推 vs v20」—— v9b spf 21.2 → replay **4.76**
+* 「再加 global macro reward 就能赢 v20」—— gauntlet **0/40**
+* keep_home shaping — 高手 replay 证方向错（v9 默认 0）
+
+### 14.3 移交 Day5
+
+* Phase 0 收尾 + frozen base 决策 → [`DAY5_PROGRESS.zh.md`](DAY5_PROGRESS.zh.md)
+* FAST 迭代 + Track A/B/C → [`DAY5_PLAN.zh.md`](DAY5_PLAN.zh.md)
+* 操作手册 → [`FAST_ITER_RUNBOOK.md`](FAST_ITER_RUNBOOK.md)
 
 ## 11. Track 3.1 落地总结（2026-05-24 PM）
 

@@ -277,6 +277,26 @@ def ppo_loss(
     fleet_log_norm = jnp.clip(jnp.log1p(jnp.maximum(ships_per_step, 0.0)) / log_ref, 0.0, 1.0)
     fleet_log_score = (fleet_log_norm * emit_f).sum() / n_emit_total
 
+    # Day 5 (post-top10) metrics:
+    #   prod_share_delta_mean: per-step (share - prev_share) averaged over
+    #     the flat rollout (N = T*B). On a flat minibatch we can't recover
+    #     the temporal ordering, so we approximate the per-step delta with
+    #     prod_share centered at 0.5 (2P fair baseline). Higher = more
+    #     territory growth on this batch. This is a coarse proxy; the true
+    #     telescoped delta is logged via env reward channels.
+    #   peak_over_mean_garr: per-batch max(my_ships) / mean(my_ships).
+    #     Captures the "stockpile-then-release" magnitude seen in expert
+    #     replays (winners: ~4.3x). On flat batch it's a single ratio.
+    my_ships_per_turn = ships_my.sum(axis=-1)                            # [N]
+    mean_garr = my_ships_per_turn.mean()
+    max_garr = my_ships_per_turn.max()
+    peak_over_mean_garr = max_garr / jnp.maximum(mean_garr, jnp.float32(1.0))
+
+    # Use ``prod_share - 0.5`` (centered) as a per-step contribution proxy.
+    # Not a true delta on a shuffled minibatch, but the batch mean still
+    # reflects the rollout average advantage in territory share.
+    prod_share_delta = (my_prod / total_prod - jnp.float32(0.5)).mean()
+
     metrics = dict(
         pg_loss=pg_loss,
         v_loss=v_loss,
@@ -301,6 +321,9 @@ def ppo_loss(
         prod_share=prod_share,
         planet_share=planet_share,
         fleet_log_score=fleet_log_score,
+        # Day 5 (post-top10) metrics.
+        prod_share_delta=prod_share_delta,
+        peak_over_mean_garr=peak_over_mean_garr,
     )
     for b in range(env_constants.NUM_PCT_BINS):
         metrics[f"pct_bin{b}"] = pct_bin_dist[b]
@@ -377,6 +400,8 @@ _ZERO_METRICS_KEYS = (
     # Day 4 Track 1 behaviour metrics
     "mean_ships_per_fleet", "zero_emit_rate", "mean_garrison_my",
     "prod_share", "planet_share", "fleet_log_score",
+    # Day 5 (post-top10) metrics
+    "prod_share_delta", "peak_over_mean_garr",
     *(f"pct_bin{b}" for b in range(env_constants.NUM_PCT_BINS)),
     "loss", "grad_norm",
 )

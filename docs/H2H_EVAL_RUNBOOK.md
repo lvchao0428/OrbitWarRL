@@ -201,14 +201,15 @@ python -m orbit_wars_rl.scripts.replay_analyze \
     --out logs/replay_analyze/v9a_vs_v20.json
 ```
 
-**输出关键字段对比（参考 §2.1 的 v7-vs-v20 作为"最差情况"基线）**
+**输出关键字段对比（v9b vs v20 实测 + Day5 FAST gate）**
 
-| metric | v7 vs v20（DAY4 实测） | v9b 目标 |
-|---|---|---|
-| `mean_ships_per_fleet` (first 350) | 1.98 | > 10 |
-| `zero_emit_rate` (first 350) | 4% | > 15% |
-| `mean_garrison_my` (first 350) | 9.3 | > 50 |
-| outcome (5 局 W/L/D) | 0/5/0 | ≥ 1/5/0 |
+| metric | v7 vs v20（DAY4） | v9b vs v20 first-80 | Day5 FAST gate |
+|---|---|---|---|
+| `mean_ships_per_fleet` | 1.98 | **4.76** | > 10 |
+| `mean_garrison_my` | 9.3 | **31.85** | > 60 |
+| `fleet_arrival_rate` (flip_proxy) | — | **3.88%** | > 6% |
+| emit≥2 turn 占比 | — | **2.8%** | > 5% |
+| outcome (5 局) | 0/5/0 | 0/5/0 | ≥ 1/5/0 (overnight) |
 
 ---
 
@@ -227,15 +228,18 @@ nohup python -m orbit_wars_rl.scripts.monitor_train \
     > logs/monitor_v9_full.log 2>&1 &
 ```
 
-输出表格格式：
+输出表格格式（2026-05-25 示例）：
 ```
 name                      upd   steps    ev  clip     kl   spf   z0  garr   pS  ptS fLog  WRr   status
 ---------------------------------------------------------------------------------------------------------
 multi_action_v9a         3999  131072K  0.97  0.09 +0.008 11.4 0.04  58.5 0.29 0.28 0.28    -     DONE
 multi_action_v9b         3999  131072K  0.98  0.09 +0.006 21.2 0.01  49.9 0.41 0.39 0.36    -     DONE
-multi_action_v9c          800   26213K  0.95  0.11 +0.007 25.1 0.03  52.3 0.36 0.35 0.38    -     live
-multi_action_v9d          800   26213K  0.96  0.10 +0.006 18.4 0.02  50.8 0.35 0.34 0.33    -     live
+multi_action_v9c         2620   85885K  0.97  0.08 +0.005 27.2 0.01  38.6 0.39 0.38 0.43    -     live
+multi_action_v9d         2619   85852K  0.97  0.08 +0.004 20.9 0.01  56.9 0.41 0.39 0.37    -     live
 ```
+
+**v9c/d 早期告警解读**：u0–u50 ev<0.5、u136–342 clip>0.35 在 v9b 上同样出现过；
+u500 后 clip→0.08 即视为正常 shaping 冲击，无需 kill。
 
 ---
 
@@ -269,3 +273,25 @@ multi_action_v9d          800   26213K  0.96  0.10 +0.006 18.4 0.02  50.8 0.35 0
 | H2H 每局 steps=1 | env 初始化失败 | 确认 `kaggle_environments` 版本 OK，`parity_check` 先跑一下 |
 | replay_analyze JSON 里 `mean_ships_per_fleet=0` | agent 全程不动（返回空 action） | submission 文件可能 export 失败，重新 export |
 | gauntlet WR 异常低（< 0.5 vs v9a control） | 评估用了错的 ckpt（比如 upd 0） | 确认 ckpt path 末尾数字是最大的（3999） |
+| monitor clip ALERT @u136–342 | shaping 梯度冲击（v9c/d 常见） | u500 后 clip<0.15 则正常；持续 >0.35 才调查 |
+
+---
+
+## 8. FAST Iteration Gate（Day5）
+
+500-update 实验的 replay gate 与 PROMOTE/KILL 规则见 **[`FAST_ITER_RUNBOOK.md`](FAST_ITER_RUNBOOK.md)**。
+
+**Metric 命名对齐**（replay JSON）：
+
+| 文档用语 | JSON 字段 | 算法 |
+|---|---|---|
+| flip_proxy / fleet_flip_rate | `fleet_arrival_rate` | `fleets_arrived / fleets_launched` |
+| emit≥2 占比 | `emit_count_distribution` | `1 - dist[0] - dist[1]` |
+
+**当前 FAST 基线（v9b@3999 vs v20，first-80，5 局）**：
+
+```
+spf=4.76  garr=31.85  flip_proxy=3.88%  emit2=2.8%
+```
+
+frozen base 定稿后替换为 v9c@3999 同脚本 replay 数字（见 [`DAY5_PROGRESS.zh.md`](DAY5_PROGRESS.zh.md) §4）。

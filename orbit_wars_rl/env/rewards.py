@@ -112,6 +112,35 @@ SHAPING_FLEET_LOG: float = float(_os.environ.get("ORBITWARS_SHAPING_FLEET_LOG", 
 SHAPING_FLEET_LOG_REF: float = float(_os.environ.get("ORBITWARS_SHAPING_FLEET_LOG_REF", "500.0"))
 SHAPING_FLEET_LOG_FLOOR: float = float(_os.environ.get("ORBITWARS_SHAPING_FLEET_LOG_FLOOR", "0.3"))
 
+# --- Day 5 (post-top10 deep-analysis) shaping family ---
+#
+# Motivation (TOP10_REPLAY_METRICS.zh.md, 2630 episodes):
+#
+# R1 PROD_SHARE_DELTA: winners gain prod_share +0.286 over an episode; losers
+#   -0.020. The level-form PROD_SHARE rewards "being ahead" (history-dependent,
+#   weak credit assignment). The delta form rewards "the action that just
+#   moved share", giving PPO a tight gradient on the actual capture / loss.
+#   Uses (next - prev) on the consolidated per-step prod_share, so the sum
+#   over an episode telescopes to the episode-level prod_share change.
+#
+# R4 EMIT_LOG: rewards valid-launch effort per turn on a log scale -- log1p
+#   so 0 launches = 0 reward, 1 launch = small, 2 = larger, etc. Unlike a
+#   threshold-based multi-emit bonus this has no behavioural cutoff: there
+#   is no incentive to "stop at exactly K" launches. Caller passes the
+#   per-turn valid_mask (shape [K]).
+#
+# R2 RELEASE_BONUS: log-scaled fleet size * tanh(src_garr / src_prod /
+#   RELEASE_K - 1). The source planet's stockpile is normalized by its own
+#   per-turn production -- a high-prod planet is "expected" to hold more
+#   before releasing. No EMA or stored history needed; the comparison uses
+#   each planet's static prod, which is invariant across self-play strength.
+SHAPING_PROD_SHARE_DELTA: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_PROD_SHARE_DELTA", "0.0")
+)
+SHAPING_EMIT_LOG: float = float(_os.environ.get("ORBITWARS_SHAPING_EMIT_LOG", "0.0"))
+SHAPING_RELEASE: float = float(_os.environ.get("ORBITWARS_SHAPING_RELEASE", "0.0"))
+SHAPING_RELEASE_K: float = float(_os.environ.get("ORBITWARS_SHAPING_RELEASE_K", "20.0"))
+
 
 def player_total_ships(state: EnvState, player: int) -> jnp.ndarray:
     """Total ships (planets + fleets) for ``player``, masked by validity.
@@ -195,12 +224,19 @@ def prod_share_reward(state: EnvState, player: int) -> jnp.ndarray:
     """SHAPING_PROD_SHARE * (my_prod_share - 1/N).
 
     ``my_prod_share = sum(prod for planets I own) / sum(prod for ALL live planets)``.
-    For 2-player env (N=2), baseline = 0.5; reward sign equals sign of
-    "am I ahead in production capacity right now?". Naturally zero-sum.
+    Baseline = ``1 / constants.NUM_PLAYERS`` so the reward is naturally zero-sum
+    and stays correct under any player-count change.
 
     Live planets only (mask=True). If no live planets exist the divisor
     falls back to 1 so we return 0 instead of NaN.
     """
+    share = _my_prod_share(state, player)
+    n_players = jnp.float32(constants.NUM_PLAYERS)
+    return jnp.float32(SHAPING_PROD_SHARE) * (share - 1.0 / n_players)
+
+
+def _my_prod_share(state: EnvState, player: int) -> jnp.ndarray:
+    """Pure helper: my owned production / total live production."""
     mine_mask = _player_alive_planet_mask(state, player)
     live_mask = state.planet_mask
     my_prod = jnp.where(mine_mask, state.planet_prod, jnp.int32(0)).sum().astype(jnp.float32)
@@ -208,21 +244,36 @@ def prod_share_reward(state: EnvState, player: int) -> jnp.ndarray:
         jnp.where(live_mask, state.planet_prod, jnp.int32(0)).sum().astype(jnp.float32),
         jnp.float32(1.0),
     )
-    n_players = jnp.float32(2.0)  # current env is 2P; see DAY4 §12 for 4P notes
-    return jnp.float32(SHAPING_PROD_SHARE) * (my_prod / total_prod - 1.0 / n_players)
+    return my_prod / total_prod
+
+
+def prod_share_delta_reward(
+    prev_state: EnvState, next_state: EnvState, player: int
+) -> jnp.ndarray:
+    """SHAPING_PROD_SHARE_DELTA * (share(next) - share(prev)).
+
+    Per-step credit-assigning version of prod_share. Telescopes over an
+    episode to ``coef * (share_end - share_start)``. Unlike the level form
+    there is no constant baseline subtraction, so the per-step reward is
+    zero when nothing changes (zero-sum on capture / loss events).
+    """
+    return jnp.float32(SHAPING_PROD_SHARE_DELTA) * (
+        _my_prod_share(next_state, player) - _my_prod_share(prev_state, player)
+    )
 
 
 def planet_share_reward(state: EnvState, player: int) -> jnp.ndarray:
     """SHAPING_PLANET_SHARE * (my_planet_share - 1/N).
 
     Counts live owned planets / total live planets. Early-episode signal
-    (territory grows before garrison/production caps).
+    (territory grows before garrison/production caps). Uses
+    ``constants.NUM_PLAYERS`` for the fair baseline.
     """
     mine_mask = _player_alive_planet_mask(state, player)
     live_mask = state.planet_mask
     my_count = mine_mask.sum().astype(jnp.float32)
     total_count = jnp.maximum(live_mask.sum().astype(jnp.float32), jnp.float32(1.0))
-    n_players = jnp.float32(2.0)
+    n_players = jnp.float32(constants.NUM_PLAYERS)
     return jnp.float32(SHAPING_PLANET_SHARE) * (my_count / total_count - 1.0 / n_players)
 
 
@@ -247,6 +298,72 @@ def fleet_size_log_reward(valid_mask: jnp.ndarray, ships_per_launch: jnp.ndarray
     norm_clip = jnp.clip(raw, 0.0, 1.0)
     per_launch = norm_clip - jnp.float32(SHAPING_FLEET_LOG_FLOOR)
     return jnp.float32(SHAPING_FLEET_LOG) * (per_launch * valid_f).sum()
+
+
+def emit_log_reward(valid_mask: jnp.ndarray) -> jnp.ndarray:
+    """SHAPING_EMIT_LOG * log1p(num_valid_launches_this_turn).
+
+    Rewards "actually emitted something" per turn on a saturating log scale.
+    With K=8 launch slots the upper bound per turn is ``log1p(8) ~ 2.197``,
+    so the per-turn upper reward is ``SHAPING_EMIT_LOG * 2.197``.
+
+    Unlike a threshold "multi_emit >= 2" bonus this has no behavioural
+    cutoff: marginal reward of going from 0->1, 1->2, 2->3 all monotonically
+    decreases (log curvature) without any cliff. Returns 0 when no launches
+    are valid (idle turn). Combined with ``fleet_size_log_reward`` this
+    decouples "did I launch?" from "how big was the launch?".
+    """
+    valid_f = valid_mask.astype(jnp.float32)
+    n_valid = valid_f.sum()
+    return jnp.float32(SHAPING_EMIT_LOG) * jnp.log1p(n_valid)
+
+
+def release_bonus_reward(
+    state: EnvState,
+    src_idx: jnp.ndarray,
+    valid_mask: jnp.ndarray,
+    ships_per_launch: jnp.ndarray,
+) -> jnp.ndarray:
+    """SHAPING_RELEASE * sum_per_launch(log_size * release_factor) for valid launches.
+
+    The "release factor" is ``tanh(src_garr / src_prod / RELEASE_K - 1)``: the
+    source planet's stockpile is normalized by its own per-turn production,
+    yielding "how many turns of self-production are sitting here". A launch
+    from a planet stockpiled to RELEASE_K-turns-of-own-production gives 0;
+    above that the bonus rises smoothly toward +1 * log_size; below it
+    decays toward -1 * log_size.
+
+    Two key properties:
+      1.  No fixed ship-count threshold; the baseline scales with each
+          planet's intrinsic production. A high-prod planet is "expected"
+          to hold more ships before releasing.
+      2.  No state-stored EMA; the comparison uses the planet's static
+          per-step production, which is invariant to self-play strength.
+
+    Inputs come from ``dynamics.launch_fleets_with_info``:
+      * ``src_idx`` shape [K] int32: source planet index per launch slot
+      * ``valid_mask`` shape [K] bool
+      * ``ships_per_launch`` shape [K] int32
+    """
+    valid_f = valid_mask.astype(jnp.float32)
+    ships_f = ships_per_launch.astype(jnp.float32)
+
+    log_ref = jnp.log1p(jnp.float32(SHAPING_FLEET_LOG_REF))
+    log_size = jnp.clip(
+        jnp.log1p(jnp.maximum(ships_f, 0.0)) / log_ref, 0.0, 1.0
+    )  # [K]
+
+    src_idx_clip = jnp.clip(src_idx, 0, constants.MAX_PLANETS - 1)
+    src_garr = state.planet_ships[src_idx_clip].astype(jnp.float32)  # [K]
+    src_prod = jnp.maximum(
+        state.planet_prod[src_idx_clip].astype(jnp.float32),
+        jnp.float32(1.0),
+    )  # [K]; floor at 1 to avoid /0 for neutral 0-prod planets
+    generations = src_garr / src_prod / jnp.float32(SHAPING_RELEASE_K)
+    release_factor = jnp.tanh(generations - 1.0)  # [K] in (-1, +1)
+
+    per_launch = log_size * release_factor
+    return jnp.float32(SHAPING_RELEASE) * (per_launch * valid_f).sum()
 
 
 def player_alive(state: EnvState, player: int) -> jnp.ndarray:
