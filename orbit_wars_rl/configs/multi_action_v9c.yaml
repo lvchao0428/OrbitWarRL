@@ -62,7 +62,7 @@ ppo:
   gamma: 0.99
   gae_lambda: 0.95
   update_epochs: 4
-  num_minibatches: 16  # OOM fix; see v9a comment
+  num_minibatches: 32  # OOM fix; see v9a comment
 
 selfplay:
   enabled: true
