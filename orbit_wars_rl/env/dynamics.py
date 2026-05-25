@@ -173,18 +173,23 @@ def launch_fleets(
 
 def launch_fleets_with_info(
     state: EnvState,
-    actions: tuple[MultiPlayerAction, MultiPlayerAction],
-) -> tuple[EnvState, tuple[jnp.ndarray, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray]]:
-    """Like ``launch_fleets`` but also returns ``(valid, ships)`` arrays per player.
-
-    Returns:
-      * ``new_state``
-      * ``valid``  -- tuple ``(valid_p0[K], valid_p1[K])`` bool arrays
-      * ``ships``  -- tuple ``(ships_p0[K], ships_p1[K])`` int32 arrays
-    """
+    actions,
+) -> tuple[EnvState, tuple, tuple]:
+    """Like ``launch_fleets`` but also returns ``(valid, ships)`` arrays per player."""
+    if constants.NUM_PLAYERS == 2:
+        cur, valid_p0, ships_p0 = _launch_one_player_multi(state, actions[0], 0)
+        cur, valid_p1, ships_p1 = _launch_one_player_multi(cur, actions[1], 1)
+        return cur, (valid_p0, valid_p1), (ships_p0, ships_p1)
     cur, valid_p0, ships_p0 = _launch_one_player_multi(state, actions[0], 0)
     cur, valid_p1, ships_p1 = _launch_one_player_multi(cur, actions[1], 1)
-    return cur, (valid_p0, valid_p1), (ships_p0, ships_p1)
+    cur, valid_p2, ships_p2 = _launch_one_player_multi(cur, actions[2], 2)
+    cur, valid_p3, ships_p3 = _launch_one_player_multi(cur, actions[3], 3)
+    return cur, (valid_p0, valid_p1, valid_p2, valid_p3), (
+        ships_p0,
+        ships_p1,
+        ships_p2,
+        ships_p3,
+    )
 
 
 # ---------- production -----------------------------------------------------

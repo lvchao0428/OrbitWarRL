@@ -45,6 +45,7 @@ LINE_RE = re.compile(
     r"spf\s+(?P<spf>[\d.]+)\s+"
     r"z0\s+(?P<z0>[\d.]+)\s+"
     r"garr\s+(?P<garr>[\d.]+)\s+"
+    r"(?:tG\s+(?P<tG>[\d.]+)\s+e2\s+(?P<e2>[\d.]+)\s+nF\s+(?P<nF>[\d.]+)\s+)?"
     r"(?:pS\s+(?P<pS>[\d.]+)\s+ptS\s+(?P<ptS>[\d.]+)\s+fLog\s+(?P<fLog>[\d.]+)\s+)?"
     r"(?:pd\u0394\s+(?P<pdelta>[+-]?[\d.]+)\s+pkR\s+(?P<pkR>[\d.]+)\s+)?"
     r"clip\s+(?P<clip>[\d.]+)\s+"

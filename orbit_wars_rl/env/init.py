@@ -102,11 +102,24 @@ def reset(rng: jnp.ndarray, num_groups: int = 5, shuffle_slots: bool | None = No
     productions = jnp.repeat(productions, 4)
     radius = 1.0 + jnp.log(productions.astype(jnp.float32))
 
-    is_home_group_planet = jnp.zeros((num_groups * 4,), dtype=jnp.bool_).at[0].set(True).at[3].set(True)
-    # Pre-permutation home slot ids: player 0 = slot 0, player 1 = slot 3.
-    # After the optional permutation we update these via the permutation
-    # inverse so they keep pointing at the actual home planets.
-    home_idx_pre = jnp.array([0, 3], dtype=jnp.int32)
+    is_home_group_planet = jnp.zeros((num_groups * 4,), dtype=jnp.bool_)
+    owners = jnp.full((num_groups * 4,), constants.NEUTRAL_OWNER, dtype=jnp.int8)
+    if constants.NUM_PLAYERS == 2:
+        is_home_group_planet = is_home_group_planet.at[0].set(True).at[3].set(True)
+        owners = owners.at[0].set(jnp.int8(0)).at[3].set(jnp.int8(1))
+        home_idx_pre = jnp.array([0, 3], dtype=jnp.int32)
+    else:
+        # 4P: one home per quadrant of the anchor group (matches Kaggle 4P layout).
+        is_home_group_planet = (
+            is_home_group_planet.at[0].set(True).at[1].set(True).at[2].set(True).at[3].set(True)
+        )
+        owners = (
+            owners.at[0].set(jnp.int8(0))
+            .at[1].set(jnp.int8(1))
+            .at[2].set(jnp.int8(2))
+            .at[3].set(jnp.int8(3))
+        )
+        home_idx_pre = jnp.array([0, 1, 2, 3], dtype=jnp.int32)
 
     raw_ships = jax.random.randint(
         rng_ships,
@@ -116,9 +129,6 @@ def reset(rng: jnp.ndarray, num_groups: int = 5, shuffle_slots: bool | None = No
     )
     raw_ships = jnp.repeat(raw_ships, 4)
     ships = jnp.where(is_home_group_planet, jnp.int32(constants.HOME_PLANET_SHIPS), raw_ships)
-
-    owners = jnp.full((num_groups * 4,), constants.NEUTRAL_OWNER, dtype=jnp.int8)
-    owners = owners.at[0].set(jnp.int8(0)).at[3].set(jnp.int8(1))
 
     # Orbit fields. We derive these BEFORE the slot permutation so the four
     # planets in each group rotate together (preserving the 4-fold symmetry).

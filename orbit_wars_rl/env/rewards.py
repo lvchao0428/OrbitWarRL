@@ -140,6 +140,9 @@ SHAPING_PROD_SHARE_DELTA: float = float(
 SHAPING_EMIT_LOG: float = float(_os.environ.get("ORBITWARS_SHAPING_EMIT_LOG", "0.0"))
 SHAPING_RELEASE: float = float(_os.environ.get("ORBITWARS_SHAPING_RELEASE", "0.0"))
 SHAPING_RELEASE_K: float = float(_os.environ.get("ORBITWARS_SHAPING_RELEASE_K", "20.0"))
+SHAPING_CAPTURE: float = float(_os.environ.get("ORBITWARS_SHAPING_CAPTURE", "0.0"))
+# When 1, emit_log only applies if at least one valid launch has release_factor>0.
+SHAPING_EMIT_GATED: float = float(_os.environ.get("ORBITWARS_SHAPING_EMIT_GATED", "0.0"))
 
 
 def player_total_ships(state: EnvState, player: int) -> jnp.ndarray:
@@ -155,6 +158,22 @@ def player_total_ships(state: EnvState, player: int) -> jnp.ndarray:
     return (planet_sum + fleet_sum).astype(jnp.int32)
 
 
+def _strongest_opp_ships(state: EnvState, player: int) -> jnp.ndarray:
+    """Strongest opponent by total ships (2P: the other player; 4P: max over others)."""
+    if constants.NUM_PLAYERS == 2:
+        return player_total_ships(state, 1 - player)
+    s1 = player_total_ships(state, 1)
+    s2 = player_total_ships(state, 2)
+    s3 = player_total_ships(state, 3)
+    if player == 0:
+        return jnp.maximum(jnp.maximum(s1, s2), s3)
+    if player == 1:
+        return jnp.maximum(jnp.maximum(player_total_ships(state, 0), s2), s3)
+    if player == 2:
+        return jnp.maximum(jnp.maximum(player_total_ships(state, 0), s1), s3)
+    return jnp.maximum(jnp.maximum(player_total_ships(state, 0), s1), s2)
+
+
 def shaping_potential(state: EnvState, player: int) -> jnp.ndarray:
     """Bounded potential function: tanh of normalized ship difference.
 
@@ -163,7 +182,7 @@ def shaping_potential(state: EnvState, player: int) -> jnp.ndarray:
     as the terminal +/-1 reward; ``SHAPING_SCALE`` is applied at the call site.
     """
     me = player_total_ships(state, player).astype(jnp.float32)
-    opp = player_total_ships(state, 1 - player).astype(jnp.float32)
+    opp = _strongest_opp_ships(state, player).astype(jnp.float32)
     diff = (me - opp) / jnp.float32(SHAPING_REF)
     return jnp.tanh(diff)
 
@@ -300,6 +319,22 @@ def fleet_size_log_reward(valid_mask: jnp.ndarray, ships_per_launch: jnp.ndarray
     return jnp.float32(SHAPING_FLEET_LOG) * (per_launch * valid_f).sum()
 
 
+def _release_factors(
+    state: EnvState,
+    src_idx: jnp.ndarray,
+    valid_mask: jnp.ndarray,
+) -> jnp.ndarray:
+    """Per-launch release_factor in (-1, +1); shape [K]."""
+    src_idx_clip = jnp.clip(src_idx, 0, constants.MAX_PLANETS - 1)
+    src_garr = state.planet_ships[src_idx_clip].astype(jnp.float32)
+    src_prod = jnp.maximum(
+        state.planet_prod[src_idx_clip].astype(jnp.float32),
+        jnp.float32(1.0),
+    )
+    generations = src_garr / src_prod / jnp.float32(SHAPING_RELEASE_K)
+    return jnp.tanh(generations - 1.0)
+
+
 def emit_log_reward(valid_mask: jnp.ndarray) -> jnp.ndarray:
     """SHAPING_EMIT_LOG * log1p(num_valid_launches_this_turn).
 
@@ -353,17 +388,42 @@ def release_bonus_reward(
         jnp.log1p(jnp.maximum(ships_f, 0.0)) / log_ref, 0.0, 1.0
     )  # [K]
 
-    src_idx_clip = jnp.clip(src_idx, 0, constants.MAX_PLANETS - 1)
-    src_garr = state.planet_ships[src_idx_clip].astype(jnp.float32)  # [K]
-    src_prod = jnp.maximum(
-        state.planet_prod[src_idx_clip].astype(jnp.float32),
-        jnp.float32(1.0),
-    )  # [K]; floor at 1 to avoid /0 for neutral 0-prod planets
-    generations = src_garr / src_prod / jnp.float32(SHAPING_RELEASE_K)
-    release_factor = jnp.tanh(generations - 1.0)  # [K] in (-1, +1)
-
+    release_factor = _release_factors(state, src_idx, valid_mask)
     per_launch = log_size * release_factor
     return jnp.float32(SHAPING_RELEASE) * (per_launch * valid_f).sum()
+
+
+def emit_log_reward_gated(
+    valid_mask: jnp.ndarray,
+    state: EnvState,
+    src_idx: jnp.ndarray,
+) -> jnp.ndarray:
+    """emit_log scaled by 0/1 gate: only reward emit when releasing stockpile."""
+    base = emit_log_reward(valid_mask)
+    if SHAPING_EMIT_GATED <= 0.0:
+        return base
+    valid_f = valid_mask.astype(jnp.float32)
+    release_factor = _release_factors(state, src_idx, valid_mask)
+    has_release = ((release_factor * valid_f) > 0.0).any()
+    return jnp.where(has_release, base, jnp.float32(0.0))
+
+
+def capture_flip_reward(
+    prev_state: EnvState, next_state: EnvState, player: int
+) -> jnp.ndarray:
+    """SHAPING_CAPTURE * sum(prod on newly captured planets) / total_prod."""
+    if SHAPING_CAPTURE <= 0.0:
+        return jnp.float32(0.0)
+    prev_mine = (prev_state.planet_owner == player) & prev_state.planet_mask
+    next_mine = (next_state.planet_owner == player) & next_state.planet_mask
+    gained = next_mine & jnp.logical_not(prev_mine)
+    prod_gained = jnp.where(
+        gained, next_state.planet_prod.astype(jnp.float32), jnp.float32(0.0)
+    ).sum()
+    total_prod = jnp.maximum(
+        next_state.planet_prod.astype(jnp.float32).sum(), jnp.float32(1.0)
+    )
+    return jnp.float32(SHAPING_CAPTURE) * prod_gained / total_prod
 
 
 def player_alive(state: EnvState, player: int) -> jnp.ndarray:
@@ -385,11 +445,12 @@ def terminal_reward(state: EnvState, player: int) -> jnp.ndarray:
 
     Only meaningful when ``done`` is True; callers should mask otherwise.
     """
-    me = player_total_ships(state, player)
-    opp = player_total_ships(state, 1 - player)
-    max_score = jnp.maximum(me, opp)
-    # I "win" iff I have the max and the max is > 0.
-    i_win = (me == max_score) & (max_score > 0)
+    scores = jnp.stack(
+        [player_total_ships(state, p) for p in range(constants.NUM_PLAYERS)],
+        axis=0,
+    )
+    max_score = scores.max()
+    i_win = (scores[player] == max_score) & (max_score > 0)
     return jnp.where(i_win, jnp.float32(1.0), jnp.float32(-1.0))
 
 

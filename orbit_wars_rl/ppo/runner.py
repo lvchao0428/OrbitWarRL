@@ -30,7 +30,12 @@ from orbit_wars_rl.env import OrbitWarsEnv, constants
 from orbit_wars_rl.env import rewards as env_rewards
 from orbit_wars_rl.features import encode
 from orbit_wars_rl.net.model import ActorCritic
-from orbit_wars_rl.ppo.rollout import make_rollout_fn, make_rollout_fn_with_frozen_opp
+from orbit_wars_rl.env import constants
+from orbit_wars_rl.ppo.rollout import (
+    make_rollout_fn,
+    make_rollout_fn_with_frozen_opp,
+)
+from orbit_wars_rl.ppo.rollout_4p import make_rollout_fn_4p, make_rollout_fn_with_frozen_opp_4p
 from orbit_wars_rl.ppo.update import PPOConfig, make_optimizer, make_train_step
 from orbit_wars_rl.selfplay.eval import play_vs_random, play_vs_frozen
 from orbit_wars_rl.selfplay.pool import FrozenAgentPool
@@ -48,6 +53,8 @@ class SelfPlayConfig:
     pool_capacity: int = 5            # FIFO ring buffer size
     frozen_ratio: float = 0.5         # fraction of post-warmup updates spent vs frozen
     eval_vs_frozen: bool = True       # additionally compute WR vs latest snapshot
+    strong_ckpt_path: str = ""        # C1: fixed strong opponent snapshot (same arch)
+    strong_ratio: float = 0.0         # fraction vs strong_ckpt (post-warmup)
 
 
 @dataclass
@@ -148,10 +155,19 @@ def train(
         f"v3 (top10-2630ep calibrated): "
         f"PROD_SHARE_DELTA={env_rewards.SHAPING_PROD_SHARE_DELTA} "
         f"EMIT_LOG={env_rewards.SHAPING_EMIT_LOG} "
-        f"RELEASE={env_rewards.SHAPING_RELEASE}/K{env_rewards.SHAPING_RELEASE_K}; "
+        f"EMIT_GATED={env_rewards.SHAPING_EMIT_GATED} "
+        f"RELEASE={env_rewards.SHAPING_RELEASE}/K{env_rewards.SHAPING_RELEASE_K} "
+        f"CAPTURE={env_rewards.SHAPING_CAPTURE}; "
         f"episode_steps={cfg.episode_steps} (kaggle={kaggle_ep}, mismatch={cfg.episode_steps != kaggle_ep})",
         flush=True,
     )
+    if cfg.selfplay.enabled and cfg.selfplay.strong_ckpt_path:
+        print(
+            f"[curriculum] strong_ratio={cfg.selfplay.strong_ratio} "
+            f"frozen_ratio={cfg.selfplay.frozen_ratio} "
+            f"strong_ckpt={cfg.selfplay.strong_ckpt_path}",
+            flush=True,
+        )
 
     env = OrbitWarsEnv(num_groups=cfg.num_groups, episode_steps=cfg.episode_steps)
     model = ActorCritic(
@@ -190,21 +206,39 @@ def train(
         # re-baked from the new PPOConfig (which is the whole point of an
         # extension run with a tweaked schedule).
 
-    rollout_fn = make_rollout_fn(
-        env, model,
-        rollout_length=cfg.rollout_length,
-        num_envs=cfg.num_envs,
-        episode_steps=cfg.episode_steps,
-    )
-    selfplay_rollout_fn = None
-    pool: Optional[FrozenAgentPool] = None
-    if cfg.selfplay.enabled:
-        selfplay_rollout_fn = make_rollout_fn_with_frozen_opp(
+    if constants.NUM_PLAYERS == 4:
+        rollout_fn = make_rollout_fn_4p(
             env, model,
             rollout_length=cfg.rollout_length,
             num_envs=cfg.num_envs,
             episode_steps=cfg.episode_steps,
         )
+        selfplay_rollout_fn = None
+        if cfg.selfplay.enabled:
+            selfplay_rollout_fn = make_rollout_fn_with_frozen_opp_4p(
+                env, model,
+                rollout_length=cfg.rollout_length,
+                num_envs=cfg.num_envs,
+                episode_steps=cfg.episode_steps,
+            )
+    else:
+        rollout_fn = make_rollout_fn(
+            env, model,
+            rollout_length=cfg.rollout_length,
+            num_envs=cfg.num_envs,
+            episode_steps=cfg.episode_steps,
+        )
+        selfplay_rollout_fn = None
+        if cfg.selfplay.enabled:
+            selfplay_rollout_fn = make_rollout_fn_with_frozen_opp(
+                env, model,
+                rollout_length=cfg.rollout_length,
+                num_envs=cfg.num_envs,
+                episode_steps=cfg.episode_steps,
+            )
+
+    pool: Optional[FrozenAgentPool] = None
+    if cfg.selfplay.enabled:
         pool = FrozenAgentPool(capacity=cfg.selfplay.pool_capacity)
 
     train_step = make_train_step(model, cfg.ppo, optimizer)
@@ -216,21 +250,54 @@ def train(
     total_env_steps = 0
     t_start = time.time()
     sp_warmup = cfg.selfplay.warmup_updates if cfg.selfplay.enabled else cfg.num_updates + 1
-    sp_ratio = float(cfg.selfplay.frozen_ratio) if cfg.selfplay.enabled else 0.0
+    sp_frozen = float(cfg.selfplay.frozen_ratio) if cfg.selfplay.enabled else 0.0
+    sp_strong = float(cfg.selfplay.strong_ratio) if cfg.selfplay.enabled else 0.0
+
+    strong_params = None
+    if cfg.selfplay.enabled and cfg.selfplay.strong_ckpt_path:
+        strong_ckpt = load_checkpoint(cfg.selfplay.strong_ckpt_path)
+        try:
+            chex.assert_trees_all_equal_shapes(params, strong_ckpt["params"])
+            strong_params = strong_ckpt["params"]
+            print(
+                f"[curriculum] loaded strong opponent from {cfg.selfplay.strong_ckpt_path}",
+                flush=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[curriculum] WARN strong ckpt shape mismatch, disabling: {exc}",
+                flush=True,
+            )
+            sp_strong = 0.0
 
     for update in range(cfg.num_updates):
         rng_iter, r_step, r_opp_pick, r_pool_sample = jax.random.split(rng_iter, 4)
 
-        used_frozen = False
-        if cfg.selfplay.enabled and update >= sp_warmup and pool is not None and len(pool) > 0:
+        opp_tag = "rand"
+        if cfg.selfplay.enabled and update >= sp_warmup:
             roll = float(jax.random.uniform(r_opp_pick, ()))
-            if roll < sp_ratio:
+            if (
+                strong_params is not None
+                and sp_strong > 0.0
+                and roll < sp_strong
+            ):
+                states, env_rngs, rollout = selfplay_rollout_fn(
+                    params, strong_params, states, env_rngs,
+                )
+                opp_tag = "strn"
+            elif (
+                pool is not None
+                and len(pool) > 0
+                and roll < sp_strong + sp_frozen
+            ):
                 frozen_params = pool.sample(r_pool_sample)
                 states, env_rngs, rollout = selfplay_rollout_fn(
                     params, frozen_params, states, env_rngs,
                 )
-                used_frozen = True
-        if not used_frozen:
+                opp_tag = "frzn"
+            else:
+                states, env_rngs, rollout = rollout_fn(params, states, env_rngs)
+        else:
             states, env_rngs, rollout = rollout_fn(params, states, env_rngs)
 
         params, opt_state, metrics = train_step(params, opt_state, rollout, r_step)
@@ -241,7 +308,8 @@ def train(
         metrics_py["sps"] = total_env_steps / max(elapsed, 1e-6)
         metrics_py["update"] = update
         metrics_py["total_env_steps"] = total_env_steps
-        metrics_py["opp_frozen"] = 1.0 if used_frozen else 0.0
+        metrics_py["opp_frozen"] = 1.0 if opp_tag == "frzn" else 0.0
+        metrics_py["opp_strong"] = 1.0 if opp_tag == "strn" else 0.0
         if cfg.selfplay.enabled and pool is not None:
             metrics_py["pool_size"] = float(len(pool))
 
@@ -270,7 +338,6 @@ def train(
                     metrics_py[f"eval_vs_frozen/{k}"] = v
 
         if update % cfg.log_every == 0:
-            opp_tag = "frzn" if used_frozen else "rand"
             wr_rand = metrics_py.get("eval/win_rate")
             wr_frzn = metrics_py.get("eval_vs_frozen/win_rate")
             wr_str = ""
@@ -283,24 +350,15 @@ def train(
             adv_std = metrics_py.get("adv_std", 0.0)
             term_r = metrics_py.get("mean_terminal_reward", 0.0)
             ev = metrics_py.get("explained_variance", 0.0)
-            # Day 4 Track 1: behaviour metrics.
-            #   spf  = mean ships per launched fleet (small ⇒ "spray of mosquitoes")
-            #   z0   = zero-emit-turn rate (v20 ≈ 0.64; v7/v8 ≈ 0.0)
-            #   garr = mean garrison on MY planets (stockpile indicator)
             spf = metrics_py.get("mean_ships_per_fleet", 0.0)
             z0 = metrics_py.get("zero_emit_rate", 0.0)
             garr = metrics_py.get("mean_garrison_my", 0.0)
-            # Day 4 §12 v2 metrics:
-            #   pS / ptS = prod_share / planet_share for player 0 (expert
-            #              winners hit 0.49 mean; ours start ~0.5 then drift)
-            #   fLog     = mean log-scale fleet score across emits (0=tiny, 1=500+)
+            t_garr = metrics_py.get("total_garrison_my", 0.0)
+            emit2 = metrics_py.get("emit2_rate", 0.0)
+            n_fleets = metrics_py.get("fleets_in_flight", 0.0)
             pshare = metrics_py.get("prod_share", 0.0)
             ptshare = metrics_py.get("planet_share", 0.0)
             flog = metrics_py.get("fleet_log_score", 0.0)
-            # Day 5 (post-top10) metrics:
-            #   pdΔ  = mean(prod_share_t - prod_share_{t-1}) per rollout step;
-            #          sum across the rollout ~ change in territory share
-            #   pkR  = peak/mean my-side garrison per env (top10 winners ~4.3)
             pdelta = metrics_py.get("prod_share_delta", 0.0)
             pk_ratio = metrics_py.get("peak_over_mean_garr", 0.0)
             print(
@@ -310,6 +368,7 @@ def train(
                 f"adv_std {adv_std:.3f}  tR {term_r:+.2f}  "
                 f"ent[s/d/p/e] {metrics_py['ent_src']:.2f}/{metrics_py['ent_dst']:.2f}/{metrics_py['ent_pct']:.2f}/{ent_emit:.2f}  "
                 f"emits {emits:.2f}  spf {spf:.1f}  z0 {z0:.2f}  garr {garr:.1f}  "
+                f"tG {t_garr:.0f}  e2 {emit2:.2f}  nF {n_fleets:.1f}  "
                 f"pS {pshare:.2f}  ptS {ptshare:.2f}  fLog {flog:.2f}  "
                 f"pdΔ {pdelta:+.4f}  pkR {pk_ratio:.2f}  "
                 f"clip {metrics_py['clip_frac']:.2f}  kl {metrics_py['approx_kl']:+.3f}"

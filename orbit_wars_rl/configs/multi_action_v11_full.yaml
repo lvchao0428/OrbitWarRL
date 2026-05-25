@@ -1,0 +1,54 @@
+# v11 FULL STACK — Top10 all signals (scratch training).
+#
+# Reward: R1 delta + R2 release + R4 emit (gated) + R5 capture + planet_share
+# Obs:    A1' threat (22-d planet) + global total_garr / fleets_in_flight (14-d)
+# Scale:  episode_steps=500, max_fleets_per_turn=16
+# C1:     strong_ckpt_path set per-phase by run_v11_validation.sh (phase 2+)
+#
+# Each validation phase runs UPD_PER_PHASE updates (~4h on 5090 @ ep500).
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_full
+  ckpt_every: 100
+  log_every: 1
+  seed: 110
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 16
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 150000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.50
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0

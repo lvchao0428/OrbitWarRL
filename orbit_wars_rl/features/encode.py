@@ -6,7 +6,7 @@ makes the global aggregates safe to compute via sum / mean.
 
 Feature layouts (kept in lock-step with the heads):
 
-  planet (19 dims):
+  planet (22 dims):
     [0..2]  owner one-hot from the *current player*'s POV: [is_mine, is_enemy, is_neutral]
     [3]     x_norm  in [-1, 1]
     [4]     y_norm  in [-1, 1]
@@ -24,22 +24,20 @@ Feature layouts (kept in lock-step with the heads):
     [16]    y_at_t_plus_15
     [17]    x_at_t_plus_30
     [18]    y_at_t_plus_30
-
-  Lead-target features (v4.2): pre-compute each planet's predicted position
-  at t+15 / t+30 steps. This is what `top_players_rl.txt` calls "lead-target":
-  policy must aim at where the orbiting planet WILL BE when fleet arrives.
-  Fleet speed scales with ships (1.0 .. 6.0), so 15 & 30 cover near/far
-  intercepts (board diagonal ~141 units; small fleets travel ~30 in 30 steps).
-  Without these the 2-layer transformer would have to learn cos/sin in-
-  context, which empirically (v4.0 + v4.1 both failed) it cannot do.
+    [19]    threat_ratio  -- soft foe inbound / garrison (A1')
+    [20]    net_inbound   -- (foe - friend) soft inbound / garrison
+    [21]    eta_foe_min   -- min ETA of inbound foe fleets / episode_steps
 
   fleet (8 dims): unchanged.
 
-  global (11 dims):
+  global (14 dims):
     [0]    step / episode_steps
     [1..6] ship/planet/prod fractions (mine vs opp)
     [7..9] phase one-hot [early, mid, late]
-    [10]   angular_velocity / OMEGA_MAX  -- episode-wide rotation speed, in [0.5, 1]
+    [10]   angular_velocity / OMEGA_MAX
+    [11]   log1p(total_garrison_mine) / 10
+    [12]   n_fleets_mine / MAX_FLEETS
+    [13]   n_fleets_enemy / MAX_FLEETS
 """
 
 from __future__ import annotations
@@ -55,18 +53,16 @@ from orbit_wars_rl.env.dynamics import fleet_speed
 from orbit_wars_rl.env.state import EnvState
 
 
-PLANET_FEAT_DIM = 19
+PLANET_FEAT_DIM = 22
 FLEET_FEAT_DIM = 8
-GLOBAL_FEAT_DIM = 11
+GLOBAL_FEAT_DIM = 14
 
-# Lead-target prediction times (in env steps). Chosen so small fleets
-# (speed=1.0, ~30 steps to cross half the board) and big fleets (speed=6,
-# ~5 steps) both have a reasonable intercept prediction.
 LEAD_TIMES = (15.0, 30.0)
 
 _BOARD = jnp.float32(constants.BOARD)
 _BOARD_HALF = jnp.float32(constants.BOARD * 0.5)
 _SUN = jnp.array([constants.SUN_X, constants.SUN_Y], dtype=jnp.float32)
+_BIG_ETA = jnp.float32(1e6)
 
 
 @chex.dataclass(frozen=True)
@@ -84,20 +80,112 @@ class EncodedObs:
     neutral_planet_mask: chex.Array
 
 
+def _inbound_all_foes(
+    state: EnvState,
+    player: int,
+    planet_x: jnp.ndarray,
+    planet_y: jnp.ndarray,
+) -> jnp.ndarray:
+    """Hard inbound from every opponent (4P aggregates players != ``player``)."""
+    if constants.NUM_PLAYERS == 2:
+        return _inbound_ships(state, 1 - player, planet_x, planet_y)
+    inbound = jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.float32)
+    for p in (0, 1, 2, 3):
+        w = jnp.equal(p, player).astype(jnp.float32)
+        inbound = inbound + (1.0 - w) * _inbound_ships(state, p, planet_x, planet_y)
+    return inbound
+
+
+def _soft_inbound_all_foes_and_eta(
+    state: EnvState,
+    player: int,
+    planet_x: jnp.ndarray,
+    planet_y: jnp.ndarray,
+    episode_steps: int,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """Soft foe inbound + min ETA aggregated over all opponents."""
+    if constants.NUM_PLAYERS == 2:
+        return _soft_inbound_and_eta(state, 1 - player, planet_x, planet_y, episode_steps)
+    inbound = jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.float32)
+    eta_min = jnp.full((constants.MAX_PLANETS,), _BIG_ETA, dtype=jnp.float32)
+    for p in (0, 1, 2, 3):
+        w = jnp.equal(p, player).astype(jnp.float32)
+        soft, eta = _soft_inbound_and_eta(state, p, planet_x, planet_y, episode_steps)
+        inbound = inbound + (1.0 - w) * soft
+        eta_min = jnp.minimum(eta_min, jnp.where(w > 0, _BIG_ETA, eta))
+    eta_min = jnp.where(eta_min >= _BIG_ETA, jnp.float32(0.0), eta_min)
+    return inbound, eta_min
+
+
+def _foe_player_ships(state: EnvState, player: int) -> jnp.ndarray:
+    """Aggregate opponent ship count for global fractions (sum in 4P)."""
+    if constants.NUM_PLAYERS == 2:
+        ps_planet = jnp.where(
+            (state.planet_owner == (1 - player)) & state.planet_mask, state.planet_ships, 0
+        ).sum()
+        ps_fleet = jnp.where(
+            (state.fleet_owner == (1 - player)) & state.fleet_mask, state.fleet_ships, 0
+        ).sum()
+        return (ps_planet + ps_fleet).astype(jnp.float32)
+    total = jnp.float32(0.0)
+    for p in (0, 1, 2, 3):
+        w = jnp.equal(p, player).astype(jnp.float32)
+        ps_planet = jnp.where(
+            (state.planet_owner == p) & state.planet_mask, state.planet_ships, 0
+        ).sum()
+        ps_fleet = jnp.where(
+            (state.fleet_owner == p) & state.fleet_mask, state.fleet_ships, 0
+        ).sum()
+        total = total + (1.0 - w) * (ps_planet + ps_fleet).astype(jnp.float32)
+    return total
+
+
+def _foe_player_planets(state: EnvState, player: int) -> jnp.ndarray:
+    if constants.NUM_PLAYERS == 2:
+        return ((state.planet_owner == (1 - player)) & state.planet_mask).sum().astype(jnp.float32)
+    total = jnp.float32(0.0)
+    for p in (0, 1, 2, 3):
+        w = jnp.equal(p, player).astype(jnp.float32)
+        n = ((state.planet_owner == p) & state.planet_mask).sum().astype(jnp.float32)
+        total = total + (1.0 - w) * n
+    return total
+
+
+def _foe_player_prod(state: EnvState, player: int) -> jnp.ndarray:
+    if constants.NUM_PLAYERS == 2:
+        return jnp.where(
+            (state.planet_owner == (1 - player)) & state.planet_mask, state.planet_prod, 0
+        ).sum().astype(jnp.float32)
+    total = jnp.float32(0.0)
+    for p in (0, 1, 2, 3):
+        w = jnp.equal(p, player).astype(jnp.float32)
+        prod = jnp.where(
+            (state.planet_owner == p) & state.planet_mask, state.planet_prod, 0
+        ).sum().astype(jnp.float32)
+        total = total + (1.0 - w) * prod
+    return total
+
+
+def _foe_player_fleets(state: EnvState, player: int) -> jnp.ndarray:
+    if constants.NUM_PLAYERS == 2:
+        return ((state.fleet_owner == (1 - player)) & state.fleet_mask).sum().astype(jnp.float32)
+    total = jnp.float32(0.0)
+    for p in (0, 1, 2, 3):
+        w = jnp.equal(p, player).astype(jnp.float32)
+        n = ((state.fleet_owner == p) & state.fleet_mask).sum().astype(jnp.float32)
+        total = total + (1.0 - w) * n
+    return total
+
+
 def _inbound_ships(
     state: EnvState,
     owner_keep: int,
     planet_x: jnp.ndarray,
     planet_y: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Approximate the total in-flight ships heading toward each planet.
-
-    We use a coarse heuristic (closest planet to the fleet's *velocity ray*),
-    sufficient for features. Each fleet is attributed to exactly one planet.
-    """
+    """Approximate the total in-flight ships heading toward each planet."""
     speed = fleet_speed(state.fleet_ships)
     eps = jnp.float32(1e-6)
-    spd_safe = jnp.maximum(speed, eps)
     dxn = jnp.cos(state.fleet_angle)
     dyn = jnp.sin(state.fleet_angle)
 
@@ -122,7 +210,42 @@ def _inbound_ships(
     return inbound
 
 
-def _encode_planets(state: EnvState, player: int) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+def _soft_inbound_and_eta(
+    state: EnvState,
+    owner_keep: int,
+    planet_x: jnp.ndarray,
+    planet_y: jnp.ndarray,
+    episode_steps: int,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """Inverse-square weighted inbound ships + min foe ETA per planet (A1')."""
+    eps = jnp.float32(1e-4)
+    rel_x = planet_x[None, :] - state.fleet_x[:, None]
+    rel_y = planet_y[None, :] - state.fleet_y[:, None]
+    dist2 = rel_x * rel_x + rel_y * rel_y + eps
+    dist = jnp.sqrt(dist2)
+    speed = fleet_speed(state.fleet_ships)
+    eta = dist / jnp.maximum(speed[:, None], eps)
+
+    cos_a = jnp.cos(state.fleet_angle)
+    sin_a = jnp.sin(state.fleet_angle)
+    proj = rel_x * cos_a[:, None] + rel_y * sin_a[:, None]
+    toward = (proj > 0).astype(jnp.float32)
+
+    is_owner = ((state.fleet_owner == owner_keep) & state.fleet_mask).astype(jnp.float32)
+    weight = toward * is_owner[:, None] / dist2
+    ships = state.fleet_ships.astype(jnp.float32)
+    inbound_soft = (weight * ships[:, None]).sum(axis=0)
+
+    eta_masked = jnp.where(weight > 0, eta, _BIG_ETA)
+    eta_min = eta_masked.min(axis=0)
+    eta_min = jnp.where(eta_min >= _BIG_ETA, jnp.float32(0.0), eta_min)
+    eta_norm = eta_min / jnp.float32(max(episode_steps, 1))
+    return inbound_soft, eta_norm
+
+
+def _encode_planets(
+    state: EnvState, player: int, episode_steps: int
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     is_mine = (state.planet_owner == player) & state.planet_mask
     is_enemy = (state.planet_owner >= 0) & (state.planet_owner != player) & state.planet_mask
     is_neutral = (state.planet_owner == constants.NEUTRAL_OWNER) & state.planet_mask
@@ -136,11 +259,22 @@ def _encode_planets(state: EnvState, player: int) -> Tuple[jnp.ndarray, jnp.ndar
         (state.planet_x - _SUN[0]) ** 2 + (state.planet_y - _SUN[1]) ** 2
     ) / _BOARD
 
-    opp = 1 - player
     in_friend = _inbound_ships(state, player, state.planet_x, state.planet_y)
-    in_foe = _inbound_ships(state, opp, state.planet_x, state.planet_y)
+    in_foe = _inbound_all_foes(state, player, state.planet_x, state.planet_y)
     in_friend_norm = jnp.log1p(in_friend) / 8.0
     in_foe_norm = jnp.log1p(in_foe) / 8.0
+
+    foe_soft, eta_foe_min = _soft_inbound_all_foes_and_eta(
+        state, player, state.planet_x, state.planet_y, episode_steps
+    )
+    friend_soft, _ = _soft_inbound_and_eta(
+        state, player, state.planet_x, state.planet_y, episode_steps
+    )
+    garr = jnp.maximum(state.planet_ships.astype(jnp.float32), jnp.float32(1.0))
+    threat_ratio = foe_soft / garr
+    net_inbound = (foe_soft - friend_soft) / garr
+    threat_ratio = jnp.clip(threat_ratio / 8.0, 0.0, 1.0)
+    net_inbound = jnp.clip(net_inbound / 8.0, -1.0, 1.0)
 
     is_padding = jnp.logical_not(state.planet_mask).astype(jnp.float32)
 
@@ -148,10 +282,6 @@ def _encode_planets(state: EnvState, player: int) -> Tuple[jnp.ndarray, jnp.ndar
     orbit_phase_norm = state.planet_orbit_phase / jnp.float32(jnp.pi)
     orbit_radius_norm = state.planet_orbit_radius / _BOARD_HALF
 
-    # Lead-target features: predicted (x, y) at t + LEAD_TIMES[k] steps.
-    # For static planets the prediction is just current pos. For orbiting we
-    # advance phase by omega * T (kaggle linearises rotation to chord per
-    # tick, but multi-step prediction is just exact rotation).
     omega = state.angular_velocity
     rotate_mask_f = state.planet_is_orbiting.astype(jnp.float32)
     lead_x_15, lead_y_15 = _predict_planet_pos(
@@ -188,6 +318,9 @@ def _encode_planets(state: EnvState, player: int) -> Tuple[jnp.ndarray, jnp.ndar
             lead_y_15_norm,
             lead_x_30_norm,
             lead_y_30_norm,
+            threat_ratio,
+            net_inbound,
+            eta_foe_min,
         ],
         axis=-1,
     )
@@ -204,10 +337,6 @@ def _predict_planet_pos(
     cur_y: jnp.ndarray,
     rotate_mask_f: jnp.ndarray,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Compute (x, y) at t + lead_time for each planet. Static planets keep
-    current pos. Caller passes ``rotate_mask_f`` as float32 mask (1.0 for
-    orbiting, 0.0 for static) so we can fuse the where-cond branchlessly.
-    """
     new_phase = orbit_phase + omega * lead_time
     sun_x = _SUN[0]
     sun_y = _SUN[1]
@@ -247,8 +376,6 @@ def _encode_fleets(state: EnvState, player: int) -> jnp.ndarray:
 
 
 def _encode_global(state: EnvState, player: int, episode_steps: int) -> jnp.ndarray:
-    opp = 1 - player
-
     def player_ships(p: int) -> jnp.ndarray:
         ps_planet = jnp.where(
             (state.planet_owner == p) & state.planet_mask, state.planet_ships, 0
@@ -266,9 +393,22 @@ def _encode_global(state: EnvState, player: int, episode_steps: int) -> jnp.ndar
             (state.planet_owner == p) & state.planet_mask, state.planet_prod, 0
         ).sum().astype(jnp.float32)
 
-    total_ships = jnp.maximum(player_ships(player) + player_ships(opp), jnp.float32(1.0))
-    total_planets = jnp.maximum(player_planets(player) + player_planets(opp), jnp.float32(1.0))
-    total_prod = jnp.maximum(player_prod(player) + player_prod(opp), jnp.float32(1.0))
+    def player_garrison(p: int) -> jnp.ndarray:
+        return jnp.where(
+            (state.planet_owner == p) & state.planet_mask, state.planet_ships, 0
+        ).sum().astype(jnp.float32)
+
+    def player_fleets(p: int) -> jnp.ndarray:
+        return ((state.fleet_owner == p) & state.fleet_mask).sum().astype(jnp.float32)
+
+    foe_ships = _foe_player_ships(state, player)
+    foe_planets = _foe_player_planets(state, player)
+    foe_prod = _foe_player_prod(state, player)
+    foe_fleets = _foe_player_fleets(state, player)
+
+    total_ships = jnp.maximum(player_ships(player) + foe_ships, jnp.float32(1.0))
+    total_planets = jnp.maximum(player_planets(player) + foe_planets, jnp.float32(1.0))
+    total_prod = jnp.maximum(player_prod(player) + foe_prod, jnp.float32(1.0))
 
     step_norm = state.step.astype(jnp.float32) / jnp.float32(episode_steps)
     is_early = (step_norm < 0.18).astype(jnp.float32)
@@ -276,26 +416,32 @@ def _encode_global(state: EnvState, player: int, episode_steps: int) -> jnp.ndar
     is_late = (step_norm >= 0.64).astype(jnp.float32)
 
     av_norm = state.angular_velocity / jnp.float32(constants.ORBIT_OMEGA_MAX)
+    total_garr_norm = jnp.log1p(player_garrison(player)) / 10.0
+    n_fleets_mine = player_fleets(player) / jnp.float32(constants.MAX_FLEETS)
+    n_fleets_enemy = foe_fleets / jnp.float32(constants.MAX_FLEETS)
 
     return jnp.stack(
         [
             step_norm,
             player_ships(player) / total_ships,
-            player_ships(opp) / total_ships,
+            foe_ships / total_ships,
             player_planets(player) / total_planets,
-            player_planets(opp) / total_planets,
+            foe_planets / total_planets,
             player_prod(player) / total_prod,
-            player_prod(opp) / total_prod,
+            foe_prod / total_prod,
             is_early,
             is_mid,
             is_late,
             av_norm,
+            total_garr_norm,
+            n_fleets_mine,
+            n_fleets_enemy,
         ],
     )
 
 
 def encode(state: EnvState, player: int, episode_steps: int = constants.DEFAULT_EPISODE_STEPS) -> EncodedObs:
-    planet_feats, is_mine, is_enemy, is_neutral = _encode_planets(state, player)
+    planet_feats, is_mine, is_enemy, is_neutral = _encode_planets(state, player, episode_steps)
     fleet_feats = _encode_fleets(state, player)
     global_feats = _encode_global(state, player, episode_steps)
 

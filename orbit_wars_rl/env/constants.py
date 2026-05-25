@@ -11,7 +11,11 @@ SUN_PATH_MARGIN: float = 1.25
 MAX_PLANETS: int = 40
 MAX_FLEETS: int = 128
 
-NUM_PLAYERS: int = 2
+import os as _os
+
+NUM_PLAYERS: int = int(_os.environ.get("ORBITWARS_NUM_PLAYERS", "2"))
+if NUM_PLAYERS not in (2, 4):
+    raise ValueError(f"ORBITWARS_NUM_PLAYERS must be 2 or 4, got {NUM_PLAYERS}")
 NEUTRAL_OWNER: int = -1
 PADDING_OWNER: int = -2
 

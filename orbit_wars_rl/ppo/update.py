@@ -258,10 +258,19 @@ def ppo_loss(
     planet_mask_f = rollout.obs_planet_mask.astype(jnp.float32)
     my_alive_f = my_planet_f * planet_mask_f                            # [N, P]
     ships_my = rollout.planet_ships_raw.astype(jnp.float32) * my_alive_f
-    n_my_planets = jnp.maximum(my_alive_f.sum(), jnp.float32(1.0))
-    mean_garrison_my = ships_my.sum() / n_my_planets
+    my_ships_per_turn = ships_my.sum(axis=-1)                            # [N]
+    n_my_per_turn = jnp.maximum(my_alive_f.sum(axis=-1), jnp.float32(1.0))
+    mean_garrison_my = (my_ships_per_turn / n_my_per_turn).mean()
+    total_garrison_my = my_ships_per_turn.mean()
+    max_garr = my_ships_per_turn.max()
+    peak_over_mean_garr = max_garr / jnp.maximum(total_garrison_my, jnp.float32(1.0))
 
-    # Day 4 §12 v2 shaping-aligned metrics: prod_share, planet_share.
+    emit2_rate = (emits_per_turn >= jnp.float32(2.0)).mean()
+    my_fleet_active = (
+        rollout.obs_fleet_feats[..., 0] * rollout.obs_fleet_mask.astype(jnp.float32)
+    )
+    fleets_in_flight = (my_fleet_active > 0.5).sum(axis=-1).mean()
+
     prod_f = rollout.planet_prod_raw.astype(jnp.float32)                # [N, P]
     my_prod = (prod_f * my_alive_f).sum(axis=-1)                        # [N]
     total_prod = jnp.maximum((prod_f * planet_mask_f).sum(axis=-1), jnp.float32(1.0))
@@ -271,31 +280,13 @@ def ppo_loss(
     total_planet_count = jnp.maximum(planet_mask_f.sum(axis=-1), jnp.float32(1.0))
     planet_share = (my_planet_count / total_planet_count).mean()
 
-    # fleet_log "score" (average over emits) — same scaling rewards see, no coef.
-    # Re-uses ships_per_step computed for mean_ships_per_fleet above.
     log_ref = jnp.log1p(jnp.float32(500.0))
     fleet_log_norm = jnp.clip(jnp.log1p(jnp.maximum(ships_per_step, 0.0)) / log_ref, 0.0, 1.0)
     fleet_log_score = (fleet_log_norm * emit_f).sum() / n_emit_total
 
-    # Day 5 (post-top10) metrics:
-    #   prod_share_delta_mean: per-step (share - prev_share) averaged over
-    #     the flat rollout (N = T*B). On a flat minibatch we can't recover
-    #     the temporal ordering, so we approximate the per-step delta with
-    #     prod_share centered at 0.5 (2P fair baseline). Higher = more
-    #     territory growth on this batch. This is a coarse proxy; the true
-    #     telescoped delta is logged via env reward channels.
-    #   peak_over_mean_garr: per-batch max(my_ships) / mean(my_ships).
-    #     Captures the "stockpile-then-release" magnitude seen in expert
-    #     replays (winners: ~4.3x). On flat batch it's a single ratio.
-    my_ships_per_turn = ships_my.sum(axis=-1)                            # [N]
-    mean_garr = my_ships_per_turn.mean()
-    max_garr = my_ships_per_turn.max()
-    peak_over_mean_garr = max_garr / jnp.maximum(mean_garr, jnp.float32(1.0))
-
-    # Use ``prod_share - 0.5`` (centered) as a per-step contribution proxy.
-    # Not a true delta on a shuffled minibatch, but the batch mean still
-    # reflects the rollout average advantage in territory share.
-    prod_share_delta = (my_prod / total_prod - jnp.float32(0.5)).mean()
+    prod_share_delta = (
+        my_prod / total_prod - jnp.float32(1.0 / env_constants.NUM_PLAYERS)
+    ).mean()
 
     metrics = dict(
         pg_loss=pg_loss,
@@ -324,6 +315,9 @@ def ppo_loss(
         # Day 5 (post-top10) metrics.
         prod_share_delta=prod_share_delta,
         peak_over_mean_garr=peak_over_mean_garr,
+        total_garrison_my=total_garrison_my,
+        emit2_rate=emit2_rate,
+        fleets_in_flight=fleets_in_flight,
     )
     for b in range(env_constants.NUM_PCT_BINS):
         metrics[f"pct_bin{b}"] = pct_bin_dist[b]
@@ -402,6 +396,7 @@ _ZERO_METRICS_KEYS = (
     "prod_share", "planet_share", "fleet_log_score",
     # Day 5 (post-top10) metrics
     "prod_share_delta", "peak_over_mean_garr",
+    "total_garrison_my", "emit2_rate", "fleets_in_flight",
     *(f"pct_bin{b}" for b in range(env_constants.NUM_PCT_BINS)),
     "loss", "grad_norm",
 )

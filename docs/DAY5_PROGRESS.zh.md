@@ -13,25 +13,18 @@
 | **shaping 在 self-play** | ✅ v9b gauntlet vs v9a **17/20**；v9c 训练 spf **30.1**（最高） |
 | **shaping vs v20** | ❌ v9b gauntlet vs v20 **0/40**；replay spf **4.76**（训练 21.2） |
 | **Day5 代码** | ✅ Reward v3（R1/R2/R3/R4）+ FAST gate + 串行 launcher **已落地** |
-| **Day5 训练** | 🔄 **top10 完整配方 `r1_r2_r4` scratch FAST**（见 §6） |
-| **Resume 策略** | v3 reward **语义级改动 → scratch**；fork v9c 仅适合作 FAST 探路 |
+| **Day5 训练** | 🔄 **v11 全栈 3 组验证**（G1→G2→G3，~4h/组） |
+| **Resume 策略** | v11 **从头训**；G2 resume G1 + C1 anchor |
 
-**v9c/d 末段 monitor（5090，2026-05-26 kill 前）：**
-
-```
-multi_action_v9c  upd 3198  ev 0.97  clip 0.08  spf 30.1  garr 44.1  pS 0.37  fLog 0.43  live
-multi_action_v9d  upd 3197  ev 0.97  clip 0.08  spf 21.4  garr 61.8  pS 0.40  fLog 0.37  live
-```
-
-**当前主推一条命令（top10 完整 reward 版，scratch，后台）：**
+**今晚一条命令（5090 后台）：**
 
 ```bash
-nohup env RESUME_FROM= MIN_UPD=600 BASELINE_SPF=12 BASELINE_GARR=25 \
-  bash scripts/run_fast_serial.sh r1_r2_r4 \
-  > logs/fast_serial_r1_r2_r4.launcher.log 2>&1 &
+nohup bash scripts/run_v11_validation.sh \
+  > logs/v11_validation.launcher.log 2>&1 &
+echo "pid=$!"
 ```
 
-看日志见 **§7**。
+看日志见 **§6.3 / §7**。
 
 ---
 
@@ -197,70 +190,96 @@ A2 改坐标系 → **from scratch 500 upd**。
 
 ---
 
-## 6. Day5 FAST 启动命令
+## 6. v11 全信号验证（今晚跑这条）
 
-### 6.1 Variant 对照（top10 → reward v3）
-
-| Variant | 含义 | Shaping env vars |
-|---|---|---|
-| `r1_only` | R1 prod_share **delta** 替换 level | `PROD_SHARE=0`, `PROD_SHARE_DELTA=1.0`, 保留 `planet+fleet_log` |
-| `r2_release` | R2 release 替换 fleet_log | `RELEASE=0.05`, `RELEASE_K=20`, 关 `FLEET_LOG` |
-| `r4_emit` | R4 valid launch 数 log | `EMIT_LOG=0.01`, 保留 v9c v2 全家桶 |
-| **`r1_r2_r4`** | **top10 完整配方** | delta + release + emit；关 level prod + fleet_log |
-
-R3（`NUM_PLAYERS` baseline bug）已在代码里修，无需单独 variant。
-
-### 6.2 推荐：完整配方 scratch + 后台
+**一条命令（5090 后台，3 组串行 × ~800 upd ≈ 4h/组）：**
 
 ```bash
-# 前台（占终端；train 虽 nohup 但 launcher 轮询 gate 在前台）
-RESUME_FROM= MIN_UPD=600 BASELINE_SPF=12 BASELINE_GARR=25 \
-  bash scripts/run_fast_serial.sh r1_r2_r4
-
-# 后台（推荐 5090 过夜）
-nohup env RESUME_FROM= MIN_UPD=600 BASELINE_SPF=12 BASELINE_GARR=25 \
-  bash scripts/run_fast_serial.sh r1_r2_r4 \
-  > logs/fast_serial_r1_r2_r4.launcher.log 2>&1 &
-echo "launcher pid=$!"
-
-# tmux（可随时 attach）
-tmux new -s fast_r124
-RESUME_FROM= MIN_UPD=600 BASELINE_SPF=12 BASELINE_GARR=25 \
-  bash scripts/run_fast_serial.sh r1_r2_r4
+nohup bash scripts/run_v11_validation.sh \
+  > logs/v11_validation.launcher.log 2>&1 &
+echo "pid=$!"
 ```
 
-**Gate baseline 说明（scratch）：** 不能用 v9c@3200 的 spf=30/garr=44（从头训 upd=300 达不到）。上表用 `spf=12, garr=25, min_upd=600` 作 scratch 合理起点；PROMOTE 后仍需 h2h vs v20 确认。
+### 6.1 全栈配方（无 ablation）
 
-### 6.3 可选：fork v9c 快速探路（不推荐 combo）
-
-```bash
-bash scripts/run_day5_fast_from_v9c.sh r1_r2_r4   # 自动 resume v9c 最新 ckpt
-bash scripts/run_day5_fast_from_v9c.sh            # 串行 4 条 ablation
-```
-
-fork 只加载 **权重**，upd 从 0 重计；value head 按旧 return 校准，combo 易 clip spike。**PROMOTE 后 overnight 仍应 scratch 4000 upd。**
-
-### 6.4 产出路径
-
-| 路径 | 内容 |
+| 层 | 内容 |
 |---|---|
-| `logs/multi_action_v10_r1_r2_r4.log` | 训练 stdout（每 upd 一行 metric） |
-| `logs/multi_action_v10_r1_r2_r4/` | TensorBoard |
-| `ckpt_multi_action_v10_r1_r2_r4/ckpt_XXXXXX.pkl` | 每 100 upd 存盘 |
-| `logs/fast_serial_r1_r2_r4.launcher.log` | launcher gate 轮询输出 |
-| `logs/fast_serial_summary.tsv` | 各 variant 判决 TSV |
+| **Reward** | R1 delta + R2 release + R4 emit(**gated**) + R5 capture + planet_share |
+| **Obs** | A1' threat_ratio/eta/net_inbound + global total_garr + fleets_in_flight |
+| **Scale** | `episode_steps=500`, `max_fleets_per_turn=16` |
+| **C1** | G2/G3：25% vs G1 anchor ckpt + 50% frozen self + 25% random |
+| **未含** | 4P env（Week2）；真 v20 Python bot（用同架构 anchor ckpt 代 C1） |
 
-### 6.5 FAST 实验台账
+### 6.2 三组验证（同一配方，递进训练）
 
-| ID | 假设 | 状态 | upd | ev | replay vs v20 | 决策 |
-|---|---|---|---|---|---|---|
-| — | v9c/d Phase 0 | ⏸️ @3200 kill | 3198 | 0.97 | — | ckpt 保留，改走 v3 FAST |
-| **r1_r2_r4** | top10 完整 reward v3 | 🔄 待跑 | — | — | — | scratch FAST |
-| r1_only | prod_share_delta | ⏳ | — | — | — | — |
-| r2_release | release_bonus | ⏳ | — | — | — | — |
-| r4_emit | emit_log | ⏳ | — | — | — | — |
-| C1 | v20 进 frozen pool | ⏳ | — | — | — | reward v3 后再做 |
-| A1' | threat_ratio + eta | ⏳ | — | — | — | reward v3 后再做 |
+| 组 | 名称 | 做什么 | 产出 |
+|---|---|---|---|
+| **G1** | `g1_scratch` | 从头 800 upd | `ckpt_multi_action_v11_g1_scratch/` |
+| **G2** | `g2_curriculum` | resume G1 + **C1** strong=G1@399 | `ckpt_multi_action_v11_g2_curriculum/` |
+| **G3** | `g3_continue` | resume G2 再 800 upd | `ckpt_multi_action_v11_g3_continue/` |
+
+汇总：`logs/v11_validation_summary.tsv`
+
+### 6.3 明早 ~10:00 检查
+
+```bash
+tail -20 logs/v11_validation.launcher.log
+python -m orbit_wars_rl.scripts.monitor_train --once \
+  logs/multi_action_v11_g1_scratch.log \
+  logs/multi_action_v11_g2_curriculum.log \
+  logs/multi_action_v11_g3_continue.log
+column -t -s $'\t' logs/v11_validation_summary.tsv
+```
+
+**Sign-of-life（对照 Top10 first-80）：**
+
+| metric | 目标 | 说明 |
+|---|---|---|
+| `tG` | **> 60** | 总驻防（Top10 赢家 ~152） |
+| `e2` | **> 0.05** | emit≥2 占比 |
+| `z0` | **0.15–0.50** | 高手也大量不发 turn |
+| `pkR` | **> 2.0** | 囤放波动 |
+| `ev` | **> 0.5** @ G3 末段 | 训练健康 |
+
+G3 健康 → export `ckpt_g3` → h2h vs v20（`H2H_EVAL_RUNBOOK.md`）。
+
+### 6.4 旧 FAST 串行（r1_r2_r4 分项）
+
+已被 v11 全栈验证取代；保留 `scripts/run_fast_serial.sh` 供日后单项调试。
+
+### 6.5 v12 4P 并行排期（与 v11 同配方）
+
+**工程双线、GPU 串行**：5090 上不能同时跑两个 JAX 训练；「并行」= v11 先跑（或已在跑），v12 接在后面或单独 `v12_only`。
+
+| Track | 玩家数 | Launcher | 输出 |
+|---|---|---|---|
+| **A v11** | 2P（默认） | `scripts/run_v11_validation.sh` | `logs/multi_action_v11_g*.log` |
+| **B v12** | 4P | `ORBITWARS_NUM_PLAYERS=4 bash scripts/run_v12_validation.sh` | `logs/multi_action_v12_g*.log` |
+| **一键 pipeline** | 2P→4P 串行 ~26h | `bash scripts/run_parallel_tracks.sh` | 两份 summary TSV |
+
+**若 v11 已在跑**（不要开 `pipeline`，会抢 GPU）：
+
+```bash
+# v11 跑完后单独开 v12
+nohup env MODE=v12_only bash scripts/run_parallel_tracks.sh \
+  > logs/v12_only.launcher.log 2>&1 &
+```
+
+**v12 实现要点（MVP）**：
+
+- `ORBITWARS_NUM_PLAYERS=4` 在 **进程启动前** 设置（import 时读 constants；与 2P 默认互不干扰）
+- 4 家 home：anchor group 四象限 slot 0–3；`home_planet_idx` shape `[4]`
+- P0 学习；P1–P3 共享 frozen/strong/random（`rollout_4p.py`）
+- Obs：foe = 所有非己玩家聚合（threat / global share）；`pdΔ` baseline **0.25**（非 2P 的 0.5）
+- Config：`orbit_wars_rl/configs/multi_action_v12_4p.yaml`（`num_envs: 96`，略降 VRAM）
+
+**Smoke（5090 或本机，1 upd/phase）**：
+
+```bash
+ORBITWARS_NUM_PLAYERS=4 UPD_PER_PHASE=1 bash scripts/run_v12_validation.sh
+```
+
+**4P sign-of-life（G3）**：同 v11 的 `tG/e2/pkR/ev`，另看 `pdΔ > 0`（相对 fair share 0.25）。
 
 ---
 
@@ -372,7 +391,11 @@ python -m orbit_wars_rl.scripts.export_submission \
 | **R1** | `prod_share_delta_reward` | `ORBITWARS_SHAPING_PROD_SHARE_DELTA` | Δshare × α；与 level `prod_share` **互斥** |
 | **R2** | `release_bonus_reward` | `RELEASE=0.05`, `RELEASE_K=20` | `tanh(src_garr/src_prod/K - 1)` × log_size；**无硬编码阈值**；与 `fleet_log` **互斥** |
 | **R3** | `prod_share_reward` / `planet_share_reward` | — | `n_players` 改 `constants.NUM_PLAYERS`（修 4P bug） |
-| **R4** | `emit_log_reward` | `ORBITWARS_SHAPING_EMIT_LOG` | `log1p(n_valid_launches)` per turn |
+| **R5** | `capture_flip_reward` | `CAPTURE=0.02` | planet flip 事件 × prod 权重 |
+| **R4'** | `emit_log_reward_gated` | `EMIT_GATED=1` | 仅 release_factor>0 时奖 emit |
+| **A1'** | `encode.py` planet +3 | — | threat_ratio, net_inbound, eta_foe_min |
+| **Global obs** | `encode.py` global +3 | — | total_garr_norm, n_fleets mine/enemy |
+| **C1** | `runner.py` strong_ratio | yaml | 25% vs anchor ckpt（phase 2+） |
 
 `env.py`：`non_terminal_r` 接入 R1/R2/R4 call site（player 0）。
 
@@ -382,10 +405,14 @@ python -m orbit_wars_rl.scripts.export_submission \
 
 | metric | log 列 | 含义 |
 |---|---|---|
-| `prod_share_delta` | `pdΔ` | batch 近似 prod share level（gate 用） |
-| `peak_over_mean_garr` | `pkR` | max_garr / mean_garr（R2 FAST 目标） |
+| `prod_share_delta` | `pdΔ` | batch 近似 prod share |
+| `peak_over_mean_garr` | `pkR` | 囤放波动（Top10 ~4.3） |
+| `total_garrison_my` | `tG` | **全星总驻防**（Top10 gate >60） |
+| `emit2_rate` | `e2` | emit≥2 占比（Top10 ~14%） |
+| `fleets_in_flight` | `nF` | 在途舰队数（Top10 ~11） |
+| `zero_emit_rate` | `z0` | 不发 turn 占比（目标 0.15–0.50） |
 
-`runner.py` banner echo 全部 v3 shaping coef；训练 log 行追加 `pdΔ` / `pkR`。
+`runner.py` log 含 `tG e2 nF`；C1 对手 tag `strn/frzn/rand`。
 
 ### 8.3 监控与 Gate（新/改）
 
@@ -395,13 +422,31 @@ python -m orbit_wars_rl.scripts.export_submission \
 | `orbit_wars_rl/scripts/check_fast_gate.py` | **新增** — 末窗口均值 + 2/3 票决 + ev/clip 硬 KILL |
 | `scripts/run_fast_serial.sh` | **新增** — 串行 launcher + gate 轮询 + TSV 汇总 |
 | `scripts/run_day5_fast_from_v9c.sh` | **新增** — kill v9c/d + 自动 resume v9c ckpt |
+| `scripts/run_v11_validation.sh` | v11 三阶段全栈验证 |
+| `scripts/run_v12_validation.sh` | v12 4P 三阶段（需 `ORBITWARS_NUM_PLAYERS=4`） |
+| `scripts/run_parallel_tracks.sh` | v11→v12 pipeline / `MODE=v12_only` |
 
 ### 8.4 配置
 
 | 文件 | 用途 |
 |---|---|
+| `orbit_wars_rl/configs/multi_action_v11_full.yaml` | v11 全栈模板（2P） |
+| `orbit_wars_rl/configs/multi_action_v12_4p.yaml` | v12 全栈模板（4P，`num_envs: 96`） |
 | `orbit_wars_rl/configs/multi_action_v10_fast.yaml` | FAST 模板：`num_updates=1000`，其余对齐 v9 |
 | `orbit_wars_rl/configs/day5_smoke.yaml` | CPU smoke（验证 reward 路径无 NaN） |
+
+### 8.4b 4P env（v12 MVP）
+
+| 文件 | 改动 |
+|---|---|
+| `env/constants.py` | `ORBITWARS_NUM_PLAYERS` env var（2 默认 / 4） |
+| `env/init.py` | 4P 四 home slot |
+| `env/dynamics.py` | `launch_fleets_with_info` 4-tuple |
+| `env/rewards.py` | `terminal_reward` N-player max score；shaping vs strongest opp |
+| `features/encode.py` | foe 聚合 inbound + global share |
+| `ppo/rollout_4p.py` | P0 学 + P1–3 frozen/random |
+| `ppo/runner.py` | `NUM_PLAYERS==4` 分支 |
+| `ppo/update.py` | `pdΔ` baseline `1/NUM_PLAYERS` |
 
 ### 8.5 文档（同日新增/更新）
 
@@ -419,11 +464,11 @@ python -m orbit_wars_rl.scripts.export_submission \
 | `orbit_wars_rl/scripts/aggregate_top10_replays.py` | 聚合 top10 replay JSON → 指标 |
 | `logs/top10_aggregate_2026-05-04.json` | 2630 局聚合结果 |
 
-### 8.7 尚未实现（下一批）
+### 8.7 仍 defer
 
-- **A1'** threat obs（`threat_ratio`, `eta_foe_min`, `net_inbound`）
-- **C1** v20 进 frozen self-play pool
-- overnight 4000 upd yaml / launcher（PROMOTE 后手动扩 `num_updates`）
+- **真 v20 Python bot 进 rollout**（需非 JIT 路径或 BC 蒸馏；今晚 C1 用 G1 anchor ckpt）
+- overnight 4000 launcher（G3 健康后再扩）
+- **4P 进阶**：独立 opponent pool（P1/P2/P3 不同 ckpt）、Kaggle 4P 全图 curriculum — MVP 已 land，见 §6.5
 
 ---
 
@@ -433,7 +478,7 @@ python -m orbit_wars_rl.scripts.export_submission \
 |---|---|
 | [`DAY4_PROGRESS.zh.md`](DAY4_PROGRESS.zh.md) | Day4 完整审计 + v9 设计与实现 |
 | [`DAY5_PLAN.zh.md`](DAY5_PLAN.zh.md) | Day5 战术规划（Track A/B/C、优先级） |
-| **本文** | 现状 SSOT、§6 启动、§7 看日志、§8 改动清单 |
+| **本文** | 现状 SSOT、§6 v11 全栈验证、§7 看日志、§8 改动清单 |
 | [`FAST_ITER_RUNBOOK.md`](FAST_ITER_RUNBOOK.md) | 500 upd 启动、gate、PROMOTE/KILL |
 | [`TOP10_REPLAY_METRICS.zh.md`](TOP10_REPLAY_METRICS.zh.md) | **2630 局 4P 高手 replay 指标 SSOT**（Day5 方向对照） |
 | [`DAY5_TRAINING_ACTIONS.zh.md`](DAY5_TRAINING_ACTIONS.zh.md) | **Day5 训练动作清单**（R1/R2/R3/R4/A1'/C1 落地公式） |

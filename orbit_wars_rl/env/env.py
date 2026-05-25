@@ -54,7 +54,9 @@ class OrbitWarsEnv:
         that only has single ``PlayerAction``s can wrap them via
         ``actions.single_to_multi`` (kept jit-pure).
         """
-        s1, (valid_p0, _), (ships_p0, _) = dynamics.launch_fleets_with_info(state, actions)
+        s1, valids, ships_launched = dynamics.launch_fleets_with_info(state, actions)
+        valid_p0 = valids[0]
+        ships_p0 = ships_launched[0]
         s2 = dynamics.produce(s1)
         # Fleet movement uses swept-pair collision against each planet's
         # *future* (post-rotation) segment. This is how the Kaggle env
@@ -99,17 +101,18 @@ class OrbitWarsEnv:
         #     Normalizes stockpile by each planet's own production; no
         #     ship-count threshold and no stored EMA state.
         prod_d_r = rewards.prod_share_delta_reward(state, s4, 0)
-        emit_log_r = rewards.emit_log_reward(valid_p0)
-        # Use src_idx from p0's action directly (matches the launches we just
-        # applied to obtain valid_p0/ships_p0 above).
+        capture_r = rewards.capture_flip_reward(state, s4, 0)
         release_r = rewards.release_bonus_reward(
             state, actions[0].src_idx, valid_p0, ships_p0
+        )
+        emit_log_r = rewards.emit_log_reward_gated(
+            valid_p0, state, actions[0].src_idx
         )
         non_terminal_r = (
             shaping
             + keep_r + fleet_r
             + prod_r + planet_r + fleet_log_r
-            + prod_d_r + emit_log_r + release_r
+            + prod_d_r + capture_r + emit_log_r + release_r
         )
         reward_p0 = jnp.where(done_now, terminal_r, non_terminal_r)
 
@@ -117,7 +120,7 @@ class OrbitWarsEnv:
             reward=reward_p0,
             done=done_now,
             info_my_ships=rewards.player_total_ships(s4, 0).astype(jnp.float32),
-            info_opp_ships=rewards.player_total_ships(s4, 1).astype(jnp.float32),
+            info_opp_ships=rewards._strongest_opp_ships(s4, 0).astype(jnp.float32),
         )
         return s4.replace(step=next_step, done=done_now), out
 

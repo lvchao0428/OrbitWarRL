@@ -5,6 +5,8 @@ from __future__ import annotations
 import chex
 import jax.numpy as jnp
 
+from orbit_wars_rl.env import constants
+
 
 @chex.dataclass(frozen=True)
 class EnvState:
@@ -83,5 +85,5 @@ def empty_state(max_planets: int, max_fleets: int) -> EnvState:
         planet_orbit_radius=jnp.zeros((max_planets,), dtype=jnp.float32),
         planet_orbit_phase=jnp.zeros((max_planets,), dtype=jnp.float32),
         planet_is_orbiting=jnp.zeros((max_planets,), dtype=jnp.bool_),
-        home_planet_idx=jnp.zeros((2,), dtype=jnp.int32),
+        home_planet_idx=jnp.zeros((constants.NUM_PLAYERS,), dtype=jnp.int32),
     )
