@@ -1,0 +1,45 @@
+nohup: 忽略输入
+[config] serial mode  POLL_SEC=120  MIN_UPD=600  JAX_FRAC=0.85
+[config] resume_from=<scratch>
+[config] queue: r1_r2_r4
+
+================================================================
+[serial] starting variant=r1_r2_r4  log=logs/multi_action_v10_r1_r2_r4.log  shaping=ORBITWARS_SHAPING_PLANET_SHARE=0.005 ORBITWARS_SHAPING_PROD_SHARE=0.0 ORBITWARS_SHAPING_FLEET_LOG=0.0 ORBITWARS_SHAPING_PROD_SHARE_DELTA=1.0 ORBITWARS_SHAPING_RELEASE=0.05 ORBITWARS_SHAPING_RELEASE_K=20.0 ORBITWARS_SHAPING_EMIT_LOG=0.01
+================================================================
+[serial] pid=134385  config(tmp)=/tmp/fast_r1_r2_r4_hdBV.yaml
+[00:22:19] [r1_r2_r4] [gate] ERROR    no parseable rows
+[00:24:19] [r1_r2_r4] [gate] CONTINUE upd 30 < 600
+[gate] upd=30  ev=0.91  clip=0.19  spf=11.070967741935483  garr=48.25483870967742  pdelta=-0.2561806451612903  pS=0.24387096774193548
+[00:26:19] [r1_r2_r4] [gate] CONTINUE upd 30 < 600
+[gate] upd=30  ev=0.91  clip=0.19  spf=11.070967741935483  garr=48.25483870967742  pdelta=-0.2561806451612903  pS=0.24387096774193548
+[00:28:19] [r1_r2_r4] [gate] CONTINUE upd 61 < 600
+[gate] upd=61  ev=0.9652  clip=0.24860000000000002  spf=14.596  garr=61.44  pdelta=-0.215012  pS=0.2852
+[00:30:19] [r1_r2_r4] [gate] CONTINUE upd 92 < 600
+[gate] upd=92  ev=0.973  clip=0.2892  spf=17.868000000000002  garr=68.146  pdelta=-0.183244  pS=0.3166
+[00:32:19] [r1_r2_r4] [gate] CONTINUE upd 123 < 600
+[gate] upd=123  ev=0.979  clip=0.316  spf=18.624  garr=76.108  pdelta=-0.17586  pS=0.3236
+[00:34:19] [r1_r2_r4] [gate] CONTINUE upd 123 < 600
+[gate] upd=123  ev=0.979  clip=0.316  spf=18.624  garr=76.108  pdelta=-0.17586  pS=0.3236
+[00:36:19] [r1_r2_r4] [gate] CONTINUE upd 154 < 600
+[gate] upd=154  ev=0.98  clip=0.34500000000000003  spf=19.496  garr=84.388  pdelta=-0.16575  pS=0.33440000000000003
+[00:38:19] [r1_r2_r4] [gate] CONTINUE upd 185 < 600
+[gate] upd=185  ev=0.98  clip=0.368  spf=20.078  garr=87.548  pdelta=-0.153742  pS=0.3462
+scripts/run_fast_serial.sh: 第 97 行： 134385 已杀死               env $envs XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_PYTHON_CLIENT_MEM_FRACTION="$JAX_FRAC" nohup "$PY" -m orbit_wars_rl.scripts.train --config "$tmp_cfg" --log-dir "$tb" "${resume_arg[@]}" > "$log" 2>&1
+[00:40:19] [r1_r2_r4] [gate] CONTINUE upd 185 < 600
+[gate] upd=185  ev=0.98  clip=0.368  spf=20.078  garr=87.548  pdelta=-0.153742  pS=0.3462
+[serial] r1_r2_r4 done. verdict=INCONCLUSIVE  summary appended -> logs/fast_serial_summary.tsv
+
+================================================================
+[serial] all variants finished. Summary:
+ts                    variant   verdict       upd  spf     garr    pdelta     ev    clip   notes
+2026-05-25T16:40:19Z  r1_r2_r4  INCONCLUSIVE  185  20.078  87.548  -0.153742  0.98  0.368  shaping=ORBITWARS_SHAPING_PLANET_SHARE=0.005 ORBITWARS_SHAPING_PROD_SHARE=0.0 ORBITWARS_SHAPING_FLEET_LOG=0.0 ORBITWARS_SHAPING_PROD_SHARE_DELTA=1.0 ORBITWARS_SHAPING_RELEASE=0.05 ORBITWARS_SHAPING_RELEASE_K=20.0 ORBITWARS_SHAPING_EMIT_LOG=0.01
+
+Next steps for any PROMOTE'd variant:
+  1. Export the latest ckpt:
+       python -m orbit_wars_rl.scripts.export_submission \
+           --ckpt ckpt_multi_action_v10_<variant>/ckpt_000XXX.pkl \
+           --out ckpt_multi_action_v10_<variant>/submission.py
+  2. h2h vs v20 and frozen v9c -- see docs/H2H_EVAL_RUNBOOK.md
+  3. If h2h beats v9c, run the OVERNIGHT 4000-update version
+     by re-launching with num_updates=4000 (edit the v10 fast yaml,
+     or use the existing run_v9_ablation.sh harness).

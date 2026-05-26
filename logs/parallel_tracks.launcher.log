@@ -1,0 +1,83 @@
+nohup: 忽略输入
+[parallel] MODE=pipeline  2026-05-25T16:40:31Z
+[parallel] Track A: v11 2P (3 x UPD_PER_PHASE)
+[v11] FULL STACK validation start  UPD_PER_PHASE=800
+[v11] shaping: ORBITWARS_SHAPING_PLANET_SHARE=0.005 ORBITWARS_SHAPING_PROD_SHARE=0.0 ORBITWARS_SHAPING_FLEET_LOG=0.0 ORBITWARS_SHAPING_PROD_SHARE_DELTA=1.0 ORBITWARS_SHAPING_RELEASE=0.05 ORBITWARS_SHAPING_RELEASE_K=20.0 ORBITWARS_SHAPING_EMIT_LOG=0.01 ORBITWARS_SHAPING_EMIT_GATED=1 ORBITWARS_SHAPING_CAPTURE=0.02
+[v11] WARN ckpt_000399 missing, using latest for strong opp: 
+================================================================
+[v11] PHASE 1  tag=g1_scratch  upd=800  log=logs/multi_action_v11_g1_scratch.log
+[v11] resume=<scratch>  strong=none ratio=0.0
+================================================================
+[v11] phase 1 done in 5269s  ckpt=ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl
+ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl
+sed: -e 表达式 #3, 字符 42: 未终止的“s”命令↵
+sed: -e 表达式 #3, 字符 42: 未终止的“s”命令↵
+
+================================================================
+[v11] ALL 3 PHASES COMPLETE
+ts                    phase  tag            upd  ev    tG      e2    pkR    z0    nF    elapsed_s  ckpt                                              notes
+2026-05-25T18:08:20Z  1      g1_scratch     799  0.99  1363.0  0.85  10.61  0.01  60.4  5269       ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl  full-stack
+2026-05-25T18:08:35Z  2      g2_curriculum  ?    ?     ?       ?     ?      ?     ?     15         ?                                                 full-stack
+2026-05-25T18:08:49Z  3      g3_continue    ?    ?     ?       ?     ?      ?     ?     14         ?                                                 full-stack
+
+Morning checklist (~10:00):
+  python -m orbit_wars_rl.scripts.monitor_train --once logs/multi_action_v11_g*.log
+
+Sign-of-life (vs Top10 first-80 targets):
+  tG > 60   e2 > 0.05   z0 in 0.15-0.50   pkR > 2.0   ev > 0.5 @ end
+
+If g3 looks healthy, export + h2h:
+  python -m orbit_wars_rl.scripts.export_submission \
+    --ckpt 
+================================================================
+[v11] PHASE 3  tag=g3_continue  upd=800  log=logs/multi_action_v11_g3_continue.log
+[v11] resume=
+================================================================
+[v11] PHASE 2  tag=g2_curriculum  upd=800  log=logs/multi_action_v11_g2_curriculum.log
+[v11] resume=
+================================================================
+[v11] PHASE 1  tag=g1_scratch  upd=800  log=logs/multi_action_v11_g1_scratch.log
+[v11] resume=<scratch>  strong=none ratio=0.0
+================================================================
+[v11] phase 1 done in 5269s  ckpt=ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl
+ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl  strong=
+================================================================
+[v11] PHASE 1  tag=g1_scratch  upd=800  log=logs/multi_action_v11_g1_scratch.log
+[v11] resume=<scratch>  strong=none ratio=0.0
+================================================================
+[v11] phase 1 done in 5269s  ckpt=ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl
+ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl ratio=0.25
+================================================================
+[v11] phase 2 done in 15s  ckpt=none  strong=
+================================================================
+[v11] PHASE 1  tag=g1_scratch  upd=800  log=logs/multi_action_v11_g1_scratch.log
+[v11] resume=<scratch>  strong=none ratio=0.0
+================================================================
+[v11] phase 1 done in 5269s  ckpt=ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl
+ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl ratio=0.25
+================================================================
+[v11] phase 3 done in 14s  ckpt=none --template submission_rl_v4.py \
+    --out submission_rl_v11_g3.py
+  # then gauntlet vs v20 — see docs/H2H_EVAL_RUNBOOK.md
+[parallel] Track B: v12 4P (3 x UPD_PER_PHASE)
+[v12/4P] FULL STACK validation start  UPD_PER_PHASE=800  NUM_PLAYERS=4
+[v12/4P] shaping: ORBITWARS_NUM_PLAYERS=4 ORBITWARS_SHAPING_PLANET_SHARE=0.005 ORBITWARS_SHAPING_PROD_SHARE=0.0 ORBITWARS_SHAPING_FLEET_LOG=0.0 ORBITWARS_SHAPING_PROD_SHARE_DELTA=1.0 ORBITWARS_SHAPING_RELEASE=0.05 ORBITWARS_SHAPING_RELEASE_K=20.0 ORBITWARS_SHAPING_EMIT_LOG=0.01 ORBITWARS_SHAPING_EMIT_GATED=1 ORBITWARS_SHAPING_CAPTURE=0.02
+[v12/4P] WARN ckpt_000399 missing, using latest for strong opp: 
+================================================================
+[v12/4P] PHASE 1  tag=g1_scratch  upd=800  log=logs/multi_action_v12_g1_scratch.log
+[v12/4P] resume=<scratch>  strong=none ratio=0.0
+================================================================
+[v12/4P] phase 1 done in 298s  ckpt=none
+sed: -e 表达式 #3, 字符 42: 未终止的“s”命令↵
+sed: -e 表达式 #3, 字符 42: 未终止的“s”命令↵
+
+================================================================
+[v12/4P] ALL 3 PHASES COMPLETE
+ts                    phase  tag            upd  ev    tG     e2    pkR    z0    nF    elapsed_s  ckpt  notes
+2026-05-25T18:13:47Z  1      g1_scratch     48   0.98  303.0  0.22  15.26  0.31  16.8  298        ?     4p-full-stack
+2026-05-25T18:14:01Z  2      g2_curriculum  ?    ?     ?      ?     ?      ?     ?     14         ?     4p-full-stack
+2026-05-25T18:14:16Z  3      g3_continue    ?    ?     ?      ?     ?      ?     ?     15         ?     4p-full-stack
+
+4P sign-of-life (G3, vs Top10 4P baseline prod_share ~0.25):
+  pdΔ > 0 (baseline 0.25 not 0.5)   tG > 60   e2 > 0.05   ev > 0.5
+[parallel] done  2026-05-25T18:14:16Z

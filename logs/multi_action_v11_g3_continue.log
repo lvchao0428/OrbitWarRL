@@ -1,0 +1,15 @@
+[reward] kaggle-aligned: terminal +1 win/+1 tie>0/-1 loss/-1 double-wipeout; is_terminal at step >= episode_steps-2; SHAPING_SCALE=0.0; v1: KEEP_HOME=0.0 FLEET_SIZE=0.0/norm20.0; v2 (expert-replay calibrated): PROD_SHARE=0.0 PLANET_SHARE=0.005 FLEET_LOG=0.0/ref500.0/floor0.3; v3 (top10-2630ep calibrated): PROD_SHARE_DELTA=1.0 EMIT_LOG=0.01 EMIT_GATED=1.0 RELEASE=0.05/K20.0 CAPTURE=0.02; episode_steps=200 (kaggle=500, mismatch=True)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 66, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 56, in main
+    result = train(train_cfg, log_dir=log_dir, resume_from=args.resume_from)
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/runner.py", line 195, in train
+    ckpt = load_checkpoint(resume_from)
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/runner.py", line 95, in load_checkpoint
+    with open(path, "rb") as f:
+         ~~~~^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '\n================================================================\n[v11] PHASE 2  tag=g2_curriculum  upd=800  log=logs/multi_action_v11_g2_curriculum.log\n[v11] resume=\n================================================================\n[v11] PHASE 1  tag=g1_scratch  upd=800  log=logs/multi_action_v11_g1_scratch.log\n[v11] resume=<scratch>  strong=none ratio=0.0\n================================================================\n[v11] phase 1 done in 5269s  ckpt=ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl\nckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl  strong=\n================================================================\n[v11] PHASE 1  tag=g1_scratch  upd=800  log=logs/multi_action_v11_g1_scratch.log\n[v11] resume=<scratch>  strong=none ratio=0.0\n================================================================\n[v11] phase 1 done in 5269s  ckpt=ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl\nckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl ratio=0.25\n================================================================\n[v11] phase 2 done in 15s  ckpt=none'
