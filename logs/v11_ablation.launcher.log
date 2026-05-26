@@ -1,0 +1,13 @@
+nohup: 忽略输入
+[ablation] start  UPD_PER_VARIANT=800  ONLY=all
+
+================================================================
+[ablation] tag=k8_no_emit  upd=800  cfg=orbit_wars_rl/configs/multi_action_v11_k8.yaml
+[ablation] R4 EMIT_LOG=0.0 GATED=0
+================================================================
+[ablation] k8_no_emit done in 4296s  ckpt=ckpt_multi_action_v11_k8_no_emit/ckpt_000799.pkl
+
+================================================================
+[ablation] tag=k8_full  upd=800  cfg=orbit_wars_rl/configs/multi_action_v11_k8.yaml
+[ablation] R4 EMIT_LOG=0.01 GATED=1
+================================================================

@@ -66,9 +66,10 @@ _run_variant() {
   local tmp_cfg
   tmp_cfg="$(mktemp -t "v11_${tag}_XXXX").yaml"
 
-  sed -E \
-    -e "s|num_updates: [0-9]+|num_updates: ${UPD_PER_VARIANT}|" \
-    -e "s|ckpt_multi_action_v11_(full|k8)|${ckpt}|" \
+  sed \
+    -e "s|num_updates: [0-9]*|num_updates: ${UPD_PER_VARIANT}|" \
+    -e "s|ckpt_multi_action_v11_full|${ckpt}|g" \
+    -e "s|ckpt_multi_action_v11_k8|${ckpt}|g" \
     "$cfg_template" > "$tmp_cfg"
 
   echo "" >&2
