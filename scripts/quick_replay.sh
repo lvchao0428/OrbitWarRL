@@ -33,17 +33,22 @@ SUB="submission_rl_${TAG}.py"
 JSON="logs/replay_analyze/${TAG}_vs_v20.json"
 SUMMARY="logs/replay_analyze/${TAG}_vs_v20.summary.txt"
 
-# v11 template covers 22-d planet feats + 14-d global + K up to 16
-TEMPLATE="submission_rl_v11.py"
-
-# Detect v4-era ckpt by inferring planet feat dim
-PLANET_DIM=$(JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES="" "$PY" - <<PY
+# Auto-detect template from ckpt arch (planet_feat_dim and K).
+ARCH_INFO=$(JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES="" "$PY" - <<PY
 from orbit_wars_rl.inference.weights import load_flat_params, infer_arch_from_flat
-print(infer_arch_from_flat(load_flat_params("$CKPT"))["planet_feat_dim"])
+a = infer_arch_from_flat(load_flat_params("$CKPT"))
+print(a["planet_feat_dim"], a["max_fleets_per_turn"])
 PY
 )
+PLANET_DIM=$(echo "$ARCH_INFO" | awk '{print $1}')
+CKPT_K=$(echo "$ARCH_INFO" | awk '{print $2}')
+
 if [ "$PLANET_DIM" = "19" ]; then
   TEMPLATE="submission_rl_v4.py"
+elif [ "$CKPT_K" = "8" ]; then
+  TEMPLATE="submission_rl_v11_k8.py"
+else
+  TEMPLATE="submission_rl_v11.py"
 fi
 
 echo "[quick_replay] ckpt=$CKPT  template=$TEMPLATE  out=$SUB  json=$JSON"

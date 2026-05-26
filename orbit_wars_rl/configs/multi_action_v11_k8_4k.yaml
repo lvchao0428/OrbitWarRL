@@ -1,0 +1,63 @@
+# v11 K=8 no-emit EXTENDED — resume from k8_no_emit @799, run 3200 more upd.
+#
+# Total = 800 (ablation) + 3200 = 4000 upd.
+# All signals ON except R4 EMIT_LOG (root cause of spam).
+# R4 is suppressed via env var SHAPING_EMIT_LOG=0.0 at launch time.
+#
+# Launch:
+#   SHAPING_EMIT_LOG=0.0 ORBITWARS_SHAPING_EMIT_GATED=0 \
+#   ORBITWARS_SHAPING_PLANET_SHARE=0.005 \
+#   ORBITWARS_SHAPING_PROD_SHARE_DELTA=1.0 \
+#   ORBITWARS_SHAPING_RELEASE=0.05 ORBITWARS_SHAPING_RELEASE_K=20.0 \
+#   ORBITWARS_SHAPING_CAPTURE=0.02 \
+#   nohup python -m orbit_wars_rl.scripts.train \
+#     --config orbit_wars_rl/configs/multi_action_v11_k8_4k.yaml \
+#     --log-dir logs/v11_k8_no_emit_4k \
+#     --resume-from ckpt_multi_action_v11_k8_no_emit/ckpt_000799.pkl \
+#   > logs/v11_k8_no_emit_4k.log 2>&1 &
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 3200
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_k8_4k
+  ckpt_every: 200
+  log_every: 1
+  seed: 111
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00008       # lower peak for resume (avoid re-warming too aggressively)
+  lr_warmup_steps: 500
+  lr_decay_steps: 300000
+  lr_floor: 0.000005
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.002    # slightly lower entropy to let policy commit
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.002
+  ent_coef_emit: 0.002
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 0        # already past warmup; start self-play immediately
+  snapshot_every: 100
+  pool_capacity: 8
+  frozen_ratio: 0.50
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0
