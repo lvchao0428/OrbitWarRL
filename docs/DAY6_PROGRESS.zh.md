@@ -12,23 +12,25 @@
 | v11 G1 (K=16, R4 ON) | ✅ 完成 | spf **1.50** garr 7.86 flip 0.66% — FAIL |
 | v11 G2 (curriculum) | ✅ 完成 | spf **1.09** garr 9.25 flip 0.31% — FAIL，**跳过 G3** |
 | **k8_no_emit** (K=8, R4 OFF) | ✅ 800 upd + replay | spf **2.32** garr **27.45** flip 0.85% — **方向对，upd 不够** |
-| k8_full (K=8, R4 ON) | ⏳ **5090 训练中** | 对照：R4 在 K=8 下是否仍有害 |
+| k8_full (K=8, R4 ON) | ✅ 800 upd + replay | spf **1.92** garr 25.24 bin0+1 **59.5%** — **比 no_emit 更差，R4 仍有害** |
 | k16_no_emit (K=16, R4 OFF) | ⏳ ablation 队列 | 对照：只关 R4 是否足够 |
 | v20 state buffer | ✅ **已采集** | `data/v20_states_200g.npz` |
 | k8_no_emit 4k 续跑 | 🔜 GPU 空出后启动 | resume @799 → +3200 upd |
 
 ### replay 数字汇总（first-80，5 局 vs v20）
 
-| metric | v9b | G1 | G2 | **k8_no_emit** | 目标 |
-|---|---|---|---|---|---|
-| spf | 4.76 | 1.50 | 1.09 | **2.32** ↑ | > **4.76**（最低）> 10（gate） |
-| garr | 31.85 | 7.86 | 9.25 | **27.45** ↑ | > **31**（最低）> 60（gate） |
-| flip | 3.88% | 0.66% | 0.31% | **0.85%** ↑ | > **3%**（最低）> 6%（gate） |
-| bin0+bin1 | — | 62.5% | 75.6% | **52.7%** ↓ | < 40% 为佳 |
-| bin7 (100%) | — | ~5% | ~5% | **16.5%** ↑ | 接近 v20 ~26% |
-| WR | 0/5 | 0/5 | 0/5 | **0/5** | — |
+| metric | v9b | G1 | G2 | k8_no_emit | k8_full | 目标 |
+|---|---|---|---|---|---|---|
+| spf | 4.76 | 1.50 | 1.09 | **2.32** | 1.92 | > **4.76** |
+| garr | 31.85 | 7.86 | 9.25 | **27.45** | 25.24 | > **31** |
+| flip | 3.88% | 0.66% | 0.31% | 0.85% | 0.89% | > **3%** |
+| bin0+bin1 | — | 62.5% | 75.6% | **52.7%** | 59.5% | < **40%** |
+| bin7 | — | ~5% | ~5% | 16.5% | 10.3% | ~v20 26% |
+| WR | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | — |
 
-**结论**：关 R4 + K=8 有效；train spf≈220 vs replay 2.32，gap 仍大但已从 G1 的 53× 收窄。**不加 R4，续跑步数。**
+**结论**：关 R4 + K=8 有效；k8_full 更差 → **永久关 EMIT_LOG**。HTML 回放确认 early game 仍大量 1 舰 launch（pct 小 + 低 garr）。**主线：k8_no_emit 4k 续跑。**
+
+**1 舰 launch 机制**：`ships = max(1, floor(驻军 × pct))`；驻军 ~10、pct=10% → 1 舰。训练 spf≈200 因 self-play 高 garr，vs v20 early 暴露。
 
 ---
 
@@ -270,3 +272,119 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
 | Replay JSON | `logs/replay_analyze/v11_<tag>_vs_v20.json` |
 | Replay gate 一行 | `logs/replay_analyze/v11_<tag>_vs_v20.summary.txt` |
 | v20 buffer | `data/v20_states_200g.npz` |
+
+---
+
+## 6. Checklist（下班 / 次日）
+
+### 6.1 5090 上今晚可做（GPU 空出后）
+
+- [ ] **Phase A 收尾**：等 ablation 跑完 k16_no_emit（若还在跑）
+  ```bash
+  tail -f logs/v11_ablation.launcher.log
+  ```
+- [ ] **k16_no_emit replay**（若尚未跑）：
+  ```bash
+  bash scripts/quick_replay.sh \
+      ckpt_multi_action_v11_k16_no_emit/ckpt_000799.pkl v11_k16_no_emit
+  ```
+- [ ] **Phase B 启动 k8_no_emit 4k**（主线，见 §2 Phase B 完整 env var + 命令）
+- [ ] 确认 4k log 有输出：`tail -f logs/v11_k8_no_emit_4k.log`
+
+### 6.2 每条 ckpt replay gate（数字）
+
+- [ ] 跑 replay（K 自动探测 template）：
+  ```bash
+  bash scripts/quick_replay.sh <ckpt.pkl> <tag>
+  # 产出 logs/replay_analyze/<tag>_vs_v20.json
+  #       logs/replay_analyze/<tag>_vs_v20.summary.txt
+  ```
+- [ ] 对照 summary 一行阈值（§3.4）：
+  - [ ] spf > **3**（sign-of-life）/ > **4.76**（beat v9b）/ > **10**（gate）
+  - [ ] garr > **20** / > **31** / > **60**
+  - [ ] flip > **2%** / > **6%**
+  - [ ] e2+ > **5%**
+- [ ] **已有 JSON 路径**（勿用尚未存在的 4k 路径）：
+
+| tag | JSON |
+|---|---|
+| k8_no_emit | `logs/replay_analyze/v11_k8_no_emit_vs_v20.json` |
+| k8_full | `logs/replay_analyze/v11_k8_full_vs_v20.json` |
+| k16_no_emit | `logs/replay_analyze/v11_k16_no_emit_vs_v20.json` |
+| 4k 最终 | `logs/replay_analyze/v11_k8_4k_u3999_vs_v20.json`（4k 跑完后） |
+
+### 6.3 pct 分布 check（比 spf 更敏感）
+
+- [ ] **单 agent 明细**（改 `path` 即可）：
+  ```bash
+  python -c "
+  import json
+  path = 'logs/replay_analyze/v11_k8_no_emit_vs_v20.json'
+  d = json.load(open(path))
+  fb = d['aggregate_by_window']['first_80turns']['player_0']
+  vals, dist = fb['pct_bin_values'], fb['pct_bin_distribution']
+  print('=== player_0 first-80 ===')
+  for v, p in zip(vals, dist):
+      print(f'  bin@{v:.2f}: {100*p:.1f}%')
+  print(f'  bin0+bin1: {100*(dist[0]+dist[1]):.1f}%')
+  print(f'  spf={fb[\"mean_ships_per_fleet\"]:.2f}  garr={fb[\"mean_garrison_my\"]:.2f}')
+  "
+  ```
+- [ ] **ours vs v20 一行对比**：
+  ```bash
+  python -c "
+  import json
+  path = 'logs/replay_analyze/v11_k8_no_emit_vs_v20.json'  # 改 tag
+  d = json.load(open(path))
+  for tag, key in [('ours', 'player_0'), ('v20', 'player_1')]:
+      fb = d['aggregate_by_window']['first_80turns'][key]
+      dist = fb['pct_bin_distribution']
+      print(f'{tag}: bin0+1={100*(dist[0]+dist[1]):.1f}%  '
+            f'bin4-7={100*sum(dist[4:]):.1f}%  '
+            f'spf={fb[\"mean_ships_per_fleet\"]:.2f}  garr={fb[\"mean_garrison_my\"]:.2f}')
+  "
+  ```
+- [ ] pct 目标：**bin0+bin1 < 30%**（v20 ~10%）；bin4–7 占比上升
+
+| | k8_no_emit | k8_full | v20 |
+|---|---|---|---|
+| bin0+bin1 | 52.7% | 59.5% | ~9.9% |
+| spf | 2.32 | 1.92 | 17.0 |
+
+### 6.4 HTML 可视化回放（肉眼看 1 舰 spam）
+
+- [ ] export（若还没有 submission）：
+  ```bash
+  bash scripts/quick_replay.sh ckpt_.../ckpt_000799.pkl v11_k8_no_emit
+  ```
+- [ ] 生成 HTML：
+  ```bash
+  python -m orbit_wars_rl.scripts.replay_html \
+      --agent-a submission_rl_v11_k8_no_emit.py \
+      --agent-b submission_v20_0513.py \
+      --seed 0 \
+      --out-dir logs/replay_html/v11_k8_no_emit_seed0
+  ```
+- [ ] 浏览器打开 `logs/replay_html/.../replay.html`（5090 → scp 到本地）
+- [ ] 重点看 **Step 20–50**：小蓝三角带 `1` = bin0 + 低 garr
+
+### 6.5 训练途中监控（4k 跑起来后）
+
+- [ ] 最新 upd：`grep "^upd " logs/v11_k8_no_emit_4k.log | tail -1`
+- [ ] monitor_train：`python -m orbit_wars_rl.scripts.monitor_train --once logs/v11_k8_no_emit_4k.log`
+- [ ] 健康阈值（§3.2）：ev>0.7、spf>150、garr>300、clip<0.35、kl<0.10
+- [ ] **训练 spf 高 ≠ vs v20 好**；决策只看 replay
+
+### 6.6 4k 中途 / 最终 gate
+
+- [ ] @1999：`bash scripts/quick_replay.sh ckpt_multi_action_v11_k8_4k/ckpt_001999.pkl v11_k8_4k_u1999`
+- [ ] @3999：`bash scripts/quick_replay.sh ckpt_multi_action_v11_k8_4k/ckpt_003999.pkl v11_k8_4k_u3999`
+- [ ] 4k 后 pct check（改 path 为 `v11_k8_4k_u3999_vs_v20.json`）
+- [ ] 决策（§2 Phase B 表）：PROMOTE / 再加 4k / Plan B
+
+### 6.7 Plan B（4k pct 仍 bin0+1>40% 时）
+
+- [ ] buffer 已就绪：`data/v20_states_200g.npz`
+- [ ] 启动：`SHAPING_EMIT_LOG=0.0` + `multi_action_v11_buf.yaml`（§2 Phase C）
+- [ ] 800 upd 后 replay + pct check
+

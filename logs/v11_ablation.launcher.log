@@ -17,3 +17,16 @@ nohup: 忽略输入
 [ablation] tag=k16_no_emit  upd=800  cfg=orbit_wars_rl/configs/multi_action_v11_full.yaml
 [ablation] R4 EMIT_LOG=0.0 GATED=0
 ================================================================
+[ablation] k16_no_emit done in 5273s  ckpt=ckpt_multi_action_v11_k16_no_emit/ckpt_000799.pkl
+
+================================================================
+[ablation] DONE. Summary:
+ts                    tag          upd  ev    tG    e2    pkR  z0    spf_train  elapsed_s  ckpt                                               notes
+2026-05-26T07:34:47Z  k8_no_emit   799  0.99  1605  0.69  6.7  0.01  201.6      4296       ckpt_multi_action_v11_k8_no_emit/ckpt_000799.pkl   ablation
+2026-05-26T08:46:33Z  k8_full      799  0.99  1487  0.67  7.7  0.01  140.7      4306       ckpt_multi_action_v11_k8_full/ckpt_000799.pkl      ablation
+2026-05-26T10:14:26Z  k16_no_emit  799  0.99  1272  0.75  7.4  0.00  108.4      5273       ckpt_multi_action_v11_k16_no_emit/ckpt_000799.pkl  ablation
+
+Next: export each ckpt + replay vs v20 (cpu, in parallel):
+  for v in k8_no_emit k8_full k16_no_emit; do
+    bash scripts/quick_replay.sh "ckpt_multi_action_v11_${v}/$(ls -1 ckpt_multi_action_v11_${v}/ckpt_*.pkl | sort | tail -1 | xargs basename)" "v11_${v}"
+  done
