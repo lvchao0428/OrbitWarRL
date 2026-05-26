@@ -1,0 +1,7 @@
+tag=v11_g2  spf=1.09  garr=9.25  flip=0.31%  z0=1.7%  e2+=62.3%  WLD=0/5/0
+
+Day5 first-80 gate (Top10 calibrated):
+  spf  > 10    actual 1.09    FAIL
+  garr > 60    actual 9.25   FAIL
+  flip > 6%    actual 0.31%  FAIL
+  e2+  > 5%    actual 62.3% OK

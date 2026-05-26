@@ -2,3 +2,5 @@ ts	phase	tag	upd	ev	tG	e2	pkR	z0	nF	elapsed_s	ckpt	notes
 2026-05-25T18:08:20Z	1	g1_scratch	799	0.99	1363.0	0.85	10.61	0.01	60.4	5269	ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl	full-stack
 2026-05-25T18:08:35Z	2	g2_curriculum	?	?	?	?	?	?	?	15	?	full-stack
 2026-05-25T18:08:49Z	3	g3_continue	?	?	?	?	?	?	?	14	?	full-stack
+2026-05-26T04:17:42Z	2	g2_curriculum	799	0.99	1772.0	0.9	7.59	0.0	55.3	5370	ckpt_multi_action_v11_g2_curriculum/ckpt_000799.pkl	full-stack
+2026-05-26T05:46:49Z	3	g3_continue	799	1.0	1548.0	0.91	5.76	0.0	54.7	5347	ckpt_multi_action_v11_g3_continue/ckpt_000799.pkl	full-stack

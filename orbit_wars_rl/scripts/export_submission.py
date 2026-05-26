@@ -32,6 +32,7 @@ import numpy as np
 from orbit_wars_rl.inference.test_parity import run_parity
 from orbit_wars_rl.inference.weights import (
     assert_expected_keys,
+    infer_arch_from_flat,
     load_flat_params,
 )
 
@@ -86,7 +87,103 @@ def _inject(template_path: str, out_path: str, payload_b64: str) -> None:
         )
 
 
+def _read_template_dims(template_path: str) -> dict[str, int]:
+    """Parse PLANET/GLOBAL feat dims and K from submission template source."""
+    import re
+
+    txt = Path(template_path).read_text(encoding="utf-8")
+    out: dict[str, int] = {}
+    for name, pat in (
+        ("planet_feat_dim", r"^PLANET_FEAT_DIM\s*=\s*(\d+)"),
+        ("global_feat_dim", r"^GLOBAL_FEAT_DIM\s*=\s*(\d+)"),
+        ("max_fleets_per_turn", r"^MAX_FLEETS_PER_TURN\s*=\s*(\d+)"),
+    ):
+        m = re.search(pat, txt, flags=re.MULTILINE)
+        if not m:
+            raise RuntimeError(
+                f"template {template_path} missing {name} constant "
+                f"(expected line like PLANET_FEAT_DIM = 22)"
+            )
+        out[name] = int(m.group(1))
+    return out
+
+
+def _assert_template_matches_ckpt(template_path: str, arch: dict[str, int]) -> None:
+    tpl = _read_template_dims(template_path)
+    mismatches = []
+    if tpl["planet_feat_dim"] != arch["planet_feat_dim"]:
+        mismatches.append(
+            f"PLANET_FEAT_DIM template={tpl['planet_feat_dim']} "
+            f"ckpt={arch['planet_feat_dim']}"
+        )
+    if tpl["global_feat_dim"] != arch["global_feat_dim"]:
+        mismatches.append(
+            f"GLOBAL_FEAT_DIM template={tpl['global_feat_dim']} "
+            f"ckpt={arch['global_feat_dim']}"
+        )
+    if tpl["max_fleets_per_turn"] != arch["max_fleets_per_turn"]:
+        mismatches.append(
+            f"MAX_FLEETS_PER_TURN template={tpl['max_fleets_per_turn']} "
+            f"ckpt={arch['max_fleets_per_turn']}"
+        )
+    if mismatches:
+        hint = "submission_rl_v11.py" if arch["planet_feat_dim"] == 22 else "submission_rl_v4.py"
+        raise RuntimeError(
+            "template/ckpt architecture mismatch — refusing to export:\n  "
+            + "\n  ".join(mismatches)
+            + f"\n  Use --template {hint}"
+        )
+
+
+def _smoke_obs_v11() -> dict:
+    """Dummy obs with orbital motion + inbound foe fleet (v11 A1' not all zeros)."""
+    return {
+        "player": 0,
+        "planets": [
+            [0, 0, 20.0, 20.0, 1.0, 120, 3],
+            [1, -1, 80.0, 20.0, 1.0, 40, 2],
+            [2, -1, 20.0, 80.0, 1.0, 25, 2],
+            [3, 1, 80.0, 80.0, 1.0, 80, 3],
+        ],
+        # foe fleet heading toward player home (planet 0)
+        "fleets": [
+            [0, 1, 55.0, 35.0, 0.785, 0, 25],
+        ],
+        "initial_planets": [
+            [0, 0, 20.0, 20.0, 1.0, 120, 3],
+            [1, -1, 80.0, 20.0, 1.0, 40, 2],
+            [2, -1, 20.0, 80.0, 1.0, 25, 2],
+            [3, 1, 80.0, 80.0, 1.0, 80, 3],
+        ],
+        "angular_velocity": 0.04,
+    }
+
+
+def _smoke_obs_v4() -> dict:
+    return {
+        "player": 0,
+        "planets": [
+            [0, 0, 20.0, 20.0, 1.0, 30, 3],
+            [1, -1, 80.0, 20.0, 1.0, 15, 2],
+            [2, -1, 20.0, 80.0, 1.0, 15, 2],
+            [3, 1, 80.0, 80.0, 1.0, 30, 3],
+        ],
+        "fleets": [],
+        "initial_planets": [
+            [0, 0, 20.0, 20.0, 1.0, 30, 3],
+            [1, -1, 80.0, 20.0, 1.0, 15, 2],
+            [2, -1, 20.0, 80.0, 1.0, 15, 2],
+            [3, 1, 80.0, 80.0, 1.0, 30, 3],
+        ],
+        "angular_velocity": 0.04,
+    }
+
+
 def main() -> int:
+    # Parity only needs one forward pass; avoid grabbing GPU while training runs.
+    os.environ.setdefault("JAX_PLATFORMS", "cpu")
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", type=str, required=True, help="path to ckpt_XXXXXX.pkl")
     ap.add_argument(
@@ -114,14 +211,32 @@ def main() -> int:
 
     out_path = args.out or args.template
     flat = load_flat_params(args.ckpt)
-    assert_expected_keys(flat, n_layers=2)
+    arch = infer_arch_from_flat(flat)
+    assert_expected_keys(flat, n_layers=arch["n_layers"])
     print(f"[export] loaded {len(flat)} param tensors; "
           f"total floats = {sum(v.size for v in flat.values()):,}")
+    print(f"[export] arch: planet={arch['planet_feat_dim']} global={arch['global_feat_dim']} "
+          f"K={arch['max_fleets_per_turn']} d_model={arch['d_model']}")
+
+    try:
+        _assert_template_matches_ckpt(args.template, arch)
+    except RuntimeError as e:
+        print(f"[export] {e}", file=sys.stderr)
+        return 5
 
     if not args.skip_parity:
         print(f"[export] running parity test against {args.ckpt} "
               f"(tol={args.tol}, num_states={args.num_states})")
-        status = run_parity(args.ckpt, tol=args.tol, num_states=args.num_states)
+        status = run_parity(
+            args.ckpt,
+            tol=args.tol,
+            num_states=args.num_states,
+            max_fleets_per_turn=arch["max_fleets_per_turn"],
+            d_model=arch["d_model"],
+            n_layers=arch["n_layers"],
+            n_heads=arch["n_heads"],
+            ff_dim=arch["ff_dim"],
+        )
         if status != 0:
             print("[export] parity FAILED (argmax disagreement); "
                   "refusing to write submission.", file=sys.stderr)
@@ -138,8 +253,7 @@ def main() -> int:
     _inject(args.template, out_path, payload)
     print(f"[export] wrote {out_path}")
 
-    # Smoke test: import the freshly-written submission and call agent() on a
-    # dummy obs to verify it doesn't crash on import or first call.
+    # Smoke test: forward must not raise; empty moves only warn (v11 may z0 on calm obs).
     print("[export] importing and smoke-testing agent()...")
     import importlib.util as iu
     spec = iu.spec_from_file_location("_submission_rl_test", out_path)
@@ -147,43 +261,30 @@ def main() -> int:
     assert spec is not None and spec.loader is not None
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
 
-    # Smoke obs MUST include angular_velocity ~ in-distribution: training
-    # uses omega ∈ [0.025, 0.05] (env/constants.py), so 0.0 is OOD and the
-    # v4 policy (which trained with orbital motion) refuses to act on it.
-    fake_obs = {
-        "player": 0,
-        "planets": [
-            [0, 0, 20.0, 20.0, 1.0, 30, 3],
-            [1, -1, 80.0, 20.0, 1.0, 15, 2],
-            [2, -1, 20.0, 80.0, 1.0, 15, 2],
-            [3, 1, 80.0, 80.0, 1.0, 30, 3],
-        ],
-        "fleets": [],
-        "initial_planets": [
-            [0, 0, 20.0, 20.0, 1.0, 30, 3],
-            [1, -1, 80.0, 20.0, 1.0, 15, 2],
-            [2, -1, 20.0, 80.0, 1.0, 15, 2],
-            [3, 1, 80.0, 80.0, 1.0, 30, 3],
-        ],
-        "angular_velocity": 0.04,
-    }
+    fake_obs = (
+        _smoke_obs_v11() if arch["planet_feat_dim"] >= 22 else _smoke_obs_v4()
+    )
+    # Direct forward (surfaces shape bugs); agent() swallows exceptions → [].
+    try:
+        W = mod._load_weights()
+        enc = mod.encode_obs(fake_obs, player=0, step=0, episode_steps=500)
+        src, dst, pct = mod.greedy_multi_action(W, enc)
+        print(f"[export] smoke forward: {len(src)} launch(es) "
+              f"src={src[:3]} dst={dst[:3]} pct={pct[:3]}")
+    except Exception as e:
+        print(f"[export] smoke forward FAILED: {e}", file=sys.stderr)
+        return 4
+
     moves = mod.agent(fake_obs, {"episodeSteps": 500})
-    print(f"[export] smoke moves: {moves}")
+    print(f"[export] smoke agent() moves: {moves}")
     if not moves:
-        # Try with a much closer corner planet to check whether ships=30 is
-        # actually being read (older v3-style smoke test had ships=30 and
-        # always emitted; if v4 sees 30 ships and emits 0 fleets, that is
-        # a real problem, not just smoke-obs OOD).
-        print("[export] WARNING: empty smoke moves -- this might mean:")
-        print("  - v4 policy trained on orbital env doesn't act on the dummy")
-        print("    smoke obs (no fleets in flight, no enemy pressure)")
-        print("  - or there is a real train/inference mismatch.")
-        print("  - Run h2h_local against a known opponent to verify.")
+        print("[export] WARNING: agent() returned [] (forward ok — may be emit-stop on calm obs)")
+        print("  Verify with replay_analyze vs v20.")
     if not isinstance(moves, list):
         print("[export] agent() did not return a list!", file=sys.stderr)
         return 4
     for m in moves:
-        if not isinstance(m, list) or len(m) != 3:
+        if m and (not isinstance(m, list) or len(m) != 3):
             print(f"[export] agent() returned malformed move: {m}", file=sys.stderr)
             return 4
 

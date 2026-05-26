@@ -56,11 +56,11 @@ _run_phase() {
     -e "s|strong_ratio: 0.0|strong_ratio: ${strong_ratio}|" \
     "$CFG_TEMPLATE" > "$tmp_cfg"
 
-  echo ""
-  echo "================================================================"
-  echo "[v12/4P] PHASE ${phase}  tag=${tag}  upd=${UPD_PER_PHASE}  log=${log}"
-  echo "[v12/4P] resume=${resume:-<scratch>}  strong=${strong_ckpt:-none} ratio=${strong_ratio}"
-  echo "================================================================"
+  echo "" >&2
+  echo "================================================================" >&2
+  echo "[v12/4P] PHASE ${phase}  tag=${tag}  upd=${UPD_PER_PHASE}  log=${log}" >&2
+  echo "[v12/4P] resume=${resume:-<scratch>}  strong=${strong_ckpt:-none} ratio=${strong_ratio}" >&2
+  echo "================================================================" >&2
 
   local resume_arg=()
   if [ -n "$resume" ]; then
@@ -116,7 +116,11 @@ PY
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$phase" "$tag" "$upd" "$ev" "$tG" "$e2" "$pkR" "$z0" "$nF" \
     "$elapsed" "${latest:-?}" >> "$SUMMARY"
 
-  echo "[v12/4P] phase ${phase} done in ${elapsed}s  ckpt=${latest:-none}"
+  echo "[v12/4P] phase ${phase} done in ${elapsed}s  ckpt=${latest:-none}" >&2
+  if [ -z "$latest" ]; then
+    echo "[v12/4P] ERROR: no checkpoint in ${ckpt}/" >&2
+    return 1
+  fi
   echo "$latest"
 }
 

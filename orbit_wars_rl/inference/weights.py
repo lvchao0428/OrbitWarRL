@@ -65,6 +65,60 @@ def load_npz(path: str) -> Dict[str, np.ndarray]:
         return {k: np.asarray(data[k]) for k in data.files}
 
 
+def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
+    """Infer model dims from a flattened ckpt (for parity / export).
+
+    Returns d_model, n_layers, n_heads, ff_dim, planet_feat_dim, global_feat_dim,
+    max_fleets_per_turn.
+    """
+    proj_key = "encoder/planet_proj/kernel"
+    if proj_key not in flat:
+        raise ValueError(f"missing {proj_key} in ckpt; cannot infer arch")
+    planet_feat_dim = int(flat[proj_key].shape[0])
+    d_model = int(flat[proj_key].shape[-1])
+
+    glob_key = "encoder/global_proj/kernel"
+    if glob_key not in flat:
+        raise ValueError(f"missing {glob_key} in ckpt")
+    global_feat_dim = int(flat[glob_key].shape[0])
+
+    n_layers = 0
+    while f"encoder/block{n_layers}/ln1/scale" in flat:
+        n_layers += 1
+    if n_layers == 0:
+        raise ValueError("no encoder/block* found in ckpt")
+
+    qk = "encoder/block0/attn/query/kernel"
+    if qk in flat and flat[qk].ndim == 3:
+        n_heads = int(flat[qk].shape[1])
+    else:
+        n_heads = 4
+
+    fc1_key = "encoder/block0/mlp/fc1/kernel"
+    ff_dim = int(flat[fc1_key].shape[-1]) if fc1_key in flat else 128
+
+    emit_key = "emit_head/fc1/kernel"
+    if emit_key not in flat:
+        raise ValueError(f"missing {emit_key} in ckpt")
+    # emit input = global_emb + planet_pool + step_oh(K) + total_remaining(1)
+    max_fleets_per_turn = int(flat[emit_key].shape[0]) - 2 * d_model - 1
+    if max_fleets_per_turn < 1:
+        raise ValueError(
+            f"invalid max_fleets_per_turn={max_fleets_per_turn} from {emit_key} "
+            f"shape {flat[emit_key].shape} d_model={d_model}"
+        )
+
+    return {
+        "d_model": d_model,
+        "n_layers": n_layers,
+        "n_heads": n_heads,
+        "ff_dim": ff_dim,
+        "planet_feat_dim": planet_feat_dim,
+        "global_feat_dim": global_feat_dim,
+        "max_fleets_per_turn": max_fleets_per_turn,
+    }
+
+
 def assert_expected_keys(flat: Dict[str, np.ndarray], n_layers: int = 2) -> None:
     """Sanity check that ``flat`` contains every key the numpy forward needs.
 

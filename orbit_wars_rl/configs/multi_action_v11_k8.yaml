@@ -1,0 +1,52 @@
+# v11_k8 — same as v11_full but K=8 (vs K=16) to suppress emit-spam.
+#
+# Hypothesis: v11 G1 learned to spam K=16 launches/turn at ~10% pct each,
+# yielding spf=1.5 vs v20. With K=8 the policy can't trade quantity for
+# size; it should re-learn larger fleets. Pair with optional R4_OFF
+# launcher to isolate the K effect.
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_k8
+  ckpt_every: 100
+  log_every: 1
+  seed: 110
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 150000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.50
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0

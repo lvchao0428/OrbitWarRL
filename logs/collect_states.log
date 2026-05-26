@@ -1,0 +1,65 @@
+loading agent: submission_v20_0513.py
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: Successfully loaded OpenSpiel environments: 23.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_amazons
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_backgammon
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_checkers
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_chess
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_clobber
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_coin_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_connect_four
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_dark_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_gin_rummy
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_go
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_goofspiel
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hearts
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_lines_of_action
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_matching_pennies_3p
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_oshi_zumo
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_othello
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_tic_tac_toe
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_y
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_universal_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_python_repeated_pokerkit
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: OpenSpiel games skipped: 1.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    snake
+  game 1/200: +216 states | total=216 (21.1s)
+  game 11/200: +244 states | total=3292 (478.2s)
+  game 21/200: +328 states | total=6220 (797.3s)
+  game 31/200: +232 states | total=8808 (1148.0s)
+  game 41/200: +800 states | total=12410 (1574.3s)
+  game 51/200: +264 states | total=15394 (1838.5s)
+  game 61/200: +386 states | total=18284 (2061.0s)
+  game 71/200: +366 states | total=20922 (2338.4s)
+  game 81/200: +316 states | total=24010 (2746.9s)
+  game 91/200: +346 states | total=27084 (3111.7s)
+  game 101/200: +306 states | total=29878 (3387.7s)
+  game 111/200: +278 states | total=32494 (3629.8s)
+  game 121/200: +400 states | total=35492 (3925.8s)
+  game 131/200: +292 states | total=38530 (4259.0s)
+  game 141/200: +532 states | total=41592 (4642.3s)
+  game 151/200: +276 states | total=44232 (4893.7s)
+  game 161/200: +274 states | total=47074 (5177.7s)
+  game 171/200: +268 states | total=49546 (5416.0s)
+  game 181/200: +104 states | total=52186 (5727.6s)
+  game 191/200: +258 states | total=54614 (5915.5s)
+  game 200/200: +266 states | total=56888 (6150.9s)
+
+stacking 56888 states...
+  total states : 56888
+  step range   : [0, 399] mean=81.8
+    step [0,40): 16000 (28.1%)
+    step [40,80): 15378 (27.0%)
+    step [80,120): 13174 (23.2%)
+    step [120,160): 7058 (12.4%)
+    step [160,200): 2580 (4.5%)
+    step [200,239): 1166 (2.0%)
+    step [239,279): 590 (1.0%)
+    step [279,319): 402 (0.7%)
+    step [319,359): 300 (0.5%)
+    step [359,399): 240 (0.4%)
+
+writing data/v20_states_200g.npz...
+  size: 11.4 MB  |  200 games in 6152.2s

@@ -1,30 +1,45 @@
-# DAY5 进展 — 现状梳理 + Reward v3 FAST 迭代
+# DAY5 进展 — 现状梳理 + v11 失败分析 + Ablation 计划
 
-> 写于 2026-05-25，**2026-05-26 更新**。Day4 v9 ablation 已闭环；v9c/d 在 ~3200 upd 处 **手动 kill**，改走 **Reward v3 FAST（scratch）**。
-> 本文是 Day5 的**单一事实来源（status SSOT）**；战术规划见 [`DAY5_PLAN.zh.md`](DAY5_PLAN.zh.md)，操作手册见 [`FAST_ITER_RUNBOOK.md`](FAST_ITER_RUNBOOK.md)。
+> 写于 2026-05-25，**2026-05-26 多次更新**。
+> Day4 v9 ablation 已闭环；v11 全栈 G1 完成，**replay vs v20 失败（spf 1.50, garr 7.86）**；
+> Day5 主线改为 **Ablation 拆解**（K=8 / 关 R4）+ **G2 续跑**双线。
+> 战术规划见 [`DAY5_PLAN.zh.md`](DAY5_PLAN.zh.md)，操作手册见 [`FAST_ITER_RUNBOOK.md`](FAST_ITER_RUNBOOK.md)。
 
 ---
 
-## 0. TL;DR（2026-05-26 快照）
+## 0. TL;DR（2026-05-26 PM 快照）
 
 | 维度 | 状态 |
 |---|---|
-| **Day4 目标** | ✅ shaping v2 落地；✅ v9a/b 4000 upd 完成；⏸️ v9c/d @~3200 **已 kill** |
-| **shaping 在 self-play** | ✅ v9b gauntlet vs v9a **17/20**；v9c 训练 spf **30.1**（最高） |
-| **shaping vs v20** | ❌ v9b gauntlet vs v20 **0/40**；replay spf **4.76**（训练 21.2） |
-| **Day5 代码** | ✅ Reward v3（R1/R2/R3/R4）+ FAST gate + 串行 launcher **已落地** |
-| **Day5 训练** | 🔄 **v11 全栈 3 组验证**（G1→G2→G3，~4h/组） |
-| **Resume 策略** | v11 **从头训**；G2 resume G1 + C1 anchor |
+| **v11 G1 训练** | ✅ 完成 800 upd，self-play `tG=1363, e2=85%, spf=79`，`ev=0.99` |
+| **v11 G1 vs v20 replay** | ❌ **比 v9b 还差**：spf=**1.50** garr=**7.86** flip=**0.66%** |
+| **G2/G3** | 因 launcher bug 秒崩；脚本已修，可 SKIP_PHASE1=1 续跑 |
+| **失败根因** | R4 `EMIT_LOG` + K=16 → policy 学成「家里钱多 → 撒小钱」；对 v20 早期 garr 极低分布外退化为 spf=1 |
+| **Day5 主线** | ❌ 不再开新的「全栈一次堆 5 信号」实验；改为 Ablation 拆解 |
+| **下一步** | (1) G2 续跑 sanity check (2) **K=8 + 关 R4** ablation (3) 必要时上 v20 buffer curriculum |
 
-**今晚一条命令（5090 后台）：**
+**今晚两条命令（5090，可顺序也可在 G2 后开 ablation）：**
 
 ```bash
-nohup bash scripts/run_v11_validation.sh \
-  > logs/v11_validation.launcher.log 2>&1 &
-echo "pid=$!"
+# 1) G2 续跑（4h，curriculum sanity check）
+nohup env SKIP_PHASE1=1 \
+  CKPT_G1=ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl \
+  bash scripts/run_v11_validation.sh \
+  > logs/v11_g2g3.launcher.log 2>&1 &
+
+# 2) Ablation（12h，K=8 / 关 R4 三路对照；可在 G2 完后启）
+nohup bash scripts/run_v11_ablation.sh \
+  > logs/v11_ablation.launcher.log 2>&1 &
 ```
 
-看日志见 **§6.3 / §7**。
+每条 ckpt 完都用 **CPU 一键 export+replay**：
+
+```bash
+bash scripts/quick_replay.sh \
+  ckpt_multi_action_v11_<tag>/ckpt_000799.pkl  v11_<tag>
+```
+
+看 first-80 gate（spf>10, garr>60, flip>6%, e2+>5%）。
 
 ---
 

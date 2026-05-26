@@ -19,6 +19,8 @@
 # Env overrides:
 #   UPD_PER_PHASE=800   updates per group (default 800 ≈ 4h)
 #   JAX_FRAC=0.85       VRAM cap (serial)
+#   SKIP_PHASE1=1       skip G1 (G1 already done); set CKPT_G1 to g1 ckpt path
+#   CKPT_G1=...         e.g. ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl
 
 set -euo pipefail
 
@@ -66,11 +68,11 @@ _run_phase() {
     -e "s|strong_ratio: 0.0|strong_ratio: ${strong_ratio}|" \
     "$CFG_TEMPLATE" > "$tmp_cfg"
 
-  echo ""
-  echo "================================================================"
-  echo "[v11] PHASE ${phase}  tag=${tag}  upd=${UPD_PER_PHASE}  log=${log}"
-  echo "[v11] resume=${resume:-<scratch>}  strong=${strong_ckpt:-none} ratio=${strong_ratio}"
-  echo "================================================================"
+  echo "" >&2
+  echo "================================================================" >&2
+  echo "[v11] PHASE ${phase}  tag=${tag}  upd=${UPD_PER_PHASE}  log=${log}" >&2
+  echo "[v11] resume=${resume:-<scratch>}  strong=${strong_ckpt:-none} ratio=${strong_ratio}" >&2
+  echo "================================================================" >&2
 
   local resume_arg=()
   if [ -n "$resume" ]; then
@@ -127,15 +129,28 @@ PY
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$phase" "$tag" "$upd" "$ev" "$tG" "$e2" "$pkR" "$z0" "$nF" \
     "$elapsed" "${latest:-?}" >> "$SUMMARY"
 
-  echo "[v11] phase ${phase} done in ${elapsed}s  ckpt=${latest:-none}"
+  echo "[v11] phase ${phase} done in ${elapsed}s  ckpt=${latest:-none}" >&2
+  if [ -z "$latest" ]; then
+    echo "[v11] ERROR: no checkpoint in ${ckpt}/" >&2
+    return 1
+  fi
   echo "$latest"
 }
 
 echo "[v11] FULL STACK validation start  UPD_PER_PHASE=$UPD_PER_PHASE"
 echo "[v11] shaping: ${V11_ENVS[*]}"
 
-# --- Group 1: scratch foundation (~4h) ---
-CKPT_G1="$(_run_phase 1 g1_scratch "" "" 0.0)"
+CKPT_G1="${CKPT_G1:-}"
+if [ "${SKIP_PHASE1:-0}" = "1" ]; then
+  CKPT_G1="${CKPT_G1:-ckpt_multi_action_v11_g1_scratch/ckpt_000799.pkl}"
+  if [ ! -f "$CKPT_G1" ]; then
+    echo "[v11] ERROR: SKIP_PHASE1=1 but CKPT_G1 not found: $CKPT_G1" >&2
+    exit 1
+  fi
+  echo "[v11] SKIP_PHASE1: reusing $CKPT_G1"
+else
+  CKPT_G1="$(_run_phase 1 g1_scratch "" "" 0.0)"
+fi
 
 # Anchor for C1: mid-phase-1 snapshot (same arch as v11)
 STRONG="${CKPT_G1%/*}/ckpt_000399.pkl"

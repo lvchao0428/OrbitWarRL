@@ -28,11 +28,13 @@ import jax.numpy as jnp
 
 from orbit_wars_rl.env import OrbitWarsEnv, constants
 from orbit_wars_rl.env import rewards as env_rewards
+from orbit_wars_rl.env.state import EnvState
 from orbit_wars_rl.features import encode
 from orbit_wars_rl.net.model import ActorCritic
 from orbit_wars_rl.env import constants
 from orbit_wars_rl.ppo.rollout import (
     make_rollout_fn,
+    make_rollout_fn_with_buffer_reset,
     make_rollout_fn_with_frozen_opp,
 )
 from orbit_wars_rl.ppo.rollout_4p import make_rollout_fn_4p, make_rollout_fn_with_frozen_opp_4p
@@ -46,6 +48,13 @@ class SelfPlayConfig:
     """Settings for mixing frozen-opponent rollouts into training.
 
     Defaults are all-off so existing runs are unchanged unless explicitly enabled.
+
+    Buffer-reset curriculum (Plan B):
+      buffer_path        : path to .npz produced by collect_states.py;
+                           empty string = disabled.
+      buffer_reset_ratio : probability in [0, 1] that a done-reset uses a
+                           buffer state instead of a random map.  Only active
+                           when buffer_path is set and selfplay.enabled=True.
     """
     enabled: bool = False
     warmup_updates: int = 30          # updates spent vs random before any self-play
@@ -55,6 +64,9 @@ class SelfPlayConfig:
     eval_vs_frozen: bool = True       # additionally compute WR vs latest snapshot
     strong_ckpt_path: str = ""        # C1: fixed strong opponent snapshot (same arch)
     strong_ratio: float = 0.0         # fraction vs strong_ckpt (post-warmup)
+    # Plan B: v20 state-buffer curriculum
+    buffer_path: str = ""             # path to .npz from collect_states.py
+    buffer_reset_ratio: float = 0.30  # fraction of resets that use a buffer state
 
 
 @dataclass
@@ -78,6 +90,39 @@ class TrainConfig:
 
     ppo: PPOConfig = field(default_factory=PPOConfig)
     selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)
+
+
+def load_state_buffer(path: str) -> "EnvState":
+    """Load a state buffer .npz (from collect_states.py) into a batched EnvState.
+
+    Returns a batched ``EnvState`` with a leading axis of size N (buffer size).
+    All arrays are moved to JAX device arrays.
+    """
+    import numpy as np
+    data = np.load(path)
+    return EnvState(
+        planet_owner=jnp.asarray(data["planet_owner"]),
+        planet_x=jnp.asarray(data["planet_x"]),
+        planet_y=jnp.asarray(data["planet_y"]),
+        planet_radius=jnp.asarray(data["planet_radius"]),
+        planet_ships=jnp.asarray(data["planet_ships"]),
+        planet_prod=jnp.asarray(data["planet_prod"]),
+        planet_mask=jnp.asarray(data["planet_mask"]),
+        fleet_owner=jnp.asarray(data["fleet_owner"]),
+        fleet_x=jnp.asarray(data["fleet_x"]),
+        fleet_y=jnp.asarray(data["fleet_y"]),
+        fleet_angle=jnp.asarray(data["fleet_angle"]),
+        fleet_ships=jnp.asarray(data["fleet_ships"]),
+        fleet_mask=jnp.asarray(data["fleet_mask"]),
+        step=jnp.asarray(data["step"]),
+        done=jnp.zeros(data["step"].shape, dtype=jnp.bool_),
+        rng=jnp.zeros((*data["step"].shape, 2), dtype=jnp.uint32),
+        angular_velocity=jnp.asarray(data["angular_velocity"]),
+        planet_orbit_radius=jnp.asarray(data["planet_orbit_radius"]),
+        planet_orbit_phase=jnp.asarray(data["planet_orbit_phase"]),
+        planet_is_orbiting=jnp.asarray(data["planet_is_orbiting"]),
+        home_planet_idx=jnp.asarray(data["home_planet_idx"]),
+    )
 
 
 def save_checkpoint(path: str, params, opt_state, step: int) -> None:
@@ -168,6 +213,12 @@ def train(
             f"strong_ckpt={cfg.selfplay.strong_ckpt_path}",
             flush=True,
         )
+    if cfg.selfplay.enabled and cfg.selfplay.buffer_path:
+        print(
+            f"[buffer-curriculum] buffer_path={cfg.selfplay.buffer_path} "
+            f"buffer_reset_ratio={cfg.selfplay.buffer_reset_ratio}",
+            flush=True,
+        )
 
     env = OrbitWarsEnv(num_groups=cfg.num_groups, episode_steps=cfg.episode_steps)
     model = ActorCritic(
@@ -229,6 +280,7 @@ def train(
             episode_steps=cfg.episode_steps,
         )
         selfplay_rollout_fn = None
+        buffer_rollout_fn = None
         if cfg.selfplay.enabled:
             selfplay_rollout_fn = make_rollout_fn_with_frozen_opp(
                 env, model,
@@ -236,6 +288,22 @@ def train(
                 num_envs=cfg.num_envs,
                 episode_steps=cfg.episode_steps,
             )
+            if cfg.selfplay.buffer_path:
+                buf_states = load_state_buffer(cfg.selfplay.buffer_path)
+                n_buf = jax.tree_util.tree_leaves(buf_states)[0].shape[0]
+                print(
+                    f"[buffer-curriculum] loaded {n_buf} states from "
+                    f"{cfg.selfplay.buffer_path}",
+                    flush=True,
+                )
+                buffer_rollout_fn = make_rollout_fn_with_buffer_reset(
+                    env, model,
+                    rollout_length=cfg.rollout_length,
+                    num_envs=cfg.num_envs,
+                    buffer_states=buf_states,
+                    reset_prob=cfg.selfplay.buffer_reset_ratio,
+                    episode_steps=cfg.episode_steps,
+                )
 
     pool: Optional[FrozenAgentPool] = None
     if cfg.selfplay.enabled:
@@ -252,6 +320,11 @@ def train(
     sp_warmup = cfg.selfplay.warmup_updates if cfg.selfplay.enabled else cfg.num_updates + 1
     sp_frozen = float(cfg.selfplay.frozen_ratio) if cfg.selfplay.enabled else 0.0
     sp_strong = float(cfg.selfplay.strong_ratio) if cfg.selfplay.enabled else 0.0
+    sp_buffer = (
+        float(cfg.selfplay.buffer_reset_ratio)
+        if cfg.selfplay.enabled and cfg.selfplay.buffer_path
+        else 0.0
+    )
 
     strong_params = None
     if cfg.selfplay.enabled and cfg.selfplay.strong_ckpt_path:
@@ -295,6 +368,13 @@ def train(
                     params, frozen_params, states, env_rngs,
                 )
                 opp_tag = "frzn"
+            elif buffer_rollout_fn is not None and sp_buffer > 0.0:
+                # Buffer-reset: use frozen params = current params (no frozen opp).
+                # The buffer state mixing happens inside the rollout fn itself.
+                states, env_rngs, rollout = buffer_rollout_fn(
+                    params, params, states, env_rngs,
+                )
+                opp_tag = "buf"
             else:
                 states, env_rngs, rollout = rollout_fn(params, states, env_rngs)
         else:
@@ -310,6 +390,7 @@ def train(
         metrics_py["total_env_steps"] = total_env_steps
         metrics_py["opp_frozen"] = 1.0 if opp_tag == "frzn" else 0.0
         metrics_py["opp_strong"] = 1.0 if opp_tag == "strn" else 0.0
+        metrics_py["opp_buffer"] = 1.0 if opp_tag == "buf" else 0.0
         if cfg.selfplay.enabled and pool is not None:
             metrics_py["pool_size"] = float(len(pool))
 

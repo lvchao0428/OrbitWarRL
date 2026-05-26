@@ -7,7 +7,7 @@ up to ``K = constants.MAX_FLEETS_PER_TURN`` (src, dst, pct) triples along
 with a per-step ``emit_mask``. Per-step logp / entropy / value are stored
 so the PPO update can recompute ratios under the new params.
 
-Two rollout variants are exposed:
+Three rollout variants are exposed:
 
 * ``make_rollout_fn(..., opponent_fn=random_opponent_action)`` -- fixed
   opponent. ``opponent_fn`` produces a *single* legacy ``PlayerAction`` that
@@ -15,8 +15,14 @@ Two rollout variants are exposed:
 * ``make_rollout_fn_with_frozen_opp(model, ...)`` -- self-play variant where
   the opponent uses the same multi-action ``ActorCritic`` with a frozen
   parameter set.
+* ``make_rollout_fn_with_buffer_reset(model, ..., buffer_states, reset_prob)``
+  -- self-play variant that, on episode reset, replaces the freshly-generated
+  random start state with a state sampled from a pre-collected buffer with
+  probability ``reset_prob``.  This is the "v20 state-buffer curriculum"
+  (Plan B) that seeds the learner into high-value mid-game positions extracted
+  from v20 self-play.
 
-Both return jit'd closures with signature
+All return jit'd closures with signature
 ``rollout_fn(params, states, rngs[, frozen_params]) -> (states, rngs, Rollout)``.
 """
 
@@ -216,6 +222,112 @@ def make_rollout_fn(
         traj_swapped = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), trajs)
         rollout = _rollout_from_traj(traj_swapped, last_values)
         out_rngs = jax.vmap(lambda r: jax.random.fold_in(r, rollout_length + 7))(rngs)
+        return final_states, out_rngs, rollout
+
+    return jax.jit(rollout_fn)
+
+
+# ---------------------------------------------------------------------------
+# Buffer-reset rollout (Plan B: v20 state-buffer curriculum)
+# ---------------------------------------------------------------------------
+
+def make_rollout_fn_with_buffer_reset(
+    env: OrbitWarsEnv,
+    model: ActorCritic,
+    rollout_length: int,
+    num_envs: int,
+    buffer_states: EnvState,   # [N, ...] stacked states from collect_states.py
+    reset_prob: float = 0.30,  # probability of using a buffer state on episode reset
+    episode_steps: int = constants.DEFAULT_EPISODE_STEPS,
+):
+    """Self-play rollout that seeds episode resets from a pre-collected buffer.
+
+    On each episode reset (``done=True``), with probability ``reset_prob`` a
+    state is drawn uniformly from ``buffer_states`` instead of generating a
+    fresh random map.  The drawn state has ``step`` and ``done`` fields zeroed
+    so it looks like a fresh episode to the policy and value head.
+
+    The opponent is a frozen snapshot of the learner (same call-site as
+    ``make_rollout_fn_with_frozen_opp``).  Pass ``frozen_params`` equal to
+    the current ``params`` if you don't want any frozen-opp mixing.
+
+    Arguments
+    ---------
+    buffer_states : EnvState
+        A *batched* ``EnvState`` with a leading axis of size N (the buffer
+        size).  All arrays must have shape ``[N, ...]``.  Typically loaded via
+        ``load_state_buffer()``.
+    reset_prob : float
+        Probability in [0, 1] that a buffer state is used instead of a random
+        one.  ``0.0`` degrades to the standard random-reset rollout.
+        ``1.0`` means every reset draws from the buffer.
+    """
+    n_buffer = jax.tree_util.tree_leaves(buffer_states)[0].shape[0]
+
+    def _sample_buffer_state(rng: jnp.ndarray) -> EnvState:
+        """Draw one state from the buffer at random and zero out step/done."""
+        idx = jax.random.randint(rng, (), 0, n_buffer)
+        raw = jax.tree_util.tree_map(lambda x: x[idx], buffer_states)
+        return raw.replace(
+            step=jnp.int32(0),
+            done=jnp.bool_(False),
+            # Keep rng field intact; it's just entropy storage.
+        )
+
+    def _one_env_step(carry, _):
+        state, rng, params, fparams = carry
+        rng, r_act, r_opp, r_reset, r_buf_pick, r_buf_idx = jax.random.split(rng, 6)
+
+        obs0 = encode(state, 0, episode_steps)
+        obs1 = encode(state, 1, episode_steps)
+
+        sampled = model.apply(params, obs0, r_act, state.planet_ships)
+        action_0 = _sampled_to_multi(sampled)
+        opp_sampled = model.apply(fparams, obs1, r_opp, state.planet_ships)
+        action_1 = _sampled_to_multi(opp_sampled)
+
+        next_state, out = env.step(state, (action_0, action_1))
+
+        # Auto-reset logic: when done, choose between random map or buffer state.
+        fresh_random = env.reset(r_reset)
+        fresh_buffer = _sample_buffer_state(r_buf_idx)
+        use_buffer = jax.random.uniform(r_buf_pick) < jnp.float32(reset_prob)
+        fresh = jax.tree_util.tree_map(
+            lambda a, b: jnp.where(use_buffer, a, b),
+            fresh_buffer, fresh_random,
+        )
+        chosen = jax.tree_util.tree_map(
+            lambda a, b: jnp.where(out.done, a, b),
+            fresh, next_state,
+        )
+
+        per_step = _per_step_dict_from_sample(obs0, state, sampled, out)
+        return (chosen, rng, params, fparams), per_step
+
+    def _scan_one_env(state, rng, params, fparams):
+        (final_state, rng_out, _, _), traj = jax.lax.scan(
+            _one_env_step, (state, rng, params, fparams), xs=None, length=rollout_length
+        )
+        final_obs0 = encode(final_state, 0, episode_steps)
+        sampled_final = model.apply(
+            params, final_obs0,
+            jax.random.fold_in(rng_out, 1),
+            final_state.planet_ships,
+        )
+        return final_state, traj, sampled_final.value
+
+    def rollout_fn(
+        params,
+        frozen_params,
+        states: EnvState,
+        rngs: jnp.ndarray,
+    ) -> tuple[EnvState, jnp.ndarray, Rollout]:
+        final_states, trajs, last_values = jax.vmap(
+            _scan_one_env, in_axes=(0, 0, None, None)
+        )(states, rngs, params, frozen_params)
+        traj_swapped = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), trajs)
+        rollout = _rollout_from_traj(traj_swapped, last_values)
+        out_rngs = jax.vmap(lambda r: jax.random.fold_in(r, rollout_length + 13))(rngs)
         return final_states, out_rngs, rollout
 
     return jax.jit(rollout_fn)

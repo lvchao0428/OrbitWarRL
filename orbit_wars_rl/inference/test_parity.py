@@ -31,6 +31,7 @@ from orbit_wars_rl.inference.weights import (
     flatten_params,
     load_flat_params,
     assert_expected_keys,
+    infer_arch_from_flat,
 )
 from orbit_wars_rl.net.model import ActorCritic
 
@@ -43,31 +44,9 @@ def _build_state_and_obs(seed: int):
 
 
 def _infer_arch_from_flat(flat: dict) -> tuple[int, int, int]:
-    """Read d_model and n_layers from a flat-keyed weight dict.
-
-    d_model is the second axis of any encoder/* projection kernel
-    (planet_proj/kernel has shape [feat_dim, d_model]).
-    n_layers is the number of ``encoder/block{i}`` prefixes present.
-    n_heads is inferred from any attn query/kernel shape [d_model, H, head_dim]
-    """
-    proj_key = "encoder/planet_proj/kernel"
-    if proj_key not in flat:
-        raise ValueError(f"missing {proj_key} in ckpt; cannot infer d_model")
-    d_model = int(flat[proj_key].shape[-1])
-
-    n_layers = 0
-    while f"encoder/block{n_layers}/ln1/scale" in flat:
-        n_layers += 1
-    if n_layers == 0:
-        raise ValueError("no encoder/block* found in ckpt")
-
-    qk = f"encoder/block0/attn/query/kernel"
-    if qk in flat and flat[qk].ndim == 3:
-        n_heads = int(flat[qk].shape[1])
-    else:
-        n_heads = 4
-
-    return d_model, n_layers, n_heads
+    """Backward-compatible wrapper; prefer ``infer_arch_from_flat``."""
+    a = infer_arch_from_flat(flat)
+    return a["d_model"], a["n_layers"], a["n_heads"]
 
 
 def run_parity(
@@ -94,14 +73,13 @@ def run_parity(
     flat: dict | None = None
     if ckpt_path is not None:
         flat = load_flat_params(ckpt_path)
-        inf_d, inf_l, inf_h = _infer_arch_from_flat(flat)
-        if d_model is None: d_model = inf_d
-        if n_layers is None: n_layers = inf_l
-        if n_heads is None: n_heads = inf_h
-        # ff_dim has to be inferred from mlp/fc1 kernel: [d_model, ff_dim]
-        fc1_key = "encoder/block0/mlp/fc1/kernel"
-        if ff_dim is None and fc1_key in flat:
-            ff_dim = int(flat[fc1_key].shape[-1])
+        arch = infer_arch_from_flat(flat)
+        if d_model is None: d_model = arch["d_model"]
+        if n_layers is None: n_layers = arch["n_layers"]
+        if n_heads is None: n_heads = arch["n_heads"]
+        if ff_dim is None: ff_dim = arch["ff_dim"]
+        if max_fleets_per_turn == constants.MAX_FLEETS_PER_TURN:
+            max_fleets_per_turn = arch["max_fleets_per_turn"]
     # Defaults (fresh-init parity)
     if d_model is None: d_model = 64
     if n_layers is None: n_layers = 2
