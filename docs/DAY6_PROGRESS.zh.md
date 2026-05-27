@@ -1,7 +1,6 @@
 # DAY6 进展
 
-> 2026-05-26 晚更新。Day5 根因：**R4 EMIT_LOG + K=16** → self-play 多 emit 小 pct，vs v20 退化为 1 舰/launch。
-> Day6 主线：**k8_no_emit 已验证方向正确 → 续跑 4k**。Ablation 对照 + Plan B buffer 并行就绪。
+> **2026-05-27 PM 更新**。4k replay 完成：**garr/spf 升、bin0 恶化** → **Phase C Plan B buffer**（从 `ckpt_003199.pkl` 续跑）。
 
 ---
 
@@ -13,22 +12,42 @@
 | v11 G2 (curriculum) | ✅ 完成 | spf **1.09** garr 9.25 flip 0.31% — FAIL，**跳过 G3** |
 | **k8_no_emit** (K=8, R4 OFF) | ✅ 800 upd + replay | spf **2.32** garr **27.45** flip 0.85% — **方向对，upd 不够** |
 | k8_full (K=8, R4 ON) | ✅ 800 upd + replay | spf **1.92** garr 25.24 bin0+1 **59.5%** — **比 no_emit 更差，R4 仍有害** |
-| k16_no_emit (K=16, R4 OFF) | ⏳ ablation 队列 | 对照：只关 R4 是否足够 |
+| k16_no_emit (K=16, R4 OFF) | ✅ 800 upd + replay | spf **3.15** garr 26.86 bin0+1 **58.6%** — **略好于 k8，但 pct 仍差** |
 | v20 state buffer | ✅ **已采集** | `data/v20_states_200g.npz` |
-| k8_no_emit 4k 续跑 | 🔜 GPU 空出后启动 | resume @799 → +3200 upd |
+| **k8_no_emit 4k** | ✅ @3199 + replay | spf **3.43** garr **66.6** flip 1.40% bin0 **72%** — **部分进步，pct 更差** |
+| **Plan B buffer** | 🔜 下一步 | 从 4k ckpt + v20 state reset 50% |
 
 ### replay 数字汇总（first-80，5 局 vs v20）
 
-| metric | v9b | G1 | G2 | k8_no_emit | k8_full | 目标 |
+| metric | v9b | k8_no_emit | k16 | **k8_4k** | v20 | 目标 |
 |---|---|---|---|---|---|---|
-| spf | 4.76 | 1.50 | 1.09 | **2.32** | 1.92 | > **4.76** |
-| garr | 31.85 | 7.86 | 9.25 | **27.45** | 25.24 | > **31** |
-| flip | 3.88% | 0.66% | 0.31% | 0.85% | 0.89% | > **3%** |
-| bin0+bin1 | — | 62.5% | 75.6% | **52.7%** | 59.5% | < **40%** |
-| bin7 | — | ~5% | ~5% | 16.5% | 10.3% | ~v20 26% |
-| WR | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 | — |
+| spf | 4.76 | 2.32 | 3.15 | **3.43** | 18.7 | > **4.76** |
+| garr | 31.9 | 27.5 | 26.9 | **66.6** ✅ | 204.6 | > **31** |
+| flip | 3.88% | 0.85% | 0.83% | **1.40%** | 14.7% | > **3%** |
+| bin0 | — | 25.4% | 38.3% | **72.1%** ❌ | 0.7% | ↓ |
+| bin0+bin1 | — | 52.7% | 58.6% | **80.1%** ❌ | 4.4% | < **40%** |
+| emit=1/turn | — | 36% | — | **84%** ❌ | 25% | ↓ |
+| WR | — | 0/5 | 0/5 | **0/5** | 5/5 | — |
 
-**结论**：关 R4 + K=8 有效；k8_full 更差 → **永久关 EMIT_LOG**。HTML 回放确认 early game 仍大量 1 舰 launch（pct 小 + 低 garr）。**主线：k8_no_emit 4k 续跑。**
+**4k vs @800 对比（first-80）**：
+
+| | @800 | @4k | Δ | 解读 |
+|---|---|---|---|---|
+| spf | 2.32 | 3.43 | +48% | 有进步，仍远低于 v9b 4.76 |
+| garr | 27.5 | 66.6 | +142% | **过 Day5 gate (>60)** |
+| flip | 0.85% | 1.40% | +65% | 仍 fail |
+| bin0 | 25.4% | 72.1% | **+187%** | pct head **退化**，不是改善 |
+| emit=1 | 36% | 84% | +133% | vs v20 时退化为「每 turn 只发 1 次 + bin0」 |
+
+**4k 训练 vs replay 鸿沟（仍成立）**：
+
+| | 训练 @3199 | replay @3199 |
+|---|---|---|
+| spf | 190.6 | 3.43 |
+| garr | 513 | 66.6 |
+| e2+ | 78% | 14.5% (emit≥2) |
+
+**结论**：4k self-play 抬高了 garrison 水平，但 **pct 更依赖 bin0、emit 更单发**——在 vs v20 分布外比 @800 更糟。**不再续跑纯 self-play**；主线切 **Plan B buffer**（让 pct 在 v20 中期 garr 下学习）。
 
 **1 舰 launch 机制**：`ships = max(1, floor(驻军 × pct))`；驻军 ~10、pct=10% → 1 舰。训练 spf≈200 因 self-play 高 garr，vs v20 early 暴露。
 
@@ -36,42 +55,48 @@
 
 ## 2. 接下来动作（按顺序）
 
-### Phase A — 等 k8_full / k16_no_emit 跑完（ablation 自动串行，勿 kill）
+### Phase A — Ablation ✅ 已完成
+
+三路 @799 + replay 已齐，见 §1 表。**R4 永久关闭，K=8 主线不变。**
 
 ```bash
-# 看 ablation 当前阶段
-tail -f logs/v11_ablation.launcher.log
-
-# 看正在跑的 variant
-ls -lt logs/multi_action_v11_*.log | head -3
-tail -f logs/multi_action_v11_k8_full.log   # 或 k16_no_emit
+column -t -s $'\t' logs/v11_ablation_summary.tsv
+# k8_no_emit  spf_train=201.6
+# k8_full       spf_train=140.7  (更差)
+# k16_no_emit   spf_train=108.4  replay spf=3.15 (略好但 pct 仍差)
 ```
-
-**k8_full 完成后立即 replay：**
-```bash
-bash scripts/quick_replay.sh \
-    ckpt_multi_action_v11_k8_full/ckpt_000799.pkl v11_k8_full
-```
-
-**k16_no_emit 完成后：**
-```bash
-bash scripts/quick_replay.sh \
-    ckpt_multi_action_v11_k16_no_emit/ckpt_000799.pkl v11_k16_no_emit
-```
-
-**Ablation 决策（对照用，不阻塞主线）：**
-
-| 结果 | 含义 |
-|---|---|
-| k8_full spf < k8_no_emit | R4 在 K=8 仍有害 → **永久关 EMIT_LOG** |
-| k16_no_emit > k8_no_emit | K 不是主因，800 upd 不够或 pct head 问题 |
-| 三路 replay spf 均 < 4.76 | 4k 续跑仍 fail → 启动 Plan B |
 
 ---
 
-### Phase B — k8_no_emit 4k 续跑（**GPU 空出后立即启动，主线**）
+### Phase B — 4k 状态与 ckpt 排查
 
-k8_full 跑完或你主动停掉 ablation 后：
+**训练其实跑完了，不是没训。** `logs/v11_k8_no_emit_4k.log` 有完整 3200 行（upd 0→3199），今天 13:27 结束，`charlie-ultra` 上 resume 自 `k8_no_emit/ckpt_000799.pkl`。
+
+**ckpt 文件名易错**：保存用的是**本 run 的 upd 序号**（0–3199），不是全局 3999：
+
+| 文档旧写法（错） | 实际最后 ckpt |
+|---|---|
+| `ckpt_003999.pkl` | **`ckpt_003199.pkl`** |
+
+每 200 upd 存一次，应有 16 个：`ckpt_000199.pkl` … `ckpt_003199.pkl`。
+
+**5090 上若目录空，先搜全盘再决定重训：**
+
+```bash
+cd ~/project/OrbitWarRL   # 确认 cwd
+
+# 1) 目录里有什么
+ls -la ckpt_multi_action_v11_k8_4k/
+
+# 2) 是否写到了别的 cwd（相对路径 ./ckpt_...）
+find ~/project -name 'ckpt_003199.pkl' 2>/dev/null
+find ~/project -name 'ckpt_*k8_4k*' 2>/dev/null
+
+# 3) log 里应有 [ckpt] saved ...（旧 log 无此行；新 run 会有）
+grep '\[ckpt\]' logs/v11_k8_no_emit_4k.log | tail -5
+```
+
+若 `find` 也找不到 → ckpt 已丢，需**重跑 4k**（~14h）：
 
 ```bash
 ORBITWARS_SHAPING_EMIT_LOG=0.0 \
@@ -83,54 +108,60 @@ ORBITWARS_SHAPING_RELEASE_K=20.0 \
 ORBITWARS_SHAPING_CAPTURE=0.02 \
 nohup python -m orbit_wars_rl.scripts.train \
     --config orbit_wars_rl/configs/multi_action_v11_k8_4k.yaml \
-    --log-dir logs/v11_k8_no_emit_4k \
+    --log-dir logs/v11_k8_no_emit_4k_r2 \
     --resume-from ckpt_multi_action_v11_k8_no_emit/ckpt_000799.pkl \
-  > logs/v11_k8_no_emit_4k.log 2>&1 &
+  > logs/v11_k8_no_emit_4k_r2.log 2>&1 &
 echo "pid=$!"
+# 启动后确认：ls ckpt_multi_action_v11_k8_4k/ 应在 upd~200 后出现 ckpt_000199.pkl
 ```
 
-- 配置：[`multi_action_v11_k8_4k.yaml`](../orbit_wars_rl/configs/multi_action_v11_k8_4k.yaml)
-- 总量：800 + 3200 = **4000 upd**，约 **14h** @ 6100 sps
-- ckpt 每 200 upd → `ckpt_multi_action_v11_k8_4k/ckpt_XXXXXX.pkl`
+**找到 ckpt 后 replay gate：**
 
-**中途 checkpoint replay（不必等 4000 完）：**
 ```bash
-# 例如 @1199 / @1999 / @3199
+bash scripts/quick_replay.sh \
+    ckpt_multi_action_v11_k8_4k/ckpt_003199.pkl v11_k8_4k_u3199
+
+# 中途 checkpoint
 bash scripts/quick_replay.sh \
     ckpt_multi_action_v11_k8_4k/ckpt_001999.pkl v11_k8_4k_u1999
 ```
 
-**4k 完成后最终 gate：**
-```bash
-bash scripts/quick_replay.sh \
-    ckpt_multi_action_v11_k8_4k/ckpt_003999.pkl v11_k8_4k_u3999
-```
-
 | 4k replay 结果 | 动作 |
 |---|---|
-| spf > 4.76 或 garr > 31 | **PROMOTE**，可再加 4k 或上 C1 strong opp |
-| spf 3~4.76，趋势仍升 | 再加 4k 或 Plan B buffer 30% |
-| spf < 3，与 800 upd 差不多 | → Plan B |
+| spf > 4.76 或 garr > 31 | PROMOTE |
+| **实际：garr 66 ✅ spf 3.43 bin0 72%** | → **Phase C Plan B**（不再纯 self-play 续跑） |
+| spf < 3 | Plan B 或回退 @800 ckpt |
 
 ---
 
-### Phase C — Plan B（4k 仍 fail 时）
+### Phase C — Plan B buffer（**当前主线，5090 立即启动**）
 
-buffer 已就绪，直接训练：
+**动机**：4k replay 证明 self-play 只抬 garr，pct 更锁 bin0。Buffer 用 v20 中期状态 reset，在真实 garrison 下重学 pct。
 
 ```bash
-SHAPING_EMIT_LOG=0.0 \
-nohup python -m orbit_wars_rl.scripts.train \
-    --config orbit_wars_rl/configs/multi_action_v11_buf.yaml \
-    --log-dir logs/v11_buf_run1 \
-  > logs/v11_buf_run1.log 2>&1 &
+bash scripts/run_v11_plan_b.sh from4k
+# resume: ckpt_multi_action_v11_k8_4k/ckpt_003199.pkl
+# buffer: data/v20_states_200g.npz @ 50% reset
+# ~800 upd ≈ 4h
 ```
 
-800 upd 后：
+800 upd 后 replay + pct check：
+
 ```bash
 bash scripts/quick_replay.sh \
-    ckpt_multi_action_v11_buf/ckpt_000799.pkl v11_buf
+    ckpt_multi_action_v11_buf_from4k/ckpt_000799.pkl v11_buf_from4k
 ```
+
+**Plan B gate（比 spf 更看 pct）**：
+
+| 指标 | 当前 4k | Plan B 目标 |
+|---|---|---|
+| bin0 | 72% | **< 40%** |
+| bin0+bin1 | 80% | **< 30%** |
+| spf | 3.43 | > **4.76** |
+| emit=1/turn | 84% | **< 50%** |
+
+若 Plan B 800 upd 后 bin0 仍 > 50% → 提 `buffer_reset_ratio` 到 0.70 再跑 800 upd。
 
 ---
 
@@ -277,19 +308,18 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
 
 ## 6. Checklist（下班 / 次日）
 
-### 6.1 5090 上今晚可做（GPU 空出后）
+### 6.1 5090 上今晚可做
 
-- [ ] **Phase A 收尾**：等 ablation 跑完 k16_no_emit（若还在跑）
+- [x] **Phase A 收尾**：ablation 三路 + replay 已完成
+- [x] **k16_no_emit replay**：spf=3.15, bin0+1=58.6%
+- [x] **Phase B 4k 训练**：@3199 完成（log 已同步）
+- [x] **4k replay gate**：spf=3.43 garr=66.6 bin0=72% → **切 Plan B**
+- [ ] **Phase C 启动**：`bash scripts/run_v11_plan_b.sh from4k`
+- [ ] 800 upd 后 replay：`v11_buf_from4k` + pct check
+- [ ] 若 bin0+1 仍 > 40%：**Phase C Plan B**
   ```bash
-  tail -f logs/v11_ablation.launcher.log
+  bash scripts/run_v11_plan_b.sh from4k
   ```
-- [ ] **k16_no_emit replay**（若尚未跑）：
-  ```bash
-  bash scripts/quick_replay.sh \
-      ckpt_multi_action_v11_k16_no_emit/ckpt_000799.pkl v11_k16_no_emit
-  ```
-- [ ] **Phase B 启动 k8_no_emit 4k**（主线，见 §2 Phase B 完整 env var + 命令）
-- [ ] 确认 4k log 有输出：`tail -f logs/v11_k8_no_emit_4k.log`
 
 ### 6.2 每条 ckpt replay gate（数字）
 
@@ -311,7 +341,8 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
 | k8_no_emit | `logs/replay_analyze/v11_k8_no_emit_vs_v20.json` |
 | k8_full | `logs/replay_analyze/v11_k8_full_vs_v20.json` |
 | k16_no_emit | `logs/replay_analyze/v11_k16_no_emit_vs_v20.json` |
-| 4k 最终 | `logs/replay_analyze/v11_k8_4k_u3999_vs_v20.json`（4k 跑完后） |
+| 4k 最终 | `logs/replay_analyze/v11_k8_4k_u3199_vs_v20.json` |
+| Plan B | `logs/replay_analyze/v11_buf_from4k_vs_v20.json` |
 
 ### 6.3 pct 分布 check（比 spf 更敏感）
 
@@ -346,10 +377,10 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
   ```
 - [ ] pct 目标：**bin0+bin1 < 30%**（v20 ~10%）；bin4–7 占比上升
 
-| | k8_no_emit | k8_full | v20 |
-|---|---|---|---|
-| bin0+bin1 | 52.7% | 59.5% | ~9.9% |
-| spf | 2.32 | 1.92 | 17.0 |
+| | k8_no_emit | k8_full | k16_no_emit | v20 |
+|---|---|---|---|---|
+| bin0+bin1 | 52.7% | 59.5% | 58.6% | ~9.9% |
+| spf | 2.32 | 1.92 | 3.15 | 17.0 |
 
 ### 6.4 HTML 可视化回放（肉眼看 1 舰 spam）
 
@@ -378,13 +409,13 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
 ### 6.6 4k 中途 / 最终 gate
 
 - [ ] @1999：`bash scripts/quick_replay.sh ckpt_multi_action_v11_k8_4k/ckpt_001999.pkl v11_k8_4k_u1999`
-- [ ] @3999：`bash scripts/quick_replay.sh ckpt_multi_action_v11_k8_4k/ckpt_003999.pkl v11_k8_4k_u3999`
-- [ ] 4k 后 pct check（改 path 为 `v11_k8_4k_u3999_vs_v20.json`）
+- [ ] @3199：`bash scripts/quick_replay.sh ckpt_multi_action_v11_k8_4k/ckpt_003199.pkl v11_k8_4k_u3199`
+- [ ] replay 后 pct check（改 path 为 `v11_k8_4k_u3199_vs_v20.json`）
 - [ ] 决策（§2 Phase B 表）：PROMOTE / 再加 4k / Plan B
 
 ### 6.7 Plan B（4k pct 仍 bin0+1>40% 时）
 
-- [ ] buffer 已就绪：`data/v20_states_200g.npz`
-- [ ] 启动：`SHAPING_EMIT_LOG=0.0` + `multi_action_v11_buf.yaml`（§2 Phase C）
-- [ ] 800 upd 后 replay + pct check
+- [x] buffer 已就绪：`data/v20_states_200g.npz`
+- [ ] 4k replay gate 后启动：`bash scripts/run_v11_plan_b.sh from4k`
+- [ ] 800 upd 后 replay + pct check（tag `v11_buf_from4k`）
 

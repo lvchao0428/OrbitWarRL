@@ -1,0 +1,60 @@
+# v11 Plan B — resume from k8_4k @3999 + v20 state-buffer curriculum.
+#
+# Hypothesis: 4k self-play trains high-garr pct habits that fail vs v20 early
+# game (bin0+1 ~53%). Seeding 50% of episode resets from v20 mid-game states
+# exposes the policy to realistic garrison levels during training.
+#
+# Launch (5090):
+#   bash scripts/run_v11_plan_b.sh from4k
+#
+# Requires:
+#   ckpt_multi_action_v11_k8_4k/ckpt_003199.pkl  (local upd index, NOT global 3999)
+#   data/v20_states_200g.npz
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_buf_from4k
+  ckpt_every: 100
+  log_every: 1
+  seed: 221
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00006
+  lr_warmup_steps: 200
+  lr_decay_steps: 80000
+  lr_floor: 0.000005
+  clip_eps: 0.12
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.002
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.002
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 0
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.50
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0
+  buffer_path: "data/v20_states_200g.npz"
+  buffer_reset_ratio: 0.50

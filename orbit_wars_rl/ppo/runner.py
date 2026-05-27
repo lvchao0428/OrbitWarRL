@@ -462,6 +462,7 @@ def train(
         if cfg.ckpt_every > 0 and (update + 1) % cfg.ckpt_every == 0:
             ckpt_path = os.path.join(cfg.ckpt_dir, f"ckpt_{update:06d}.pkl")
             save_checkpoint(ckpt_path, params, opt_state, update)
+            print(f"[ckpt] saved {ckpt_path}", flush=True)
 
     logger.close()
     return dict(history=history, final_params=params, final_opt_state=opt_state)

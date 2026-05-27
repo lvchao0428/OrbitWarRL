@@ -1,6 +1,8 @@
 # v11 K=8 no-emit EXTENDED — resume from k8_no_emit @799, run 3200 more upd.
 #
-# Total = 800 (ablation) + 3200 = 4000 upd.
+# Total = 800 (ablation) + 3200 = 4000 upd (conceptually).
+# Checkpoint files use THIS run's update index 0..3199 (NOT global 3999):
+#   last save = ckpt_003199.pkl  (every 200 upd: 0199, 0399, ..., 3199)
 # All signals ON except R4 EMIT_LOG (root cause of spam).
 # R4 is suppressed via env var SHAPING_EMIT_LOG=0.0 at launch time.
 #
