@@ -416,6 +416,37 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
 ### 6.7 Plan B（4k pct 仍 bin0+1>40% 时）
 
 - [x] buffer 已就绪：`data/v20_states_200g.npz`
-- [ ] 4k replay gate 后启动：`bash scripts/run_v11_plan_b.sh from4k`
-- [ ] 800 upd 后 replay + pct check（tag `v11_buf_from4k`）
+- [x] buf_from4k 800 upd 完成；replay spf/garr 过线，bin0 仍 ~61%
+- [ ] **Plan B mix**（v20 + top10 平衡 buffer，仍只做 state 对齐、无 action BC）：
+
+  **5090 一次性建 buffer：**
+  ```bash
+  bash scripts/build_mixed_buffer.sh
+  # smoke: bash scripts/build_mixed_buffer.sh --smoke
+  ```
+
+  产出：
+  - `data/top10_winner_states.npz` ← top10 JSON winner 视角 + flip aug
+  - `data/mixed_v20_top10.npz` ← v20 与 top10 **等量** subsample 合并
+
+  **训练（从 buf_from4k @799 resume）：**
+  ```bash
+  bash scripts/run_v11_plan_b_mix.sh
+  tail -f logs/v11_buf_mix.log
+  ```
+
+  **800 upd 后 replay：**
+  ```bash
+  bash scripts/quick_replay.sh \
+      ckpt_multi_action_v11_buf_mix/ckpt_000799.pkl v11_buf_mix
+  ```
+
+  配置：`orbit_wars_rl/configs/multi_action_v11_buf_mix.yaml`
+  - `buffer_path: data/mixed_v20_top10.npz`
+  - `buffer_reset_ratio: 0.50`（与 buf_from4k 一致）
+  - 其余 shaping / K=8 / R4 off 同 `run_v11_plan_b.sh`
+
+  若 bin0 仍 >45%：试 `buffer_reset_ratio: 0.70` 或 `--no-balance` 全量 top10（改 merge）
+
+- [ ] 旧单源 Plan B：`bash scripts/run_v11_plan_b.sh from4k`（仅 v20 buffer，对照用）
 

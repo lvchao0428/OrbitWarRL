@@ -51,6 +51,13 @@ import numpy as np
 
 os.environ.setdefault("KAGGLE_DISABLE_COLAB_FALLBACK", "1")
 
+from orbit_wars_rl.bc.state_buffer_util import (
+    flip_owners,
+    print_buffer_stats,
+    stack_samples,
+    state_to_numpy,
+    write_npz,
+)
 from orbit_wars_rl.env import constants
 from orbit_wars_rl.parity.kaggle_bridge import kaggle_obs_to_envstate
 
@@ -72,56 +79,11 @@ def _load_agent(path: str):
 
 
 def _state_to_numpy(state) -> dict[str, np.ndarray]:
-    """Flatten one EnvState to a dict of 1-D / scalar numpy arrays."""
-    return {
-        "planet_owner":       np.asarray(state.planet_owner, dtype=np.int8),
-        "planet_x":           np.asarray(state.planet_x, dtype=np.float32),
-        "planet_y":           np.asarray(state.planet_y, dtype=np.float32),
-        "planet_radius":      np.asarray(state.planet_radius, dtype=np.float32),
-        "planet_ships":       np.asarray(state.planet_ships, dtype=np.int32),
-        "planet_prod":        np.asarray(state.planet_prod, dtype=np.int32),
-        "planet_mask":        np.asarray(state.planet_mask, dtype=bool),
-        "fleet_owner":        np.asarray(state.fleet_owner, dtype=np.int8),
-        "fleet_x":            np.asarray(state.fleet_x, dtype=np.float32),
-        "fleet_y":            np.asarray(state.fleet_y, dtype=np.float32),
-        "fleet_angle":        np.asarray(state.fleet_angle, dtype=np.float32),
-        "fleet_ships":        np.asarray(state.fleet_ships, dtype=np.int32),
-        "fleet_mask":         np.asarray(state.fleet_mask, dtype=bool),
-        "step":               np.asarray(state.step, dtype=np.int32).reshape(()),
-        "angular_velocity":   np.asarray(state.angular_velocity, dtype=np.float32).reshape(()),
-        "planet_orbit_radius":np.asarray(state.planet_orbit_radius, dtype=np.float32),
-        "planet_orbit_phase": np.asarray(state.planet_orbit_phase, dtype=np.float32),
-        "planet_is_orbiting": np.asarray(state.planet_is_orbiting, dtype=bool),
-        # home_planet_idx: bridge can't recover true home from mid-game obs;
-        # we store zeros here. The reset hook will set step=0 and done=False
-        # anyway, so shaping that uses home_planet_idx (keep_home) will use the
-        # sentinel value consistently.
-        "home_planet_idx":    np.zeros(constants.NUM_PLAYERS, dtype=np.int32),
-    }
+    return state_to_numpy(state)
 
 
 def _flip_owners(d: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-    """Return a copy of ``d`` with player 0 ↔ player 1 swapped.
-
-    Planets/fleets owned by player 0 become player 1 and vice versa. Neutral
-    (-1) and padding (-2) owners are unchanged.
-
-    This lets us treat both perspectives of a game as independent training
-    states where the learner is always player 0.
-    """
-    out = {k: v.copy() for k, v in d.items()}
-    for field in ("planet_owner", "fleet_owner"):
-        arr = out[field].copy()
-        is0 = arr == np.int8(0)
-        is1 = arr == np.int8(1)
-        arr[is0] = np.int8(1)
-        arr[is1] = np.int8(0)
-        out[field] = arr
-    # Also flip home_planet_idx: swap home[0] and home[1]
-    h = out["home_planet_idx"].copy()
-    h[0], h[1] = h[1], h[0]
-    out["home_planet_idx"] = h
-    return out
+    return flip_owners(d)
 
 
 def _collect_game(
@@ -246,21 +208,12 @@ def main() -> int:
         return 1
 
     print(f"\nstacking {len(all_samples)} states...")
-    keys = list(all_samples[0].keys())
-    stacked = {k: np.stack([s[k] for s in all_samples], axis=0) for k in keys}
+    stacked = stack_samples(all_samples)
 
-    # Report basic stats.
-    n = stacked["planet_ships"].shape[0]
-    steps = stacked["step"]
-    p0_ships = stacked["planet_ships"][stacked["planet_owner"] == 0].sum()
-    print(f"  total states : {n}")
-    print(f"  step range   : [{steps.min()}, {steps.max()}] mean={steps.mean():.1f}")
-    hist, edges = np.histogram(steps, bins=10)
-    for i, c in enumerate(hist):
-        print(f"    step [{edges[i]:.0f},{edges[i+1]:.0f}): {c} ({100*c/n:.1f}%)")
+    print_buffer_stats(stacked)
 
     print(f"\nwriting {out}...")
-    np.savez_compressed(out, **stacked)
+    write_npz(stacked, out)
     size_mb = out.stat().st_size / 1e6
     print(f"  size: {size_mb:.1f} MB  |  {n_ok} games in {time.time()-t0:.1f}s")
     return 0
