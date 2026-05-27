@@ -54,6 +54,7 @@ def _build_fresh_init_flat() -> dict[str, np.ndarray]:
     model = ActorCritic(max_fleets_per_turn=constants.MAX_FLEETS_PER_TURN)
     params = model.init(
         jax.random.PRNGKey(0), obs, jax.random.PRNGKey(1), state.planet_ships,
+        state.planet_x, state.planet_y, state.home_planet_idx[0],
     )
     return flatten_params(params)
 

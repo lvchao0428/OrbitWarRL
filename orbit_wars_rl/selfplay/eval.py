@@ -49,7 +49,11 @@ def play_vs_random(
         def _per_env(state, r_a, r_o, r_r):
             obs0 = encode(state, 0, max_episode_steps)
             obs1 = encode(state, 1, max_episode_steps)
-            sa = model.apply(params, obs0, r_a, state.planet_ships, deterministic=True)
+            sa = model.apply(
+                params, obs0, r_a, state.planet_ships,
+                state.planet_x, state.planet_y, state.home_planet_idx[0],
+                deterministic=True,
+            )
             a0 = _sampled_to_multi(sa)
             a1 = single_to_multi(random_opponent_action(r_o, obs1))
             new_state, out = env.step_and_autoreset(state, (a0, a1), r_r)
@@ -111,8 +115,16 @@ def play_vs_frozen(
         def _per_env(state, r_agent, r_opp, r_reset):
             obs0 = encode(state, 0, max_episode_steps)
             obs1 = encode(state, 1, max_episode_steps)
-            sa0 = model.apply(params, obs0, r_agent, state.planet_ships, deterministic=True)
-            sa1 = model.apply(frozen_params, obs1, r_opp, state.planet_ships, deterministic=False)
+            sa0 = model.apply(
+                params, obs0, r_agent, state.planet_ships,
+                state.planet_x, state.planet_y, state.home_planet_idx[0],
+                deterministic=True,
+            )
+            sa1 = model.apply(
+                frozen_params, obs1, r_opp, state.planet_ships,
+                state.planet_x, state.planet_y, state.home_planet_idx[1],
+                deterministic=False,
+            )
             a0 = _sampled_to_multi(sa0)
             a1 = _sampled_to_multi(sa1)
             new_state, out = env.step_and_autoreset(state, (a0, a1), r_reset)

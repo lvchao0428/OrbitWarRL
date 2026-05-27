@@ -44,7 +44,10 @@ def main():
     states = jax.vmap(env.reset)(env_rngs)
     dummy_state = jax.tree_util.tree_map(lambda x: x[0], states)
     dummy_obs = encode(dummy_state, 0, episode_steps)
-    params = model.init(rng_init, dummy_obs, jax.random.PRNGKey(0), dummy_state.planet_ships)
+    params = model.init(
+        rng_init, dummy_obs, jax.random.PRNGKey(0), dummy_state.planet_ships,
+        dummy_state.planet_x, dummy_state.planet_y, dummy_state.home_planet_idx[0],
+    )
 
     rollout_fn = make_rollout_fn(env, model, rollout_length=rollout_length, num_envs=num_envs, episode_steps=episode_steps)
     states, env_rngs, rollout = rollout_fn(params, states, env_rngs)
