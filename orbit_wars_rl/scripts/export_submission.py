@@ -105,6 +105,9 @@ def _read_template_dims(template_path: str) -> dict[str, int]:
                 f"(expected line like PLANET_FEAT_DIM = 22)"
             )
         out[name] = int(m.group(1))
+    # has_pair: True iff template defines SUN_BLOCK_THRESH (only f26+ does).
+    has_pair = re.search(r"^SUN_BLOCK_THRESH\s*=", txt, flags=re.MULTILINE) is not None
+    out["has_pair"] = 1 if has_pair else 0
     return out
 
 
@@ -126,8 +129,21 @@ def _assert_template_matches_ckpt(template_path: str, arch: dict[str, int]) -> N
             f"MAX_FLEETS_PER_TURN template={tpl['max_fleets_per_turn']} "
             f"ckpt={arch['max_fleets_per_turn']}"
         )
+    ckpt_has_pair = bool(arch.get("has_pair", False))
+    if bool(tpl["has_pair"]) != ckpt_has_pair:
+        mismatches.append(
+            f"HAS_PAIR_FEATS template={bool(tpl['has_pair'])} "
+            f"ckpt={ckpt_has_pair}"
+        )
     if mismatches:
-        hint = "submission_rl_v11.py" if arch["planet_feat_dim"] == 22 else "submission_rl_v4.py"
+        if arch["planet_feat_dim"] == 28 and ckpt_has_pair:
+            hint = "submission_rl_v11_f26.py"
+        elif arch["planet_feat_dim"] == 28:
+            hint = "submission_rl_v11_f25.py"
+        elif arch["planet_feat_dim"] == 22:
+            hint = "submission_rl_v11.py"
+        else:
+            hint = "submission_rl_v4.py"
         raise RuntimeError(
             "template/ckpt architecture mismatch — refusing to export:\n  "
             + "\n  ".join(mismatches)
@@ -268,7 +284,11 @@ def main() -> int:
     try:
         W = mod._load_weights()
         enc = mod.encode_obs(fake_obs, player=0, step=0, episode_steps=500)
-        src, dst, pct = mod.greedy_multi_action(W, enc)
+        # f26 templates accept home_idx; older templates don't.
+        try:
+            src, dst, pct = mod.greedy_multi_action(W, enc, home_idx=0)
+        except TypeError:
+            src, dst, pct = mod.greedy_multi_action(W, enc)
         print(f"[export] smoke forward: {len(src)} launch(es) "
               f"src={src[:3]} dst={dst[:3]} pct={pct[:3]}")
     except Exception as e:

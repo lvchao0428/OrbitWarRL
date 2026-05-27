@@ -7,6 +7,14 @@ from orbit_wars_rl.features.encode import (
     GLOBAL_FEAT_DIM,
     encode,
 )
+from orbit_wars_rl.features.pair import (
+    DST_PAIR_DIM,
+    EMIT_PAIR_DIM,
+    PCT_PAIR_DIM,
+    dst_pair_features_batched,
+    emit_pair_globals,
+    pct_pair_features,
+)
 
 __all__ = [
     "EncodedObs",
@@ -14,4 +22,10 @@ __all__ = [
     "FLEET_FEAT_DIM",
     "GLOBAL_FEAT_DIM",
     "encode",
+    "DST_PAIR_DIM",
+    "EMIT_PAIR_DIM",
+    "PCT_PAIR_DIM",
+    "dst_pair_features_batched",
+    "emit_pair_globals",
+    "pct_pair_features",
 ]

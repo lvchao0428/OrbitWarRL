@@ -99,6 +99,9 @@ def run_parity(
         init_obs,
         jax.random.PRNGKey(1),
         init_state.planet_ships,
+        init_state.planet_x,
+        init_state.planet_y,
+        init_state.home_planet_idx[0],
     )
 
     if ckpt_path:
@@ -138,7 +141,11 @@ def run_parity(
 
         # --- jax deterministic multi-action ---
         sa = model.apply(
-            params, obs, jax.random.PRNGKey(42), state.planet_ships, deterministic=True
+            params, obs, jax.random.PRNGKey(42),
+            state.planet_ships,
+            state.planet_x, state.planet_y,
+            state.home_planet_idx[0],
+            deterministic=True,
         )
         jax_src = np.asarray(sa.src_idx).tolist()
         jax_dst = np.asarray(sa.dst_idx).tolist()
@@ -151,6 +158,9 @@ def run_parity(
             flat, planet_feats, planet_mask, fleet_feats, fleet_mask,
             global_feats, my_planet_mask, planet_ships,
             n_layers=n_layers, max_fleets_per_turn=max_fleets_per_turn,
+            planet_x=np.asarray(state.planet_x),
+            planet_y=np.asarray(state.planet_y),
+            home_idx=int(state.home_planet_idx[0]),
         )
 
         # jax emit_mask is K-long; numpy returns only the emitted slice.

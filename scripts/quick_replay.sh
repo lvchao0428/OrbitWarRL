@@ -33,18 +33,23 @@ SUB="submission_rl_${TAG}.py"
 JSON="logs/replay_analyze/${TAG}_vs_v20.json"
 SUMMARY="logs/replay_analyze/${TAG}_vs_v20.summary.txt"
 
-# Auto-detect template from ckpt arch (planet_feat_dim and K).
+# Auto-detect template from ckpt arch (planet_feat_dim, K, and has_pair).
 ARCH_INFO=$(JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES="" "$PY" - <<PY
 from orbit_wars_rl.inference.weights import load_flat_params, infer_arch_from_flat
 a = infer_arch_from_flat(load_flat_params("$CKPT"))
-print(a["planet_feat_dim"], a["max_fleets_per_turn"])
+print(a["planet_feat_dim"], a["max_fleets_per_turn"], int(a.get("has_pair", False)))
 PY
 )
 PLANET_DIM=$(echo "$ARCH_INFO" | awk '{print $1}')
 CKPT_K=$(echo "$ARCH_INFO" | awk '{print $2}')
+HAS_PAIR=$(echo "$ARCH_INFO" | awk '{print $3}')
 
 if [ "$PLANET_DIM" = "19" ]; then
   TEMPLATE="submission_rl_v4.py"
+elif [ "$PLANET_DIM" = "28" ] && [ "$HAS_PAIR" = "1" ]; then
+  TEMPLATE="submission_rl_v11_f26.py"
+elif [ "$PLANET_DIM" = "28" ]; then
+  TEMPLATE="submission_rl_v11_f25.py"
 elif [ "$CKPT_K" = "8" ]; then
   TEMPLATE="submission_rl_v11_k8.py"
 else

@@ -14,3 +14,4 @@ ckpt_selfplay/
 .env
 *.pkl
 top10_episodes_2026-05-04/
+data/*

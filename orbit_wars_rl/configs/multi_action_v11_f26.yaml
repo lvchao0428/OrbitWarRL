@@ -1,0 +1,66 @@
+# v11_f26 — f25 features + K-loop pair head augmentations (Day7+).
+#
+# Same encoder dims as f25:
+#   planet=28, fleet=10, global=17, K=8
+# But heads now consume per-step pair features computed inside the K-loop:
+#   DstHead   += 4 (dist_src_dst, sun_risk, ships_needed, pair_flip_bin5)
+#                + hard sun_block_mask on src->dst paths crossing the sun.
+#   EmitHead  += 4 (n_feasible_pairs, best_margin, home_remain, total_remain)
+#   PctHead   += 2 (pair_needed_pct, pair_flip_bin5_pair)
+#
+# Motivation: f25 fixed bin0 (-> 9.1%) and lifted emit>=2 to 60% but the agent
+# spammed 1-ship multi-routes, fled to the sun, drained the home garrison and
+# could not capture anything (flip=0.78%, 0/5 vs v20). Diagnosis: dst/emit/pct
+# heads lack any geometric / feasibility / budget signal -- they cannot
+# distinguish "garrison capable of capture" from "1-ship suicide pass through
+# the sun". f26 injects those signals directly at each head's input.
+#
+# Strategy: train from scratch (head fc1 shapes changed). Tune entropy lower
+# than f25 since we now hand the policy a much better prior (less random
+# exploration needed). Self-play warmup + standard frozen mixing.
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_f26
+  ckpt_every: 100
+  log_every: 1
+  seed: 260
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 150000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.004
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.40
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0

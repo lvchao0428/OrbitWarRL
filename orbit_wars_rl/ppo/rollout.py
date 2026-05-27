@@ -66,6 +66,11 @@ class Rollout:
     planet_prod_raw: chex.Array   # [T, B, P] int32 -- production at turn start
     planet_owner_raw: chex.Array  # [T, B, P] int8  -- owner at turn start
 
+    # f26: positions + home idx needed for K-loop pair features.
+    planet_x_raw: chex.Array      # [T, B, P] float32
+    planet_y_raw: chex.Array      # [T, B, P] float32
+    home_idx_raw: chex.Array      # [T, B] int32 -- this player's home slot
+
     src_idx: chex.Array          # [T, B, K]
     dst_idx: chex.Array          # [T, B, K]
     pct_bin: chex.Array          # [T, B, K]
@@ -134,6 +139,10 @@ def _per_step_dict_from_sample(obs0, state, sampled, out):
         planet_ships_raw=state.planet_ships,
         planet_prod_raw=state.planet_prod,
         planet_owner_raw=state.planet_owner,
+        # f26: pair feats need geometry + home idx at turn-start.
+        planet_x_raw=state.planet_x,
+        planet_y_raw=state.planet_y,
+        home_idx_raw=state.home_planet_idx[0],
         src_idx=sampled.src_idx,
         dst_idx=sampled.dst_idx,
         pct_bin=sampled.pct_bin,
@@ -160,6 +169,9 @@ def _rollout_from_traj(traj_swapped: dict, last_values: jnp.ndarray) -> "Rollout
         planet_ships_raw=traj_swapped["planet_ships_raw"],
         planet_prod_raw=traj_swapped["planet_prod_raw"],
         planet_owner_raw=traj_swapped["planet_owner_raw"],
+        planet_x_raw=traj_swapped["planet_x_raw"],
+        planet_y_raw=traj_swapped["planet_y_raw"],
+        home_idx_raw=traj_swapped["home_idx_raw"],
         src_idx=traj_swapped["src_idx"],
         dst_idx=traj_swapped["dst_idx"],
         pct_bin=traj_swapped["pct_bin"],
@@ -193,7 +205,10 @@ def make_rollout_fn(
         obs0 = encode(state, 0, episode_steps)
         obs1 = encode(state, 1, episode_steps)
 
-        sampled = model.apply(params, obs0, r_act, state.planet_ships)
+        sampled = model.apply(
+            params, obs0, r_act, state.planet_ships,
+            state.planet_x, state.planet_y, state.home_planet_idx[0],
+        )
         action_0 = _sampled_to_multi(sampled)
         opp_single = opponent_fn(r_opp, obs1)
         action_1 = single_to_multi(opp_single)
@@ -208,7 +223,13 @@ def make_rollout_fn(
             _one_env_step, (state, rng, params), xs=None, length=rollout_length
         )
         final_obs0 = encode(final_state, 0, episode_steps)
-        sampled_final = model.apply(params, final_obs0, jax.random.fold_in(rng_out, 1), final_state.planet_ships)
+        sampled_final = model.apply(
+            params, final_obs0,
+            jax.random.fold_in(rng_out, 1),
+            final_state.planet_ships,
+            final_state.planet_x, final_state.planet_y,
+            final_state.home_planet_idx[0],
+        )
         return final_state, traj, sampled_final.value
 
     def rollout_fn(
@@ -281,9 +302,15 @@ def make_rollout_fn_with_buffer_reset(
         obs0 = encode(state, 0, episode_steps)
         obs1 = encode(state, 1, episode_steps)
 
-        sampled = model.apply(params, obs0, r_act, state.planet_ships)
+        sampled = model.apply(
+            params, obs0, r_act, state.planet_ships,
+            state.planet_x, state.planet_y, state.home_planet_idx[0],
+        )
         action_0 = _sampled_to_multi(sampled)
-        opp_sampled = model.apply(fparams, obs1, r_opp, state.planet_ships)
+        opp_sampled = model.apply(
+            fparams, obs1, r_opp, state.planet_ships,
+            state.planet_x, state.planet_y, state.home_planet_idx[1],
+        )
         action_1 = _sampled_to_multi(opp_sampled)
 
         next_state, out = env.step(state, (action_0, action_1))
@@ -313,6 +340,8 @@ def make_rollout_fn_with_buffer_reset(
             params, final_obs0,
             jax.random.fold_in(rng_out, 1),
             final_state.planet_ships,
+            final_state.planet_x, final_state.planet_y,
+            final_state.home_planet_idx[0],
         )
         return final_state, traj, sampled_final.value
 
@@ -354,9 +383,15 @@ def make_rollout_fn_with_frozen_opp(
         obs0 = encode(state, 0, episode_steps)
         obs1 = encode(state, 1, episode_steps)
 
-        sampled = model.apply(params, obs0, r_act, state.planet_ships)
+        sampled = model.apply(
+            params, obs0, r_act, state.planet_ships,
+            state.planet_x, state.planet_y, state.home_planet_idx[0],
+        )
         action_0 = _sampled_to_multi(sampled)
-        opp_sampled = model.apply(fparams, obs1, r_opp, state.planet_ships)
+        opp_sampled = model.apply(
+            fparams, obs1, r_opp, state.planet_ships,
+            state.planet_x, state.planet_y, state.home_planet_idx[1],
+        )
         action_1 = _sampled_to_multi(opp_sampled)
 
         next_state, out = env.step_and_autoreset(state, (action_0, action_1), r_reset)
@@ -369,7 +404,13 @@ def make_rollout_fn_with_frozen_opp(
             _one_env_step, (state, rng, params, fparams), xs=None, length=rollout_length
         )
         final_obs0 = encode(final_state, 0, episode_steps)
-        sampled_final = model.apply(params, final_obs0, jax.random.fold_in(rng_out, 1), final_state.planet_ships)
+        sampled_final = model.apply(
+            params, final_obs0,
+            jax.random.fold_in(rng_out, 1),
+            final_state.planet_ships,
+            final_state.planet_x, final_state.planet_y,
+            final_state.home_planet_idx[0],
+        )
         return final_state, traj, sampled_final.value
 
     def rollout_fn(

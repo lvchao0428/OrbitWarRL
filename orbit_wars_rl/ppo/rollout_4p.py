@@ -35,7 +35,10 @@ def make_rollout_fn_4p(
         rng, r_act, r1, r2, r3, r_reset = jax.random.split(rng, 6)
 
         obs0 = encode(state, 0, episode_steps)
-        sampled = model.apply(params, obs0, r_act, state.planet_ships)
+        sampled = model.apply(
+            params, obs0, r_act, state.planet_ships,
+            state.planet_x, state.planet_y, state.home_planet_idx[0],
+        )
         action_0 = _sampled_to_multi(sampled)
         action_1 = single_to_multi(opponent_fn(r1, encode(state, 1, episode_steps)))
         action_2 = single_to_multi(opponent_fn(r2, encode(state, 2, episode_steps)))
@@ -53,7 +56,10 @@ def make_rollout_fn_4p(
         )
         final_obs0 = encode(final_state, 0, episode_steps)
         sampled_final = model.apply(
-            params, final_obs0, jax.random.fold_in(rng_out, 1), final_state.planet_ships
+            params, final_obs0, jax.random.fold_in(rng_out, 1),
+            final_state.planet_ships,
+            final_state.planet_x, final_state.planet_y,
+            final_state.home_planet_idx[0],
         )
         return final_state, traj, sampled_final.value
 
@@ -87,16 +93,28 @@ def make_rollout_fn_with_frozen_opp_4p(
         rng, r_act, r1, r2, r3, r_reset = jax.random.split(rng, 6)
 
         obs0 = encode(state, 0, episode_steps)
-        sampled = model.apply(params, obs0, r_act, state.planet_ships)
+        sampled = model.apply(
+            params, obs0, r_act, state.planet_ships,
+            state.planet_x, state.planet_y, state.home_planet_idx[0],
+        )
         action_0 = _sampled_to_multi(sampled)
         action_1 = _sampled_to_multi(
-            model.apply(fparams, encode(state, 1, episode_steps), r1, state.planet_ships)
+            model.apply(
+                fparams, encode(state, 1, episode_steps), r1, state.planet_ships,
+                state.planet_x, state.planet_y, state.home_planet_idx[1],
+            )
         )
         action_2 = _sampled_to_multi(
-            model.apply(fparams, encode(state, 2, episode_steps), r2, state.planet_ships)
+            model.apply(
+                fparams, encode(state, 2, episode_steps), r2, state.planet_ships,
+                state.planet_x, state.planet_y, state.home_planet_idx[2],
+            )
         )
         action_3 = _sampled_to_multi(
-            model.apply(fparams, encode(state, 3, episode_steps), r3, state.planet_ships)
+            model.apply(
+                fparams, encode(state, 3, episode_steps), r3, state.planet_ships,
+                state.planet_x, state.planet_y, state.home_planet_idx[3],
+            )
         )
 
         next_state, out = env.step_and_autoreset(
@@ -111,7 +129,10 @@ def make_rollout_fn_with_frozen_opp_4p(
         )
         final_obs0 = encode(final_state, 0, episode_steps)
         sampled_final = model.apply(
-            params, final_obs0, jax.random.fold_in(rng_out, 1), final_state.planet_ships
+            params, final_obs0, jax.random.fold_in(rng_out, 1),
+            final_state.planet_ships,
+            final_state.planet_x, final_state.planet_y,
+            final_state.home_planet_idx[0],
         )
         return final_state, traj, sampled_final.value
 

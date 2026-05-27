@@ -238,6 +238,9 @@ def train(
         dummy_obs,
         jax.random.PRNGKey(0),
         dummy_state.planet_ships,
+        dummy_state.planet_x,
+        dummy_state.planet_y,
+        dummy_state.home_planet_idx[0],
     )
     optimizer = make_optimizer(cfg.ppo)
     opt_state = optimizer.init(params)

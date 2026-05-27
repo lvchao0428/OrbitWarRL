@@ -100,13 +100,62 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
     emit_key = "emit_head/fc1/kernel"
     if emit_key not in flat:
         raise ValueError(f"missing {emit_key} in ckpt")
-    # emit input = global_emb + planet_pool + step_oh(K) + total_remaining(1)
-    max_fleets_per_turn = int(flat[emit_key].shape[0]) - 2 * d_model - 1
-    if max_fleets_per_turn < 1:
+    emit_in = int(flat[emit_key].shape[0])
+    # emit input layouts:
+    #   legacy (pre-f26):  2*d_model + K + 1 (total_remaining_norm)
+    #   f26:               2*d_model + K + 1 + 4 (pair_feats_g)
+    # Detect by checking which interpretation yields a sensible K in [1, 16].
+    k_legacy = emit_in - 2 * d_model - 1
+    k_f26 = emit_in - 2 * d_model - 5
+    has_emit_pair = False
+    if 1 <= k_f26 <= 32:
+        max_fleets_per_turn = k_f26
+        has_emit_pair = True
+    elif 1 <= k_legacy <= 32:
+        max_fleets_per_turn = k_legacy
+    else:
         raise ValueError(
-            f"invalid max_fleets_per_turn={max_fleets_per_turn} from {emit_key} "
-            f"shape {flat[emit_key].shape} d_model={d_model}"
+            f"cannot infer max_fleets_per_turn from {emit_key} shape "
+            f"{flat[emit_key].shape} d_model={d_model} "
+            f"(legacy={k_legacy}, f26={k_f26})"
         )
+
+    # Detect dst pair feats and pct pair feats via fc1 input shape.
+    # dst_fc1 input layout:
+    #   legacy:  (d_model + 1[reserved]) + d_model  -- two parts concatenated
+    #   f26:     (d_model + 1[reserved] + 4[pair]) + d_model
+    has_dst_pair = False
+    dst_key = "dst_head/dst_fc1/kernel"
+    if dst_key in flat:
+        dst_in = int(flat[dst_key].shape[0])
+        if dst_in == 2 * d_model + 5:
+            has_dst_pair = True
+        elif dst_in == 2 * d_model + 1:
+            has_dst_pair = False
+        else:
+            raise ValueError(
+                f"unexpected dst_fc1 input dim={dst_in}; "
+                f"d_model={d_model}, expected 2*d_model+1 or 2*d_model+5"
+            )
+
+    # pct_head/fc1 input layout:
+    #   legacy: 3*d_model + 1
+    #   f26:    3*d_model + 1 + 2
+    has_pct_pair = False
+    pct_key = "pct_head/fc1/kernel"
+    if pct_key in flat:
+        pct_in = int(flat[pct_key].shape[0])
+        if pct_in == 3 * d_model + 3:
+            has_pct_pair = True
+        elif pct_in == 3 * d_model + 1:
+            has_pct_pair = False
+        else:
+            raise ValueError(
+                f"unexpected pct_head/fc1 input dim={pct_in}; "
+                f"d_model={d_model}, expected 3*d_model+1 or 3*d_model+3"
+            )
+
+    has_pair = has_emit_pair and has_dst_pair and has_pct_pair
 
     return {
         "d_model": d_model,
@@ -116,6 +165,10 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
         "planet_feat_dim": planet_feat_dim,
         "global_feat_dim": global_feat_dim,
         "max_fleets_per_turn": max_fleets_per_turn,
+        "has_pair": has_pair,
+        "has_emit_pair": has_emit_pair,
+        "has_dst_pair": has_dst_pair,
+        "has_pct_pair": has_pct_pair,
     }
 
 

@@ -160,10 +160,18 @@ def _bc_loss_and_metrics(
     loss_mask = jnp.asarray(batch["loss_mask"])
     emit_free = jnp.asarray(batch["emit_free"])
     ships_raw = jnp.asarray(batch["planet_ships_raw"])
+    # f26: pair features need geometry + home idx. BC datasets predate f26;
+    # supply zeros (pair feats degrade to dist=0, sun_risk=1, needed=1, ...)
+    # which is fine for warm-starting argmax — re-collect data once BC is
+    # in active use again.
+    px = jnp.asarray(batch.get("planet_x_raw", jnp.zeros_like(ships_raw, dtype=jnp.float32)))
+    py = jnp.asarray(batch.get("planet_y_raw", jnp.zeros_like(ships_raw, dtype=jnp.float32)))
+    leading = ships_raw.shape[:-1]
+    home = jnp.zeros(leading, dtype=jnp.int32)
 
     out = apply_fn(
         {"params": params["params"]},
-        enc, src, dst, pct, emit, ships_raw,
+        enc, src, dst, pct, emit, ships_raw, px, py, home,
         method=ActorCritic.evaluate,
     )
 
@@ -260,7 +268,11 @@ def main() -> int:
         neutral_planet_mask=jnp.asarray(train_data["neutral_planet_mask"][0]),
     )
     dummy_ships = jnp.asarray(train_data["planet_ships_raw"][0])
-    params = model.init(rng_init, dummy_enc, rng_init, dummy_ships)
+    dummy_px = jnp.zeros_like(dummy_ships, dtype=jnp.float32)
+    dummy_py = jnp.zeros_like(dummy_ships, dtype=jnp.float32)
+    dummy_home = jnp.int32(0)
+    params = model.init(rng_init, dummy_enc, rng_init, dummy_ships,
+                        dummy_px, dummy_py, dummy_home)
 
     n_params = sum(p.size for p in jax.tree_util.tree_leaves(params))
     print(f"  model params: {n_params:,}")

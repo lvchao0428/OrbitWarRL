@@ -1,0 +1,29 @@
+[reward] kaggle-aligned: terminal +1 win/+1 tie>0/-1 loss/-1 double-wipeout; is_terminal at step >= episode_steps-2; SHAPING_SCALE=0.0; v1: KEEP_HOME=0.0 FLEET_SIZE=0.0/norm20.0; v2 (expert-replay calibrated): PROD_SHARE=0.0 PLANET_SHARE=0.005 FLEET_LOG=0.0/ref500.0/floor0.3; v3 (top10-2630ep calibrated): PROD_SHARE_DELTA=1.0 EMIT_LOG=0.0 EMIT_GATED=0.0 RELEASE=0.05/K20.0 CAPTURE=0.02; episode_steps=500 (kaggle=500, mismatch=False)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 66, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 56, in main
+    result = train(train_cfg, log_dir=log_dir, resume_from=args.resume_from)
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/runner.py", line 386, in train
+    params, opt_state, metrics = train_step(params, opt_state, rollout, r_step)
+                                 ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py", line 424, in train_step
+    flat_rollout, advs_f, rets_f = _flatten_rollout(rollout, advs, rets)
+                                   ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py", line 336, in _flatten_rollout
+    flat_rollout = Rollout(
+        obs_planet_feats=f(rollout.obs_planet_feats),
+    ...<20 lines>...
+        last_value=rollout.last_value,
+    )
+  File "/home/charlie/anaconda3/lib/python3.13/site-packages/chex/_src/dataclass.py", line 250, in _init
+    return orig_init(self, *args, **kwargs)
+  File "/home/charlie/anaconda3/lib/python3.13/site-packages/chex/_src/dataclass.py", line 77, in new_init
+    orig_init(self, **valid_kwargs)
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Rollout.__init__() missing 3 required positional arguments: 'planet_x_raw', 'planet_y_raw', and 'home_idx_raw'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.

@@ -80,11 +80,20 @@ class DstHead(nn.Module):
         my_planet_mask: jnp.ndarray,
         src_idx: jnp.ndarray | None = None,
         reserved_norm: jnp.ndarray | None = None,
+        pair_feats: jnp.ndarray | None = None,
+        sun_block_mask: jnp.ndarray | None = None,
     ) -> jnp.ndarray:
         """v7: ``reserved_norm`` (per-planet reserved ship ratio, same leading
         dims as planet_emb but no embedding axis) is appended so that the head
         can avoid sending the next fleet to a target that is already saturated
         with our incoming ships.
+
+        f26: ``pair_feats`` (..., P, 4) appended to planet rows
+        (dist_src_dst, sun_risk, ships_needed, pair_flip_bin5). When
+        ``sun_block_mask`` (..., P) is provided, dst whose src->dst path
+        crosses the sun guard are hard-masked to ``-inf`` logits *unless*
+        every candidate is blocked (fallback to standard mask). That
+        prevents catastrophic empty-action turns near the sun.
         """
         del my_planet_mask  # kept for backward-compatible call sites
         is_batched = planet_emb.ndim == 3
@@ -96,6 +105,10 @@ class DstHead(nn.Module):
                 src_idx = src_idx[None, ...] if src_idx.ndim == 0 else src_idx
             if reserved_norm is not None:
                 reserved_norm = reserved_norm[None, ...]
+            if pair_feats is not None:
+                pair_feats = pair_feats[None, ...]
+            if sun_block_mask is not None:
+                sun_block_mask = sun_block_mask[None, ...]
 
         q = src_emb[:, None, :]
         attn_mask = planet_mask[:, None, None, :]
@@ -107,11 +120,14 @@ class DstHead(nn.Module):
         )(q, planet_emb, mask=attn_mask)
         cond = attended[:, 0, :]
 
-        # planet rows: include reserved_norm as an extra scalar feature
+        # planet rows: include reserved_norm + pair_feats as extra scalars
+        extras = []
         if reserved_norm is not None:
-            planet_rows = jnp.concatenate(
-                [planet_emb, reserved_norm[..., None]], axis=-1
-            )
+            extras.append(reserved_norm[..., None])
+        if pair_feats is not None:
+            extras.append(pair_feats)
+        if extras:
+            planet_rows = jnp.concatenate([planet_emb] + extras, axis=-1)
         else:
             planet_rows = planet_emb
         joined = jnp.concatenate(
@@ -128,6 +144,13 @@ class DstHead(nn.Module):
             P = planet_emb.shape[1]
             src_one_hot = jax.nn.one_hot(src_idx, P, dtype=jnp.bool_)  # (B, P)
             eff_mask = planet_mask & jnp.logical_not(src_one_hot)
+        # Apply sun-block mask if any non-blocked candidate exists; otherwise
+        # fall back to the standard mask so the head still produces a valid
+        # categorical (downstream code may still skip via emit head).
+        if sun_block_mask is not None:
+            allowed_after_sun = eff_mask & jnp.logical_not(sun_block_mask)
+            any_allowed = allowed_after_sun.any(axis=-1, keepdims=True)
+            eff_mask = jnp.where(any_allowed, allowed_after_sun, eff_mask)
         logits = _mask_logits(logits, eff_mask)
         if not is_batched:
             logits = jnp.squeeze(logits, axis=0)
@@ -147,13 +170,21 @@ class PctHead(nn.Module):
         dst_emb: jnp.ndarray,
         global_emb: jnp.ndarray,
         src_remaining_norm: jnp.ndarray | None = None,
+        pair_feats: jnp.ndarray | None = None,
     ) -> jnp.ndarray:
         """v7: ``src_remaining_norm`` is a scalar = log1p(remaining_at_src)/8
         so the pct head knows how many ships are available right now.
+
+        f26: ``pair_feats`` (..., 2) =
+            [pair_needed_pct = (garr_dst+1)/remaining_src,
+             pair_flip_bin5 = float(floor(rem*0.7) > garr_dst)]
+        explicit pair signal so pct head learns "send big" when rem is low.
         """
         feats = [src_emb, dst_emb, global_emb]
         if src_remaining_norm is not None:
             feats.append(src_remaining_norm[..., None])
+        if pair_feats is not None:
+            feats.append(pair_feats)
         x = jnp.concatenate(feats, axis=-1)
         x = nn.Dense(self.hidden, name="fc1")(x)
         x = nn.gelu(x)
@@ -189,17 +220,25 @@ class EmitHead(nn.Module):
         planet_pool: jnp.ndarray,
         step_idx: jnp.ndarray,
         total_remaining_norm: jnp.ndarray | None = None,
+        pair_feats_g: jnp.ndarray | None = None,
     ) -> jnp.ndarray:
         """v7: ``total_remaining_norm`` (scalar) = log1p(sum of remaining ships
         across my planets) / 8.  Tells the emit head how much firepower we
         still have available this turn -- prevents the policy from emitting
         a 6th fleet when the source planet is already empty.
+
+        f26: ``pair_feats_g`` (..., 4) per-step global pair signals:
+            [n_feasible_pairs_norm, best_pair_margin_norm,
+             home_remain_ratio, total_remain_ratio]
+        directly answers "should I emit one more fleet from this state?".
         """
         step_oh = jax.nn.one_hot(step_idx, self.max_steps, dtype=global_emb.dtype)
         step_oh = jnp.broadcast_to(step_oh, global_emb.shape[:-1] + (self.max_steps,))
         feats = [global_emb, planet_pool, step_oh]
         if total_remaining_norm is not None:
             feats.append(total_remaining_norm[..., None])
+        if pair_feats_g is not None:
+            feats.append(pair_feats_g)
         x = jnp.concatenate(feats, axis=-1)
         x = nn.Dense(self.hidden, name="fc1")(x)
         x = nn.gelu(x)
