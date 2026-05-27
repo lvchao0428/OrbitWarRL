@@ -1,0 +1,64 @@
+# v11_f25 — Feature-engineering iteration.
+#
+# Planet features: 22 -> 28
+#   +flip_cost_ratio, +friendly_surplus, +capturable_bin3 (avg-stack signals)
+#   +needed_pct_norm, +capturable_bin5, +weak_target_score (max-stack + multi-route)
+# Fleet  features: 8  -> 10  (+target_dist_norm, +target_garrison_norm)
+# Global features: 14 -> 17  (+max_garr_norm, +n_weak_targets_norm,
+#                             +ships_to_capture_all_weak_norm)
+#
+# Motivation: buf_mix (u299/u499) showed bin0 @ 57-60% and no sign of recovery
+# despite parameter tuning.  Root cause: pct head and emit head lack direct
+# inductive signals about:
+#   (a) ships needed relative to MY capacity (drives big-fleet pct selection)
+#   (b) how many soft enemy targets exist (drives multi-route emit decisions)
+# The 8 new features encode both directly.
+#
+# Strategy: train from scratch (new arch dims) with pure self-play for 800 upd;
+# then optionally resume with mixed buffer if bin0 looks healthy.
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_f25
+  ckpt_every: 100
+  log_every: 1
+  seed: 250
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 150000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.006
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.40
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0

@@ -1,5 +1,9 @@
 # Orbit Wars JAX Transformer-RL 完整流程说明
 
+> **注意**：本文档写于 MVP 阶段（单动作、12-dim planet 特征），**部分内容已过时**。  
+> 当前 canonical 综述（多动作 K=8、28/10/17 特征、v11_f25 方案、架构图）：**[`OVERVIEW.zh.md`](OVERVIEW.zh.md)**。  
+> 最新策略进展：**[`DAY7_PROGRESS.zh.md`](DAY7_PROGRESS.zh.md)**。
+
 本文档说明本仓库 `orbit_wars_rl/` 下的 **端到端强化学习管线**：从 JAX 环境、实体 Transformer 策略网络、PPO 训练，到评估与上云扩展。面向已跑通 `smoke_test`、准备正式训练或上 GPU 的场景。
 
 相关文件：

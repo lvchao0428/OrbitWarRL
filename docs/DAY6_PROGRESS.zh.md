@@ -1,6 +1,7 @@
 # DAY6 进展
 
-> **2026-05-27 PM 更新**。4k replay 完成：**garr/spf 升、bin0 恶化** → **Phase C Plan B buffer**（从 `ckpt_003199.pkl` 续跑）。
+> **2026-05-27 21:30 更新**（Phase C 训练见 [`DAY7_PROGRESS.zh.md`](DAY7_PROGRESS.zh.md)）。Ablation + 4k + buf_from4k 完成；mix 训练 21:40 启动。  
+> 项目综述：[`OVERVIEW.zh.md`](OVERVIEW.zh.md)
 
 ---
 
@@ -15,17 +16,18 @@
 | k16_no_emit (K=16, R4 OFF) | ✅ 800 upd + replay | spf **3.15** garr 26.86 bin0+1 **58.6%** — **略好于 k8，但 pct 仍差** |
 | v20 state buffer | ✅ **已采集** | `data/v20_states_200g.npz` |
 | **k8_no_emit 4k** | ✅ @3199 + replay | spf **3.43** garr **66.6** flip 1.40% bin0 **72%** — **部分进步，pct 更差** |
-| **Plan B buffer** | 🔜 下一步 | 从 4k ckpt + v20 state reset 50% |
+| **buf_from4k** | ✅ @799 + replay | spf **10.73** garr **107.5** flip 1.90% bin0 **61%** — **spf/garr ✅，pct 仍 fail** |
+| **Plan B mix** | → **DAY7** | buffer ✅；训练 21:40 启动，见 [`DAY7_PROGRESS.zh.md`](DAY7_PROGRESS.zh.md) |
 
 ### replay 数字汇总（first-80，5 局 vs v20）
 
-| metric | v9b | k8_no_emit | k16 | **k8_4k** | v20 | 目标 |
-|---|---|---|---|---|---|---|
-| spf | 4.76 | 2.32 | 3.15 | **3.43** | 18.7 | > **4.76** |
-| garr | 31.9 | 27.5 | 26.9 | **66.6** ✅ | 204.6 | > **31** |
-| flip | 3.88% | 0.85% | 0.83% | **1.40%** | 14.7% | > **3%** |
-| bin0 | — | 25.4% | 38.3% | **72.1%** ❌ | 0.7% | ↓ |
-| bin0+bin1 | — | 52.7% | 58.6% | **80.1%** ❌ | 4.4% | < **40%** |
+| metric | v9b | k8_no_emit | k16 | **k8_4k** | **buf_from4k** | v20 | 目标 |
+|---|---|---|---|---|---|---|---|
+| spf | 4.76 | 2.32 | 3.15 | **3.43** | **10.73** ✅ | 18.7 | > **4.76** |
+| garr | 31.9 | 27.5 | 26.9 | **66.6** ✅ | **107.5** ✅ | 204.6 | > **31** |
+| flip | 3.88% | 0.85% | 0.83% | **1.40%** | **1.90%** | 14.7% | > **3%** |
+| bin0 | — | 25.4% | 38.3% | **72.1%** ❌ | **61.0%** ❌ | 0.7% | ↓ |
+| bin0+bin1 | — | 52.7% | 58.6% | **80.1%** ❌ | **68.0%** ❌ | 4.4% | < **40%** |
 | emit=1/turn | — | 36% | — | **84%** ❌ | 25% | ↓ |
 | WR | — | 0/5 | 0/5 | **0/5** | 5/5 | — |
 
@@ -47,7 +49,38 @@
 | garr | 513 | 66.6 |
 | e2+ | 78% | 14.5% (emit≥2) |
 
-**结论**：4k self-play 抬高了 garrison 水平，但 **pct 更依赖 bin0、emit 更单发**——在 vs v20 分布外比 @800 更糟。**不再续跑纯 self-play**；主线切 **Plan B buffer**（让 pct 在 v20 中期 garr 下学习）。
+**buf_from4k vs 4k（first-80）**：
+
+| | @3199 4k | @799 buf_from4k | Δ | 解读 |
+|---|---|---|---|---|
+| spf | 3.43 | 10.73 | +213% | **过 v9b 4.76 gate** |
+| garr | 66.6 | 107.5 | +61% | 过 Day5 gate |
+| flip | 1.40% | 1.90% | +36% | 仍 fail |
+| bin0 | 72.1% | 61.0% | -11pp | 有改善但 **仍远高于 v20** |
+| bin0+bin1 | 80.1% | 68.0% | -12pp | v20-only buffer **不够** |
+
+**结论**：v20-only Plan B 抬 spf/garr 有效，但 pct 仍锁 bin0。**下一迭代 = Plan B mix**（top10 winner 状态 + 更高 buffer 占比）。
+
+### buffer 中间产物误删（2026-05-27 晚）
+
+本地 `rsync --delete` 同步时，远端-only 的 npz 被删掉（本地没有、ckpt 不受影响）：
+
+| 文件 | 状态 | 恢复方式 |
+|---|---|---|
+| `data/top10_winner_states.npz` | ❌ 已删 | 重建 |
+| `data/mixed_v20_top10.npz` | ❌ 已删 | 重建 |
+| `data/v20_states_200g.npz` | ✅ 仍在 | — |
+| `top10_episodes_2026-05-04/`（2631 JSON） | ✅ 仍在 | — |
+| `ckpt_*`（4k / buf_from4k @799） | ✅ 仍在 | sync 已 exclude |
+
+**已修复**：`sync_mirror_ultrapp.sh` 增加 `--exclude "data/*.npz"`，后续 sync 不再删 buffer。
+
+**5090 当前（21:30）**：`bash scripts/build_mixed_buffer.sh` 已跑起，扫 2631 局 JSON → merge。**不要与 GPU 训练并行**（collect 会占内存；训 mix 等 buffer 完成后再开）。
+
+```bash
+tail -f logs/build_mixed_buffer.log
+ls -lh data/top10_winner_states.npz data/mixed_v20_top10.npz   # 两个都出现 = 可训
+```
 
 **1 舰 launch 机制**：`ships = max(1, floor(驻军 × pct))`；驻军 ~10、pct=10% → 1 舰。训练 spf≈200 因 self-play 高 garr，vs v20 early 暴露。
 
@@ -134,34 +167,18 @@ bash scripts/quick_replay.sh \
 
 ---
 
-### Phase C — Plan B buffer（**当前主线，5090 立即启动**）
+### Phase C — Plan B mix → **见 [`DAY7_PROGRESS.zh.md`](DAY7_PROGRESS.zh.md)**
 
-**动机**：4k replay 证明 self-play 只抬 garr，pct 更锁 bin0。Buffer 用 v20 中期状态 reset，在真实 garrison 下重学 pct。
+buffer 已重建（`mixed_v20_top10.npz`，113776 states）；`run_v11_plan_b_mix.sh` 于 5090 ~21:40 启动。后续监控 / replay gate / 决策分支均在 DAY7 文档。
+
+---
+
+### Phase C-old — Plan B v20-only（对照，已完成）
 
 ```bash
 bash scripts/run_v11_plan_b.sh from4k
-# resume: ckpt_multi_action_v11_k8_4k/ckpt_003199.pkl
-# buffer: data/v20_states_200g.npz @ 50% reset
-# ~800 upd ≈ 4h
+# 结果：spf/garr ✅，bin0 61% fail → 不再续跑
 ```
-
-800 upd 后 replay + pct check：
-
-```bash
-bash scripts/quick_replay.sh \
-    ckpt_multi_action_v11_buf_from4k/ckpt_000799.pkl v11_buf_from4k
-```
-
-**Plan B gate（比 spf 更看 pct）**：
-
-| 指标 | 当前 4k | Plan B 目标 |
-|---|---|---|
-| bin0 | 72% | **< 40%** |
-| bin0+bin1 | 80% | **< 30%** |
-| spf | 3.43 | > **4.76** |
-| emit=1/turn | 84% | **< 50%** |
-
-若 Plan B 800 upd 后 bin0 仍 > 50% → 提 `buffer_reset_ratio` 到 0.70 再跑 800 upd。
 
 ---
 
@@ -303,6 +320,8 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
 | Replay JSON | `logs/replay_analyze/v11_<tag>_vs_v20.json` |
 | Replay gate 一行 | `logs/replay_analyze/v11_<tag>_vs_v20.summary.txt` |
 | v20 buffer | `data/v20_states_200g.npz` |
+| **buffer 重建** | `logs/build_mixed_buffer.log` |
+| **Plan B mix 训练** | `logs/v11_buf_mix.log` |
 
 ---
 
@@ -314,12 +333,9 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
 - [x] **k16_no_emit replay**：spf=3.15, bin0+1=58.6%
 - [x] **Phase B 4k 训练**：@3199 完成（log 已同步）
 - [x] **4k replay gate**：spf=3.43 garr=66.6 bin0=72% → **切 Plan B**
-- [ ] **Phase C 启动**：`bash scripts/run_v11_plan_b.sh from4k`
-- [ ] 800 upd 后 replay：`v11_buf_from4k` + pct check
-- [ ] 若 bin0+1 仍 > 40%：**Phase C Plan B**
-  ```bash
-  bash scripts/run_v11_plan_b.sh from4k
-  ```
+- [x] **buf_from4k**：800 upd + replay spf=10.73 garr=107.5 bin0=61% → **切 mix**
+- [x] **mixed buffer 重建** → 见 DAY7
+- [x] **Plan B mix 已启动** → 见 [`DAY7_PROGRESS.zh.md`](DAY7_PROGRESS.zh.md)
 
 ### 6.2 每条 ckpt replay gate（数字）
 
@@ -342,7 +358,8 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
 | k8_full | `logs/replay_analyze/v11_k8_full_vs_v20.json` |
 | k16_no_emit | `logs/replay_analyze/v11_k16_no_emit_vs_v20.json` |
 | 4k 最终 | `logs/replay_analyze/v11_k8_4k_u3199_vs_v20.json` |
-| Plan B | `logs/replay_analyze/v11_buf_from4k_vs_v20.json` |
+| buf_from4k | `logs/replay_analyze/v11_buf_from4k_vs_v20.json` |
+| Plan B mix | `logs/replay_analyze/v11_buf_mix_vs_v20.json` |
 
 ### 6.3 pct 分布 check（比 spf 更敏感）
 
@@ -413,40 +430,8 @@ column -t -s $'\t' logs/v11_ablation_summary.tsv
 - [ ] replay 后 pct check（改 path 为 `v11_k8_4k_u3199_vs_v20.json`）
 - [ ] 决策（§2 Phase B 表）：PROMOTE / 再加 4k / Plan B
 
-### 6.7 Plan B（4k pct 仍 bin0+1>40% 时）
+### 6.7 Plan B mix → **见 [`DAY7_PROGRESS.zh.md`](DAY7_PROGRESS.zh.md)**
 
-- [x] buffer 已就绪：`data/v20_states_200g.npz`
-- [x] buf_from4k 800 upd 完成；replay spf/garr 过线，bin0 仍 ~61%
-- [ ] **Plan B mix**（v20 + top10 平衡 buffer，仍只做 state 对齐、无 action BC）：
-
-  **5090 一次性建 buffer：**
-  ```bash
-  bash scripts/build_mixed_buffer.sh
-  # smoke: bash scripts/build_mixed_buffer.sh --smoke
-  ```
-
-  产出：
-  - `data/top10_winner_states.npz` ← top10 JSON winner 视角 + flip aug
-  - `data/mixed_v20_top10.npz` ← v20 与 top10 **等量** subsample 合并
-
-  **训练（从 buf_from4k @799 resume）：**
-  ```bash
-  bash scripts/run_v11_plan_b_mix.sh
-  tail -f logs/v11_buf_mix.log
-  ```
-
-  **800 upd 后 replay：**
-  ```bash
-  bash scripts/quick_replay.sh \
-      ckpt_multi_action_v11_buf_mix/ckpt_000799.pkl v11_buf_mix
-  ```
-
-  配置：`orbit_wars_rl/configs/multi_action_v11_buf_mix.yaml`
-  - `buffer_path: data/mixed_v20_top10.npz`
-  - `buffer_reset_ratio: 0.50`（与 buf_from4k 一致）
-  - 其余 shaping / K=8 / R4 off 同 `run_v11_plan_b.sh`
-
-  若 bin0 仍 >45%：试 `buffer_reset_ratio: 0.70` 或 `--no-balance` 全量 top10（改 merge）
-
-- [ ] 旧单源 Plan B：`bash scripts/run_v11_plan_b.sh from4k`（仅 v20 buffer，对照用）
+- [x] buffer 重建 + mix 训练已启动（5090 ~21:40）
+- [ ] replay / 决策：DAY7 §2 Step 3–4
 

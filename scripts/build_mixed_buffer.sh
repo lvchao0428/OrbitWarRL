@@ -14,8 +14,30 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-PY="${PYTHON:-python}"
-TOP10_DIR="${TOP10_DIR:-episodes}"
+# Prefer conda on 5090 (non-interactive ssh has no `python` on PATH).
+if [ -z "${PYTHON:-}" ]; then
+  if command -v python >/dev/null 2>&1; then
+    PY=python
+  elif [ -x /home/charlie/anaconda3/bin/python ]; then
+    PY=/home/charlie/anaconda3/bin/python
+  else
+    PY=python3
+  fi
+else
+  PY="$PYTHON"
+fi
+
+TOP10_DIR="${TOP10_DIR:-}"
+if [ -z "$TOP10_DIR" ]; then
+  for candidate in \
+      top10_episodes_2026-05-04/episodes/episodes \
+      episodes/episodes; do
+    if [ -d "$candidate" ]; then
+      TOP10_DIR="$candidate"
+      break
+    fi
+  done
+fi
 V20_NPZ="${V20_NPZ:-data/v20_states_200g.npz}"
 TOP10_NPZ="${TOP10_NPZ:-data/top10_winner_states.npz}"
 MIXED_NPZ="${MIXED_NPZ:-data/mixed_v20_top10.npz}"
@@ -33,11 +55,13 @@ for arg in "$@"; do
   esac
 done
 
-if [ ! -d "$TOP10_DIR" ]; then
-  echo "[build_mixed_buffer] ERROR: TOP10_DIR not found: $TOP10_DIR" >&2
-  echo "  Set TOP10_DIR or download dataset first." >&2
+if [ -z "$TOP10_DIR" ] || [ ! -d "$TOP10_DIR" ]; then
+  echo "[build_mixed_buffer] ERROR: top10 replay dir not found." >&2
+  echo "  Download: python download_top10_episodes_2026-05-04.py" >&2
+  echo "  Or set TOP10_DIR=top10_episodes_2026-05-04/episodes/episodes" >&2
   exit 1
 fi
+echo "[build_mixed_buffer] TOP10_DIR=$TOP10_DIR"
 
 if [ ! -f "$V20_NPZ" ]; then
   echo "[build_mixed_buffer] ERROR: missing $V20_NPZ" >&2

@@ -60,6 +60,8 @@ RSYNC+=(
   # so the training box always sees the latest encoder schema.
   --exclude "ckpt_*/"
   --exclude "logs/"
+  --exclude "data/*.npz"
+  --exclude "top10_episodes_2026-05-04/"
   --exclude "*.pkl"
   --exclude "*.log"
   # Generated/exported submissions: anything with "_proper", "_peak",

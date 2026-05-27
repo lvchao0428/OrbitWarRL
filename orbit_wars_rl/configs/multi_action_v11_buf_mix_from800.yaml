@@ -1,0 +1,61 @@
+# v11 Plan B mix from800 — resume from k8_no_emit @800 (pct-healthiest ckpt).
+#
+# Motivation
+# ----------
+# buf_from4k @799 and buf_mix @299/@799 both show pct collapse (bin0 ~60%).
+# k8_no_emit @800 has bin0 25.4% (cleanest pct head observed), but spf=2.32
+# is too low. Hypothesis: mix-buffer state curriculum should lift garr/spf
+# while the @800 starting point preserves a non-collapsed pct distribution.
+#
+# Pair with: ckpt_multi_action_v11_k8_no_emit/ckpt_000799.pkl
+# Buffer:    data/mixed_v20_top10.npz (113776 states, v20+top10 50/50)
+#
+# Slightly higher entropy on pct head to actively resist bin0 collapse.
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_buf_mix_from800
+  ckpt_every: 100
+  log_every: 1
+  seed: 223
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00006
+  lr_warmup_steps: 200
+  lr_decay_steps: 80000
+  lr_floor: 0.000005
+  clip_eps: 0.12
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.002
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.006     # 0.003 -> 0.006: stronger anti-collapse on pct head
+  ent_coef_emit: 0.002
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 0
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.30     # 0.35 -> 0.30: less self-play (k8_no_emit is weaker)
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0
+  buffer_path: "data/mixed_v20_top10.npz"
+  buffer_reset_ratio: 0.70

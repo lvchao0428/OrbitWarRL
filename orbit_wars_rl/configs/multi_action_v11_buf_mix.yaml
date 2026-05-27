@@ -6,6 +6,10 @@
 #
 # Same Plan B mechanics as buf_from4k: episode reset samples mid-game states;
 # no action imitation. Mixed pool = 50/50 v20 self-play + top10 winner JSON.
+#
+# Tuning vs buf_from4k (replay bin0 61%, bin0+1 68% after 800 upd @50% reset):
+#   frozen_ratio 0.50 -> 0.35  (more buffer-rollout updates, less self-play bin0 lock)
+#   buffer_reset_ratio 0.50 -> 0.70  (more mid-game state exposure per buffer rollout)
 
 train:
   num_envs: 128
@@ -48,9 +52,9 @@ selfplay:
   warmup_updates: 0
   snapshot_every: 50
   pool_capacity: 8
-  frozen_ratio: 0.50
+  frozen_ratio: 0.35
   eval_vs_frozen: true
   strong_ckpt_path: ""
   strong_ratio: 0.0
   buffer_path: "data/mixed_v20_top10.npz"
-  buffer_reset_ratio: 0.50
+  buffer_reset_ratio: 0.70

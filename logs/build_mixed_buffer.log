@@ -1,0 +1,20 @@
+[build_mixed_buffer] TOP10_DIR=top10_episodes_2026-05-04/episodes/episodes
+[build_mixed_buffer] collecting top10 states → data/top10_winner_states.npz
+E0527 21:20:24.778756 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 23.52GiB (25251643392 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.778875 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 21.17GiB (22726477824 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.778972 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 19.05GiB (20453828608 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.779069 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 17.14GiB (18408445952 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.779164 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 15.43GiB (16567601152 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.779260 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 13.89GiB (14910840832 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.779355 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 12.50GiB (13419756544 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.779447 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 11.25GiB (12077780992 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.779538 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 10.12GiB (10870002688 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.779632 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 9.11GiB (9783002112 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.779724 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 8.20GiB (8804701184 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0527 21:20:24.779814 1119332 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 7.38GiB (7924230656 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+collecting from 2631 replay JSON files → data/top10_winner_states.npz
+  file 1/2631 (75829347.json): +420 | total=420 (0.5s)
+  file 51/2631 (75830035.json): +442 | total=24234 (19.8s)
+  file 101/2631 (75830413.json): +258 | total=47392 (39.2s)
+  file 151/2631 (75830812.json): +390 | total=71036 (58.3s)
+scripts/build_mixed_buffer.sh: 第 84 行： 1119332 已杀死               "$PY" -m orbit_wars_rl.bc.collect_states_from_json "${COLLECT_ARGS[@]}"
