@@ -25,7 +25,10 @@ CKPT="${1:?Usage: $0 <ckpt> <tag>}"
 TAG="${2:?Usage: $0 <ckpt> <tag>}"
 NUM_GAMES="${NUM_GAMES:-5}"
 SEED_BASE="${SEED_BASE:-0}"
-PY="${PYTHON:-python}"
+PY="${PYTHON:-python3}"
+if ! command -v "$PY" >/dev/null 2>&1; then
+  PY=python
+fi
 
 mkdir -p logs/replay_analyze
 
@@ -33,21 +36,37 @@ SUB="submission_rl_${TAG}.py"
 JSON="logs/replay_analyze/${TAG}_vs_v20.json"
 SUMMARY="logs/replay_analyze/${TAG}_vs_v20.summary.txt"
 
-# Auto-detect template from ckpt arch (planet_feat_dim, K, and has_pair).
+# Auto-detect template from ckpt arch (planet_feat_dim, K, has_pair, f29 marker).
 ARCH_INFO=$(JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES="" "$PY" - <<PY
 from orbit_wars_rl.inference.weights import load_flat_params, infer_arch_from_flat
 a = infer_arch_from_flat(load_flat_params("$CKPT"))
-print(a["planet_feat_dim"], a["max_fleets_per_turn"], int(a.get("has_pair", False)))
+print(a["planet_feat_dim"], a["max_fleets_per_turn"], int(a.get("has_pair", False)), int(a.get("dst_pair_dim", 0)))
 PY
 )
 PLANET_DIM=$(echo "$ARCH_INFO" | awk '{print $1}')
 CKPT_K=$(echo "$ARCH_INFO" | awk '{print $2}')
 HAS_PAIR=$(echo "$ARCH_INFO" | awk '{print $3}')
+DST_PAIR_DIM=$(echo "$ARCH_INFO" | awk '{print $4}')
 
 if [ "$PLANET_DIM" = "19" ]; then
   TEMPLATE="submission_rl_v4.py"
 elif [ "$PLANET_DIM" = "28" ] && [ "$HAS_PAIR" = "1" ]; then
-  TEMPLATE="submission_rl_v11_f26.py"
+  if [ "$DST_PAIR_DIM" = "5" ]; then
+    if [ -f submission_rl_v11_f31.py ] && echo "$TAG" | grep -q 'f31'; then
+      TEMPLATE="submission_rl_v11_f31.py"
+    elif grep -q '^EMIT_HARD_STOP\s*=\s*1' orbit_wars_rl/configs/multi_action_v11_f29b.yaml 2>/dev/null \
+       && echo "$CKPT" | grep -q 'f29b'; then
+      TEMPLATE="submission_rl_v11_f29b.py"
+    elif [ -f submission_rl_v11_f29b.py ] && echo "$TAG" | grep -q 'f29b'; then
+      TEMPLATE="submission_rl_v11_f29b.py"
+    else
+      TEMPLATE="submission_rl_v11_f29.py"
+    fi
+  elif grep -q '^MIN_BIN_PCT_FEAT\s*=' submission_rl_v11_f27.py 2>/dev/null; then
+    TEMPLATE="submission_rl_v11_f27.py"
+  else
+    TEMPLATE="submission_rl_v11_f26.py"
+  fi
 elif [ "$PLANET_DIM" = "28" ]; then
   TEMPLATE="submission_rl_v11_f25.py"
 elif [ "$CKPT_K" = "8" ]; then
@@ -98,6 +117,48 @@ print(f"  spf  > 10    actual {spf:.2f}    {'OK' if spf > 10 else 'FAIL'}")
 print(f"  garr > 60    actual {garr:.2f}   {'OK' if garr > 60 else 'FAIL'}")
 print(f"  flip > 6%    actual {flip:.2f}%  {'OK' if flip > 6 else 'FAIL'}")
 print(f"  e2+  > 5%    actual {e2_plus*100:.1f}% {'OK' if e2_plus > 0.05 else 'FAIL'}")
+
+# f31 anti-spam metrics from per_game traces (first 80 turns)
+per_game = data.get("per_game") or []
+game_spfs = []
+all_launches = []
+home_le1_emits = 0
+total_emits = 0
+for g in per_game:
+    tr = g.get("player_0") or {}
+    spf_turns = [
+        v for i, v in enumerate(tr.get("ships_per_fleet") or [])
+        if v is not None and i < 80
+    ]
+    if spf_turns:
+        game_spfs.append(sum(spf_turns) / len(spf_turns))
+    all_launches.extend(
+        s for s, turn in zip(tr.get("launch_ships") or [], tr.get("launch_turns") or [])
+        if turn < 80
+    )
+    emit_turns = tr.get("emit_turns") or []
+    emit_hg = tr.get("emit_home_garrison") or []
+    for turn_idx, hg in zip(emit_turns, emit_hg):
+        if turn_idx >= 80:
+            continue
+        total_emits += 1
+        if hg <= 1:
+            home_le1_emits += 1
+
+min_game_spf = min(game_spfs) if game_spfs else 0.0
+one_ship_rate = (
+    100.0 * sum(1 for s in all_launches if s == 1) / len(all_launches)
+    if all_launches else 0.0
+)
+home_le1_emit_rate = (
+    100.0 * home_le1_emits / total_emits if total_emits else 0.0
+)
+
+print()
+print("f31 anti-spam metrics (player_0, first 80 / all launches):")
+print(f"  min_game_spf       = {min_game_spf:.2f}   (gate > 5)")
+print(f"  one_ship_rate      = {one_ship_rate:.1f}%  (gate < 50%)")
+print(f"  home_le1_emit_rate = {home_le1_emit_rate:.1f}%  (lower is better)")
 PY
 
 echo ""

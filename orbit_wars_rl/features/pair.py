@@ -1,4 +1,4 @@
-"""K-step pair / per-step feature helpers (f26).
+"""K-step pair / per-step feature helpers (f26 / f29).
 
 These are computed *inside* the autoregressive head loop, not at turn start,
 because they depend on:
@@ -13,7 +13,7 @@ Provided:
 
   ``dst_pair_features(planet_x, planet_y, planet_ships, planet_mask,
                        is_target_mask, remaining, src_idx)``
-      -> (pair_feats: (P, 4), sun_block_mask: (P,) bool)
+      -> (pair_feats: (P, 5), sun_block_mask: (P,) bool)  [f29: +pair_margin_norm]
       Per-candidate-dst features given current source. ``sun_block_mask`` is
       True for dst whose src->dst segment crosses the sun. Used both as a
       head input (sun_risk float) and as a hard logit mask in DstHead.
@@ -24,8 +24,17 @@ Provided:
                        total_remaining, total_init)``
       -> (g: (4,)) per-step global scalar that summarises feasibility / budget.
 
+  ``dst_flip_block_mask(planet_ships, planet_mask, is_target_mask,
+                       remaining, src_idx)``
+      -> (..., P) bool -- True iff dst cannot be flipped with floor(rem*0.7)
+      at ``src_idx`` (enemy/neutral only; f31 hard mask).
+
   ``pct_pair_features(garr_dst, remaining_src)``
-      -> (2,) [pair_needed_pct, pair_flip_bin5] given chosen (src, dst).
+      -> (2,) [min_bin_norm, pair_flip_bin5] given chosen (src, dst).
+      ``min_bin_norm`` is the smallest pct-bin index that sends enough ships
+      to flip ``garr_dst``, divided by (NUM_PCT_BINS-1).  Replaces the f26
+      ``(garr+1)/remaining`` ratio which correlated with bin0 when remaining
+      was large (home planet spam).
 
 All functions are jit-pure (no python branching on traced values).
 """
@@ -48,6 +57,8 @@ _SUN_R = jnp.float32(constants.SUN_RADIUS)
 _SUN_GUARD = _SUN_R * jnp.float32(constants.SUN_PATH_MARGIN)
 # Hard mask threshold (>= 0.9 means src->dst path nearly tangent to sun guard).
 _SUN_BLOCK_THRESH = jnp.float32(0.9)
+_PCT_BIN_TABLE = jnp.array(constants.PCT_BIN_VALUES, dtype=jnp.float32)
+_NUM_PCT_BINS = constants.NUM_PCT_BINS
 
 
 def _segment_min_dist_to_point(
@@ -81,14 +92,15 @@ def dst_pair_features(
     remaining: jnp.ndarray,       # (P,) int  -- remaining at every src (only src_idx row used)
     src_idx: jnp.ndarray,         # () int
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Per-candidate-dst (4,) features given a chosen src.
+    """Per-candidate-dst features given a chosen src.
 
     Returns:
-      pair_feats: (P, 4) float32 in [0, 1]:
+      pair_feats: (P, 5) float32 in [0, 1]:
         [0] dist_src_dst / BOARD
         [1] sun_risk = clip(1 - min_dist / SUN_GUARD, 0, 1)  (1 = path through sun)
         [2] ships_needed_norm = (garr[dst]+1) / remaining[src]  clip [0,1]
         [3] pair_flip_bin5 = float( floor(remaining[src]*0.7) > garr[dst] ) AND target
+        [4] pair_margin_norm = clip((floor(rem*0.7)-garr)/rem, 0, 1) AND target
       sun_block_mask: (P,) bool -- True iff sun_risk >= 0.9 (hard mask candidate)
     """
     P = planet_x.shape[0]
@@ -117,9 +129,11 @@ def dst_pair_features(
     pair_flip_bin5 = (ships_at_bin5 > garr_dst).astype(jnp.float32) * is_target_mask.astype(
         jnp.float32
     )
+    margin = (ships_at_bin5 - garr_dst) / rem_src
+    pair_margin_norm = jnp.clip(margin, 0.0, 1.0) * is_target_mask.astype(jnp.float32)
 
     pair_feats = jnp.stack(
-        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5], axis=-1
+        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5, pair_margin_norm], axis=-1
     )
     # Zero rows for padding planets so they cannot leak through the MLP.
     pair_feats = pair_feats * planet_mask[:, None].astype(jnp.float32)
@@ -175,14 +189,40 @@ def dst_pair_features_batched(
     pair_flip_bin5 = (ships_at_bin5 > garr_dst).astype(jnp.float32) * is_target_mask.astype(
         jnp.float32
     )
+    margin = (ships_at_bin5 - garr_dst) / rem_at_src
+    pair_margin_norm = jnp.clip(margin, 0.0, 1.0) * is_target_mask.astype(jnp.float32)
 
     pair_feats = jnp.stack(
-        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5], axis=-1
+        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5, pair_margin_norm], axis=-1
     )
     pair_feats = pair_feats * planet_mask[..., None].astype(jnp.float32)
 
     sun_block_mask = (sun_risk >= _SUN_BLOCK_THRESH) & planet_mask & jnp.logical_not(self_pair)
     return pair_feats, sun_block_mask
+
+
+def dst_flip_block_mask(
+    planet_ships: jnp.ndarray,    # (..., P) int -- garrison at each dst
+    planet_mask: jnp.ndarray,     # (..., P) bool
+    is_target_mask: jnp.ndarray,  # (..., P) bool -- enemy | neutral
+    remaining: jnp.ndarray,       # (..., P) int -- remaining at each src
+    src_idx: jnp.ndarray,         # (...,) int
+) -> jnp.ndarray:
+    """Hard mask: block dst that cannot be flipped with 70% of remaining at src.
+
+    Returns (..., P) bool where True means **forbidden** (same convention as
+    ``sun_block_mask``). Owned planets are never blocked (``is_target_mask``
+    is false for mine).
+    """
+    rem_at_src = jnp.take_along_axis(
+        remaining.astype(jnp.float32), src_idx[..., None], axis=-1
+    )
+    rem_at_src = jnp.maximum(rem_at_src, jnp.float32(1.0))
+    ships_at_bin5 = jnp.floor(rem_at_src * jnp.float32(0.7))[..., 0]
+    garr_dst = planet_ships.astype(jnp.float32)
+    flip_ok = ships_at_bin5[..., None] > garr_dst
+    block = jnp.logical_not(flip_ok) & is_target_mask & planet_mask
+    return block
 
 
 def emit_pair_globals(
@@ -197,10 +237,10 @@ def emit_pair_globals(
     home_init: jnp.ndarray,      # (...,) float -- starting garrison at home (HOME_PLANET_SHIPS or first-turn)
     total_init: jnp.ndarray,     # (...,) float -- total my garrison at turn start (sum of ships_raw on mine)
 ) -> jnp.ndarray:
-    """4 scalar features describing remaining attack budget & feasible targets.
+    """4 scalar features describing remaining attack budget & emit stop signal.
 
     Returns (..., 4):
-      [0] n_feasible_pairs_norm   -- count(src in mine, dst in target, flip_bin5(src,dst)) / MAX_PLANETS
+      [0] emit_worth_it           -- 1.0 iff any (src,dst) pair has margin>0 with current remaining
       [1] best_pair_margin_norm   -- log1p(max over feasible pairs of margin) / log1p(MAX_PLANET_SHIPS)
       [2] home_remain_ratio       -- remaining[home] / max(home_init, 1)  clip [0,1]
       [3] total_remain_ratio      -- (sum remaining over mine) / max(total_init, 1) clip [0,1]
@@ -221,11 +261,7 @@ def emit_pair_globals(
         & planet_mask[..., None, :]
     )
     feasible = pair_valid & (margin > 0)
-    feasible_f = feasible.astype(jnp.float32)
-    n_feasible = feasible_f.sum(axis=(-2, -1))
-    n_feasible_norm = jnp.clip(
-        n_feasible / jnp.float32(constants.MAX_PLANETS), 0.0, 1.0
-    )
+    emit_worth_it = feasible.any(axis=(-2, -1)).astype(jnp.float32)
 
     # Best margin (set non-feasible to 0).
     margin_masked = jnp.where(feasible, margin, jnp.float32(0.0))
@@ -247,25 +283,60 @@ def emit_pair_globals(
     )
 
     return jnp.stack(
-        [n_feasible_norm, best_margin_norm, home_remain_ratio, total_remain_ratio],
+        [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio],
         axis=-1,
     )
+
+
+def pct_min_bin_index(
+    garr_dst: jnp.ndarray,       # (...,) float
+    remaining_src: jnp.ndarray,  # (...,) float
+) -> jnp.ndarray:
+    """(...,) int32 smallest pct bin index whose ship count exceeds garr_dst."""
+    rem = jnp.maximum(remaining_src, jnp.float32(1.0))
+    ships_at_bins = jnp.floor(rem[..., None] * _PCT_BIN_TABLE)
+    flip_at_bin = ships_at_bins > garr_dst[..., None]
+    bin_indices = jnp.arange(_NUM_PCT_BINS, dtype=jnp.int32)
+    masked_idx = jnp.where(
+        flip_at_bin,
+        bin_indices,
+        jnp.int32(_NUM_PCT_BINS - 1),
+    )
+    return masked_idx.min(axis=-1)
+
+
+def pct_low_bin_mask(
+    min_bin: jnp.ndarray,        # (...,) int32
+    num_bins: int = _NUM_PCT_BINS,
+) -> jnp.ndarray:
+    """(..., num_bins) bool -- True iff bin index is allowed (>= min_bin)."""
+    arange = jnp.arange(num_bins, dtype=jnp.int32)
+    if min_bin.ndim == 0:
+        return arange >= min_bin
+    return arange[(None,) * min_bin.ndim + (slice(None),)] >= min_bin[..., None]
 
 
 def pct_pair_features(
     garr_dst: jnp.ndarray,       # (...,) float -- garrison at chosen dst
     remaining_src: jnp.ndarray,  # (...,) float -- remaining at chosen src
 ) -> jnp.ndarray:
-    """(...,2) [pair_needed_pct, pair_flip_bin5_pair]."""
+    """(...,2) [min_bin_norm, pair_flip_bin5].
+
+    ``min_bin_norm`` = index of the smallest pct bin whose ship count exceeds
+    ``garr_dst``, normalised to [0, 1].  When no bin can flip, returns 1.0
+    (bin7 / 100%).
+    """
+    min_bin = pct_min_bin_index(garr_dst, remaining_src)
+    min_bin_norm = min_bin.astype(jnp.float32) / jnp.float32(_NUM_PCT_BINS - 1)
     rem = jnp.maximum(remaining_src, jnp.float32(1.0))
-    pair_needed_pct = jnp.clip((garr_dst + 1.0) / rem, 0.0, 1.0)
+
     ships_at_bin5 = jnp.floor(rem * jnp.float32(0.7))
     pair_flip_bin5 = (ships_at_bin5 > garr_dst).astype(jnp.float32)
-    return jnp.stack([pair_needed_pct, pair_flip_bin5], axis=-1)
+    return jnp.stack([min_bin_norm, pair_flip_bin5], axis=-1)
 
 
 # --------------------- public constants for sanity checks ---------------------
-DST_PAIR_DIM = 4
+DST_PAIR_DIM = 5
 EMIT_PAIR_DIM = 4
 PCT_PAIR_DIM = 2
 SUN_BLOCK_THRESH = float(_SUN_BLOCK_THRESH)

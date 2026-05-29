@@ -43,6 +43,7 @@ _SUN_GUARD = _SUN_R * float(_const.SUN_PATH_MARGIN)
 _SUN_BLOCK_THRESH = 0.9
 _BOARD_F = float(_const.BOARD)
 _MAX_PLANETS = int(_const.MAX_PLANETS)
+_PCT_BIN_TABLE_NP = np.array(_const.PCT_BIN_VALUES, dtype=np.float32)
 
 
 # --------- f26 pair feature helpers (numpy mirror of features/pair.py) -------
@@ -100,14 +101,31 @@ def _dst_pair_features_np(
     pair_flip_bin5 = (
         (ships_at_bin5 > garr_dst).astype(np.float32) * is_target_mask.astype(np.float32)
     )
+    margin = (ships_at_bin5 - garr_dst) / rem_src
+    pair_margin_norm = np.clip(margin, 0.0, 1.0).astype(np.float32) * is_target_mask.astype(np.float32)
 
     pair_feats = np.stack(
-        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5], axis=-1
+        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5, pair_margin_norm], axis=-1
     ).astype(np.float32)
     pair_feats *= planet_mask.astype(np.float32)[:, None]
 
     sun_block_mask = (sun_risk >= _SUN_BLOCK_THRESH) & planet_mask & np.logical_not(self_pair)
     return pair_feats, sun_block_mask
+
+
+def _dst_flip_block_mask_np(
+    planet_ships: np.ndarray,    # (P,) int
+    planet_mask: np.ndarray,     # (P,) bool
+    is_target_mask: np.ndarray,  # (P,) bool
+    remaining: np.ndarray,       # (P,) int
+    src_idx: int,
+) -> np.ndarray:
+    rem_src = float(max(int(remaining[src_idx]), 1))
+    ships_at_bin5 = float(np.floor(rem_src * np.float32(0.7)))
+    garr_dst = planet_ships.astype(np.float32)
+    flip_ok = ships_at_bin5 > garr_dst
+    block = np.logical_not(flip_ok) & is_target_mask.astype(bool) & planet_mask.astype(bool)
+    return block
 
 
 def _emit_pair_globals_np(
@@ -133,8 +151,7 @@ def _emit_pair_globals_np(
         & planet_mask[:, None] & planet_mask[None, :]
     )
     feasible = pair_valid & (margin > 0)
-    n_feasible = float(feasible.sum())
-    n_feasible_norm = float(min(n_feasible / _MAX_PLANETS, 1.0))
+    emit_worth_it = 1.0 if bool(feasible.any()) else 0.0
 
     margin_masked = np.where(feasible, margin, 0.0)
     best_margin = float(margin_masked.max(initial=0.0))
@@ -147,17 +164,31 @@ def _emit_pair_globals_np(
     total_remain_ratio = float(min(total_remaining / max(total_init, 1.0), 1.0))
 
     return np.array(
-        [n_feasible_norm, best_margin_norm, home_remain_ratio, total_remain_ratio],
+        [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio],
         dtype=np.float32,
     )
 
 
-def _pct_pair_features_np(garr_dst: float, remaining_src: float) -> np.ndarray:
+def _pct_min_bin_index_np(garr_dst: float, remaining_src: float) -> int:
     rem = max(remaining_src, 1.0)
-    pair_needed_pct = min(max((garr_dst + 1.0) / rem, 0.0), 1.0)
+    ships_at_bins = np.floor(rem * _PCT_BIN_TABLE_NP)
+    flip_at_bin = ships_at_bins > garr_dst
+    if bool(flip_at_bin.any()):
+        return int(np.argmax(flip_at_bin))
+    return len(_PCT_BIN_TABLE_NP) - 1
+
+
+def _pct_low_bin_mask_np(min_bin: int, num_bins: int = len(_PCT_BIN_TABLE_NP)) -> np.ndarray:
+    return np.arange(num_bins, dtype=np.int32) >= min_bin
+
+
+def _pct_pair_features_np(garr_dst: float, remaining_src: float) -> np.ndarray:
+    min_bin = _pct_min_bin_index_np(garr_dst, remaining_src)
+    min_bin_norm = min_bin / (len(_PCT_BIN_TABLE_NP) - 1)
+    rem = max(remaining_src, 1.0)
     ships_at_bin5 = float(np.floor(rem * 0.7))
     pair_flip_bin5 = 1.0 if ships_at_bin5 > garr_dst else 0.0
-    return np.array([pair_needed_pct, pair_flip_bin5], dtype=np.float32)
+    return np.array([min_bin_norm, pair_flip_bin5], dtype=np.float32)
 
 
 def _layer_norm(x: np.ndarray, scale: np.ndarray, bias: np.ndarray, eps: float = 1e-6) -> np.ndarray:
@@ -304,9 +335,11 @@ def dst_head(
     src_emb: np.ndarray,
     planet_mask: np.ndarray,
     my_planet_mask: np.ndarray,
+    src_idx: int | None = None,
     reserved_norm: np.ndarray | None = None,
     pair_feats: np.ndarray | None = None,
     sun_block_mask: np.ndarray | None = None,
+    flip_block_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     """Cross-attention conditioned on src_emb. Returns dst_logits of shape (P,).
 
@@ -340,8 +373,15 @@ def dst_head(
     logits = _dense(x, W["dst_head/dst_score/kernel"], W["dst_head/dst_score/bias"])[..., 0]
 
     eff_mask = planet_mask.astype(bool)
+    if src_idx is not None:
+        eff_mask = eff_mask.copy()
+        eff_mask[src_idx] = False
     if sun_block_mask is not None:
         allowed = eff_mask & np.logical_not(sun_block_mask.astype(bool))
+        if bool(allowed.any()):
+            eff_mask = allowed
+    if flip_block_mask is not None:
+        allowed = eff_mask & np.logical_not(flip_block_mask.astype(bool))
         if bool(allowed.any()):
             eff_mask = allowed
     return _mask_logits(logits, eff_mask)
@@ -354,6 +394,7 @@ def pct_head(
     global_emb: np.ndarray,
     src_remaining_norm: float | np.ndarray | None = None,
     pair_feats: np.ndarray | None = None,
+    pct_low_bin_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     feats = [src_emb, dst_emb, global_emb]
     if src_remaining_norm is not None:
@@ -364,7 +405,12 @@ def pct_head(
     x = np.concatenate(feats, axis=-1)
     x = _dense(x, W["pct_head/fc1/kernel"], W["pct_head/fc1/bias"])
     x = _gelu(x)
-    return _dense(x, W["pct_head/logits/kernel"], W["pct_head/logits/bias"])
+    logits = _dense(x, W["pct_head/logits/kernel"], W["pct_head/logits/bias"])
+    if pct_low_bin_mask is not None:
+        allowed = pct_low_bin_mask.astype(bool)
+        if bool(allowed.any()):
+            logits = _mask_logits(logits, allowed)
+    return logits
 
 
 def emit_head(
@@ -375,6 +421,7 @@ def emit_head(
     max_steps: int = 8,
     total_remaining_norm: float | np.ndarray | None = None,
     pair_feats_g: np.ndarray | None = None,
+    emit_force_stop: bool = False,
 ) -> np.ndarray:
     """Returns emit_logits of shape (2,). [stop, continue]."""
     step_oh = np.zeros((max_steps,), dtype=np.float32)
@@ -389,7 +436,11 @@ def emit_head(
     x = np.concatenate(feats, axis=-1)
     x = _dense(x, W["emit_head/fc1/kernel"], W["emit_head/fc1/bias"])
     x = _gelu(x)
-    return _dense(x, W["emit_head/logits/kernel"], W["emit_head/logits/bias"])
+    logits = _dense(x, W["emit_head/logits/kernel"], W["emit_head/logits/bias"])
+    if emit_force_stop:
+        logits = logits.copy()
+        logits[1] = _LOGIT_NEG_INF
+    return logits
 
 
 def value_head(
@@ -501,11 +552,6 @@ def greedy_action(
     return src_idx, dst_idx, pct_idx, v
 
 
-_PCT_BIN_TABLE_NP = np.array(
-    [0.10, 0.20, 0.30, 0.40, 0.55, 0.70, 0.85, 1.00], dtype=np.float32
-)
-
-
 def greedy_multi_action(
     W: Dict[str, np.ndarray],
     planet_feats: np.ndarray,
@@ -520,6 +566,8 @@ def greedy_multi_action(
     planet_x: np.ndarray | None = None,   # (P,) float -- f26 pair feats
     planet_y: np.ndarray | None = None,
     home_idx: int = 0,
+    emit_hard_stop: bool = False,
+    flip_hard_mask: bool = False,
 ) -> Tuple[list, list, list, list, float]:
     """Greedy multi-fleet action mirroring ActorCritic.__call__(deterministic=True).
 
@@ -572,11 +620,14 @@ def greedy_multi_action(
                 my_mask_b, target_mask_b, remaining,
                 home_idx, home_init, total_init,
             )
+        emit_worth_it = (emit_pair_g is not None) and (float(emit_pair_g[0]) > 0.0)
+        emit_force_stop = emit_hard_stop and (t > 0) and (not emit_worth_it)
         e_logits = emit_head(
             W, global_emb, planet_pool, t,
             max_steps=max_fleets_per_turn,
             total_remaining_norm=total_remaining_norm,
             pair_feats_g=emit_pair_g,
+            emit_force_stop=emit_force_stop,
         )
         if t == 0:
             decision = (not no_options)
@@ -591,31 +642,40 @@ def greedy_multi_action(
 
         dst_pair = None
         sun_block = None
+        flip_block = None
         if use_pair:
             dst_pair, sun_block = _dst_pair_features_np(
                 planet_x, planet_y, ships, planet_mask_b,
                 target_mask_b, remaining, src_t,
             )
+            if flip_hard_mask:
+                flip_block = _dst_flip_block_mask_np(
+                    ships, planet_mask_b, target_mask_b, remaining, src_t,
+                )
         d_logits = dst_head(
             W, planet_emb, src_emb, planet_mask, my_planet_mask,
+            src_idx=src_t,
             reserved_norm=reserved_norm,
             pair_feats=dst_pair, sun_block_mask=sun_block,
+            flip_block_mask=flip_block,
         )
-        d_logits = d_logits.copy()
-        d_logits[src_t] = -1e9
         dst_t = int(np.argmax(d_logits))
         dst_emb = planet_emb[dst_t]
         src_remaining_norm = float(remaining_norm[src_t])
 
         pct_pair = None
+        pct_mask = None
         if use_pair:
-            pct_pair = _pct_pair_features_np(
-                float(ships[dst_t]), float(remaining[src_t])
-            )
+            garr = float(ships[dst_t])
+            rem = float(remaining[src_t])
+            pct_pair = _pct_pair_features_np(garr, rem)
+            min_bin = _pct_min_bin_index_np(garr, rem)
+            pct_mask = _pct_low_bin_mask_np(min_bin)
         p_logits = pct_head(
             W, src_emb, dst_emb, global_emb,
             src_remaining_norm=src_remaining_norm,
             pair_feats=pct_pair,
+            pct_low_bin_mask=pct_mask,
         )
         pct_t = int(np.argmax(p_logits))
 

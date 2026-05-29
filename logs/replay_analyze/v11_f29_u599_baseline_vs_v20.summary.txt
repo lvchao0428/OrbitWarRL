@@ -1,0 +1,12 @@
+tag=v11_f29_u599_baseline  spf=13.15  garr=44.60  flip=3.03%  z0=1.0%  e2+=30.2%  WLD=0/5/0
+
+Day5 first-80 gate (Top10 calibrated):
+  spf  > 10    actual 13.15    OK
+  garr > 60    actual 44.60   FAIL
+  flip > 6%    actual 3.03%  FAIL
+  e2+  > 5%    actual 30.2% OK
+
+f31 anti-spam metrics (player_0, first 80 / all launches):
+  min_game_spf       = 1.13   (gate > 5)
+  one_ship_rate      = 25.0%  (gate < 50%)
+  home_le1_emit_rate = 32.6%  (lower is better)

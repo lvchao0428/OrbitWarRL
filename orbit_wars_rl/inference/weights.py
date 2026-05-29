@@ -125,17 +125,25 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
     #   legacy:  (d_model + 1[reserved]) + d_model  -- two parts concatenated
     #   f26:     (d_model + 1[reserved] + 4[pair]) + d_model
     has_dst_pair = False
+    dst_pair_dim = 0
+    has_f29_dst = False
     dst_key = "dst_head/dst_fc1/kernel"
     if dst_key in flat:
         dst_in = int(flat[dst_key].shape[0])
-        if dst_in == 2 * d_model + 5:
+        if dst_in == 2 * d_model + 6:
             has_dst_pair = True
+            has_f29_dst = True
+            dst_pair_dim = 5
+        elif dst_in == 2 * d_model + 5:
+            has_dst_pair = True
+            dst_pair_dim = 4
         elif dst_in == 2 * d_model + 1:
             has_dst_pair = False
+            dst_pair_dim = 0
         else:
             raise ValueError(
                 f"unexpected dst_fc1 input dim={dst_in}; "
-                f"d_model={d_model}, expected 2*d_model+1 or 2*d_model+5"
+                f"d_model={d_model}, expected 2*d_model+1, +5 (f26-f28), or +6 (f29)"
             )
 
     # pct_head/fc1 input layout:
@@ -168,6 +176,8 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
         "has_pair": has_pair,
         "has_emit_pair": has_emit_pair,
         "has_dst_pair": has_dst_pair,
+        "has_f29_dst": has_f29_dst,
+        "dst_pair_dim": dst_pair_dim,
         "has_pct_pair": has_pct_pair,
     }
 

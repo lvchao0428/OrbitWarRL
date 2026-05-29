@@ -1,0 +1,4 @@
+[v11_f30] py=/home/charlie/anaconda3/bin/python  cfg=orbit_wars_rl/configs/multi_action_v11_f30.yaml  log=logs/v11_f30.log
+[v11_f30] resume=ckpt_multi_action_v11_f29/ckpt_000599.pkl  lr_peak=8e-5  no buffer  emit_hard_stop=false
+pid=2478435
+tail -f logs/v11_f30.log

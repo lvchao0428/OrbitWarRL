@@ -111,6 +111,19 @@ def _read_template_dims(template_path: str) -> dict[str, int]:
     return out
 
 
+def _read_template_mask_flags(template_path: str) -> dict[str, bool]:
+    """Parse EMIT_HARD_STOP / F31_HARD_MASKS from submission template."""
+    import re
+
+    txt = Path(template_path).read_text(encoding="utf-8")
+    emit_m = re.search(r"^EMIT_HARD_STOP\s*=\s*(\d+)", txt, flags=re.MULTILINE)
+    flip_m = re.search(r"^F31_HARD_MASKS\s*=\s*(\d+)", txt, flags=re.MULTILINE)
+    return {
+        "emit_hard_stop": bool(int(emit_m.group(1))) if emit_m else False,
+        "flip_hard_mask": bool(int(flip_m.group(1))) if flip_m else False,
+    }
+
+
 def _assert_template_matches_ckpt(template_path: str, arch: dict[str, int]) -> None:
     tpl = _read_template_dims(template_path)
     mismatches = []
@@ -137,7 +150,10 @@ def _assert_template_matches_ckpt(template_path: str, arch: dict[str, int]) -> N
         )
     if mismatches:
         if arch["planet_feat_dim"] == 28 and ckpt_has_pair:
-            hint = "submission_rl_v11_f26.py"
+            if arch.get("dst_pair_dim") == 5:
+                hint = "submission_rl_v11_f31.py"
+            else:
+                hint = "submission_rl_v11_f27.py"
         elif arch["planet_feat_dim"] == 28:
             hint = "submission_rl_v11_f25.py"
         elif arch["planet_feat_dim"] == 22:
@@ -241,6 +257,7 @@ def main() -> int:
         return 5
 
     if not args.skip_parity:
+        mask_flags = _read_template_mask_flags(args.template)
         print(f"[export] running parity test against {args.ckpt} "
               f"(tol={args.tol}, num_states={args.num_states})")
         status = run_parity(
@@ -252,6 +269,8 @@ def main() -> int:
             n_layers=arch["n_layers"],
             n_heads=arch["n_heads"],
             ff_dim=arch["ff_dim"],
+            emit_hard_stop=mask_flags["emit_hard_stop"],
+            flip_hard_mask=mask_flags["flip_hard_mask"],
         )
         if status != 0:
             print("[export] parity FAILED (argmax disagreement); "

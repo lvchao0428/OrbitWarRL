@@ -1,0 +1,31 @@
+[2026-05-28 23:25:16] parity smoke (fresh-init)
+parity_check multi-action (ckpt=fresh-init; tol=0.005; states=16; K=8)
+  arch: d_model=64 n_layers=2 n_heads=4 ff_dim=128
+  [OK ] whole-turn action list match: 16/16
+  [INFO] emit count match: 16/16
+  [INFO] value drift max=4.768e-07 mean=1.751e-07
+[2026-05-28 23:25:30] === TRACK f29 ===
+[2026-05-28 23:25:30] train start cfg=orbit_wars_rl/configs/multi_action_v11_f29.yaml -> logs/v11_f29.log
+[2026-05-28 23:27:26] parity smoke (fresh-init)
+parity_check multi-action (ckpt=fresh-init; tol=0.005; states=16; K=8)
+  arch: d_model=64 n_layers=2 n_heads=4 ff_dim=128
+  [OK ] whole-turn action list match: 16/16
+  [INFO] emit count match: 16/16
+  [INFO] value drift max=4.768e-07 mean=1.751e-07
+[2026-05-28 23:27:41] === TRACK f29 ===
+[2026-05-28 23:27:41] train start cfg=orbit_wars_rl/configs/multi_action_v11_f29.yaml -> logs/v11_f29.log
+[2026-05-29 00:22:33] train done cfg=orbit_wars_rl/configs/multi_action_v11_f29.yaml
+[2026-05-29 00:22:33] replay v11_f29_u299 (ckpt_multi_action_v11_f29/ckpt_000299.pkl)
+[2026-05-29 00:24:49] replay v11_f29_u599 (ckpt_multi_action_v11_f29/ckpt_000599.pkl)
+[2026-05-29 00:26:43] === TRACK f29_buf ===
+[2026-05-29 00:26:43] train start cfg=orbit_wars_rl/configs/multi_action_v11_f29_buf.yaml -> logs/v11_f29_buf.log
+[2026-05-29 01:23:31] train done cfg=orbit_wars_rl/configs/multi_action_v11_f29_buf.yaml
+[2026-05-29 01:23:31] replay v11_f29_buf_u299 (ckpt_multi_action_v11_f29_buf/ckpt_000299.pkl)
+[2026-05-29 01:25:01] replay v11_f29_buf_u599 (ckpt_multi_action_v11_f29_buf/ckpt_000599.pkl)
+[2026-05-29 01:27:14] === TRACK f29b ===
+[2026-05-29 01:27:14] train start cfg=orbit_wars_rl/configs/multi_action_v11_f29b.yaml -> logs/v11_f29b.log
+[2026-05-29 02:24:11] train done cfg=orbit_wars_rl/configs/multi_action_v11_f29b.yaml
+[2026-05-29 02:24:11] replay v11_f29b_u299 (ckpt_multi_action_v11_f29b/ckpt_000299.pkl)
+[2026-05-29 02:26:22] replay v11_f29b_u599 (ckpt_multi_action_v11_f29b/ckpt_000599.pkl)
+[2026-05-29 02:28:49] writing summary -> logs/overnight_f29_summary.txt
+[2026-05-29 02:28:49] overnight complete

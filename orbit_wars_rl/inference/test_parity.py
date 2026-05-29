@@ -59,6 +59,8 @@ def run_parity(
     n_layers: int | None = None,
     n_heads: int | None = None,
     ff_dim: int | None = None,
+    emit_hard_stop: bool = False,
+    flip_hard_mask: bool = False,
 ) -> int:
     """Returns 0 on pass, non-zero on real disagreement.
 
@@ -92,6 +94,8 @@ def run_parity(
         n_heads=n_heads,
         ff_dim=ff_dim,
         max_fleets_per_turn=max_fleets_per_turn,
+        emit_hard_stop=emit_hard_stop,
+        flip_hard_mask=flip_hard_mask,
     )
     init_state, init_obs = _build_state_and_obs(seed=0)
     init_params = model.init(
@@ -120,6 +124,7 @@ def run_parity(
           f"tol={tol}; states={num_states}; K={max_fleets_per_turn})")
     print(f"  arch: d_model={d_model} n_layers={n_layers} "
           f"n_heads={n_heads} ff_dim={ff_dim}")
+    print(f"  masks: emit_hard_stop={emit_hard_stop} flip_hard_mask={flip_hard_mask}")
 
     full_match = 0
     emit_only_match = 0
@@ -161,6 +166,8 @@ def run_parity(
             planet_x=np.asarray(state.planet_x),
             planet_y=np.asarray(state.planet_y),
             home_idx=int(state.home_planet_idx[0]),
+            emit_hard_stop=emit_hard_stop,
+            flip_hard_mask=flip_hard_mask,
         )
 
         # jax emit_mask is K-long; numpy returns only the emitted slice.
@@ -211,11 +218,15 @@ def main() -> int:
     ap.add_argument("--strict", action="store_true",
                     help="also fail if logit drift exceeds --tol on any state")
     ap.add_argument("--max-fleets-per-turn", type=int, default=constants.MAX_FLEETS_PER_TURN)
+    ap.add_argument("--emit-hard-stop", action="store_true")
+    ap.add_argument("--flip-hard-mask", action="store_true")
     args = ap.parse_args()
     return run_parity(
         args.ckpt, tol=args.tol, num_states=args.num_states,
         fail_on_logit_drift=args.strict,
         max_fleets_per_turn=args.max_fleets_per_turn,
+        emit_hard_stop=args.emit_hard_stop,
+        flip_hard_mask=args.flip_hard_mask,
     )
 
 

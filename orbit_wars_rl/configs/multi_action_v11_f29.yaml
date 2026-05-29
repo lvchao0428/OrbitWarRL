@@ -1,0 +1,55 @@
+# v11_f29 — full signal stack, no buffer (Day7 overnight track A).
+#
+# f29 signals (cannot resume f27/f28 — dst_fc1 2*d+6):
+#   * Dst +pair_margin_norm (DST_PAIR_DIM 4->5)
+#   * Emit swap: n_feasible -> emit_worth_it
+#   * Pct hard mask: bins below min_flip_bin -> -inf
+#
+# Pure signal isolation: no buffer_reset. 600 upd from scratch.
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 600
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_f29
+  ckpt_every: 100
+  log_every: 1
+  seed: 291
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+  emit_hard_stop: false
+
+ppo:
+  lr_peak: 0.00015
+  lr_warmup_steps: 2000
+  lr_decay_steps: 150000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.008
+  ent_coef_emit: 0.002
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.40
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0

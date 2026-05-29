@@ -1,0 +1,74 @@
+# v11_f28 — f27 + mixed buffer + anti-spam knobs (Day7+).
+#
+# Resumes from f27 @799 (same arch: planet=28 + pair heads). Goal: break the
+# 1-ship 8-route self-play spam local optimum that f25/f26/f27 all converged
+# to (bin0 30-40%, spf 1.4-4.8, flip <1%, WLD 0/5 vs v20).
+#
+# Diagnosis (from f27 @099..@799 replay sweep):
+#   * pct min_bin_norm fix alone did not move bin0 (still ~37%).
+#   * Self-play with frozen pool locks BOTH players into bin0/emit=8 spam, so
+#     pct head never sees gradient toward big-fleet decisions.
+#   * Training spf 200+, replay spf 4.77 — opponent distribution gap is fatal.
+#
+# Levers (vs f27):
+#   * buffer_path + buffer_reset_ratio=0.8 — episode resets land in mid-game
+#     states from v20 / top10 winners. Forces learner into "high garrison /
+#     concentrated fleet" positions it never reaches via random init.
+#   * frozen_ratio 0.40 -> 0.20 — fewer turns vs frozen-self (the spam pool),
+#     more turns vs buffer-reset rollouts that disrupt 1-ship habits.
+#   * ent_coef_pct 0.006 -> 0.012 — anti-collapse on the pct head so resumed
+#     params can re-explore beyond bin0 even under reward sparsity.
+#   * lr_peak 1.5e-4 -> 7e-5 — softer updates because we're resuming and
+#     don't want to wipe useful dst/sun-mask priors.
+#
+# Decision criteria @299 (mid-replay):
+#   * If bin0 drops below 20% AND spf > 8 -> continue to @399.
+#   * If bin0 still > 30% AND emit=8 still > 30% -> abort, plan f29 (BC pct).
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 400
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_f28
+  ckpt_every: 50
+  log_every: 1
+  seed: 282
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+
+ppo:
+  lr_peak: 0.00007
+  lr_warmup_steps: 500
+  lr_decay_steps: 80000
+  lr_floor: 0.000005
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.20
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.012
+  ent_coef_emit: 0.006
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 0
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.20
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0
+  buffer_path: "data/mixed_v20_top10.npz"
+  buffer_reset_ratio: 0.80

@@ -1,0 +1,20 @@
+f29 overnight replay gate (first-80 vs v20, player_0)
+track      tag                  bin0    spf   garr   flip     e8     z0     WLD
+------------------------------------------------------------------------------
+f29        v11_f29_u299        10.0%  14.99   56.1  2.78%   1.0%   0.7%   0/5/0
+f29        v11_f29_u599         9.7%  13.15   44.6  3.03%   0.2%   1.0%   0/5/0
+f29_buf    v11_f29_buf_u299    14.2%   4.51   18.7  0.96%   7.5%   1.4%   0/5/0
+f29_buf    v11_f29_buf_u599    16.8%  10.17   55.3  3.09%  10.5%   0.7%   0/5/0
+f29b       v11_f29b_u299       12.1%  12.28   72.1  3.40%   3.0%   0.6%   0/5/0
+f29b       v11_f29b_u599       24.0%   9.47   78.2  2.94%  13.0%   0.7%   0/5/0
+
+Baselines (if present):
+  f27@799: bin0=27.0% spf=3.49 flip=1.07% e8=33.5%
+  f28@099: bin0=36.7% spf=6.93 flip=1.33% e8=36.8%
+
+Morning decision hints:
+  * f29 (no buffer) bin0 down alone -> signals work; f30 = f29_buf long run
+  * only buf/f29b bin0 down -> need buffer / distribution
+  * f29b e8 down but flip ~1% -> hard stop fixes spam not combat
+  * all bin0 >30% -> need turn-start pct or planet-level signals
+  * any flip >3% and spf >8 -> promote that track to 800 upd

@@ -99,6 +99,11 @@ def _empty_trace() -> Dict[str, list]:
         "fleets_arrived": 0,     # fleets that left + later disappeared but a capture occurred
         "fleet_disappear_no_capture": 0,  # likely sun-loss / out-of-bounds (proxy for sun_loss)
         "outcome": None,         # 'win' / 'loss' / 'draw' / 'error'
+        "launch_ships": [],      # per launch: ships sent (all game)
+        "launch_turns": [],        # turn index per launch
+        "emit_home_garrison": [],  # per emit turn: home planet garrison at turn-start
+        "emit_turns": [],          # turn index for each emit event
+        "home_planet_id": None,  # detected at t=0 (max garrison among owned)
     }
 
 
@@ -129,6 +134,16 @@ def analyse_one_game(env_steps: List[List[Any]]) -> Tuple[Dict[str, list], Dict[
         trace_p0["garrison_my"].append(my_ships_p0)
         trace_p1["garrison_my"].append(my_ships_p1)
 
+        if t == 0:
+            for player_idx, trace in ((0, trace_p0), (1, trace_p1)):
+                owned = [
+                    (pid, garrison_map.get(pid, 0))
+                    for pid, o in owners.items()
+                    if o == player_idx
+                ]
+                if owned:
+                    trace["home_planet_id"] = max(owned, key=lambda x: x[1])[0]
+
         # 2. actions submitted at this turn → ships per fleet, pct_bin
         for player_idx, trace in ((0, trace_p0), (1, trace_p1)):
             act = step[player_idx].get("action")
@@ -150,6 +165,8 @@ def analyse_one_game(env_steps: List[List[Any]]) -> Tuple[Dict[str, list], Dict[
                     continue
                 n += 1
                 ships_sum += ships
+                trace["launch_ships"].append(ships)
+                trace["launch_turns"].append(t)
                 src_g = garrison_map.get(src_id, 0)
                 bin_idx = _classify_pct_bin(ships, src_g)
                 trace["pct_bin_per_launch"].append((t, bin_idx))
@@ -160,6 +177,10 @@ def analyse_one_game(env_steps: List[List[Any]]) -> Tuple[Dict[str, list], Dict[
             else:
                 trace["ships_per_fleet"].append(ships_sum / float(n))
                 trace["n_emits"].append(n)
+                home_id = trace.get("home_planet_id")
+                if home_id is not None:
+                    trace["emit_home_garrison"].append(garrison_map.get(home_id, 0))
+                    trace["emit_turns"].append(t)
 
         # 3. captures: count planets that flipped TO us during this turn
         if prev_owners is not None:

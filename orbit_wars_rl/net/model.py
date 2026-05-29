@@ -37,8 +37,11 @@ from orbit_wars_rl.env import constants
 from orbit_wars_rl.features import EncodedObs
 from orbit_wars_rl.features.pair import (
     dst_pair_features_batched,
+    dst_flip_block_mask,
     emit_pair_globals,
     pct_pair_features,
+    pct_min_bin_index,
+    pct_low_bin_mask,
 )
 from orbit_wars_rl.net.transformer import EntityTransformer
 from orbit_wars_rl.net.heads import SrcHead, DstHead, PctHead, ValueHead, EmitHead
@@ -188,6 +191,8 @@ class ActorCritic(nn.Module):
     ff_dim: int = 128
     num_pct_bins: int = constants.NUM_PCT_BINS
     max_fleets_per_turn: int = constants.MAX_FLEETS_PER_TURN
+    emit_hard_stop: bool = False
+    flip_hard_mask: bool = False
 
     def setup(self) -> None:
         self.encoder = EntityTransformer(
@@ -297,24 +302,39 @@ class ActorCritic(nn.Module):
                 planet_x, planet_y, ships_raw_b, obs_pmask,
                 target_mask, remaining, src_t,
             )
+            flip_block = (
+                dst_flip_block_mask(
+                    ships_raw_b, obs_pmask, target_mask, remaining, src_t,
+                )
+                if self.flip_hard_mask
+                else None
+            )
 
             src_logits_t = self.src_head(planet_emb, eff_mask, remaining_norm)
+            emit_worth_it = emit_pair_g[..., 0] > 0
+            emit_force_stop = (
+                jnp.bool_(t > 0) & jnp.logical_not(emit_worth_it)
+                if self.emit_hard_stop
+                else None
+            )
             emit_logits_t = self.emit_head(
                 global_emb, planet_pool, jnp.int32(t), total_remaining_norm,
                 pair_feats_g=emit_pair_g,
+                emit_force_stop=emit_force_stop,
             )
             src_emb_t = _gather_planet_emb(planet_emb, src_t)
             dst_logits_t = self.dst_head(
                 planet_emb, src_emb_t, obs_pmask, obs_my,
                 src_idx=src_t, reserved_norm=reserved_norm,
                 pair_feats=dst_pair, sun_block_mask=sun_block,
+                flip_block_mask=flip_block,
             )
             dst_emb_t = _gather_planet_emb(planet_emb, dst_t)
             # src_remaining_norm: scalar (per leading batch) = remaining at src
             src_remaining_norm = jnp.take_along_axis(
                 remaining_norm, src_t[..., None], axis=-1
             )[..., 0]
-            # pct pair features: (..., 2) [pair_needed_pct, pair_flip_bin5]
+            # pct pair features: (..., 2) [min_bin_norm, pair_flip_bin5]
             garr_dst_chosen = jnp.take_along_axis(
                 ships_raw_b.astype(jnp.float32), dst_t[..., None], axis=-1
             )[..., 0]
@@ -322,9 +342,12 @@ class ActorCritic(nn.Module):
                 remaining.astype(jnp.float32), src_t[..., None], axis=-1
             )[..., 0]
             pct_pair = pct_pair_features(garr_dst_chosen, rem_src_chosen)
+            min_bin = pct_min_bin_index(garr_dst_chosen, rem_src_chosen)
+            pct_mask = pct_low_bin_mask(min_bin, self.num_pct_bins)
             pct_logits_t = self.pct_head(
                 src_emb_t, dst_emb_t, global_emb, src_remaining_norm,
                 pair_feats=pct_pair,
+                pct_low_bin_mask=pct_mask,
             )
 
             src_logits_list.append(src_logits_t)
@@ -428,9 +451,16 @@ class ActorCritic(nn.Module):
                 home_idx, home_init, total_init,
             )
             src_logits_t = self.src_head(planet_emb, eff_mask, remaining_norm)
+            emit_worth_it = emit_pair_g[..., 0] > 0
+            emit_force_stop = (
+                jnp.bool_(t > 0) & jnp.logical_not(emit_worth_it)
+                if self.emit_hard_stop
+                else None
+            )
             emit_logits_t = self.emit_head(
                 global_emb, planet_pool, jnp.int32(t), total_remaining_norm,
                 pair_feats_g=emit_pair_g,
+                emit_force_stop=emit_force_stop,
             )
 
             # Sample emit (1 = continue, 0 = stop). At t==0 force-continue; if
@@ -468,10 +498,18 @@ class ActorCritic(nn.Module):
                 planet_x, planet_y, ships_raw, obs_pmask,
                 target_mask, remaining, src_t,
             )
+            flip_block = (
+                dst_flip_block_mask(
+                    ships_raw, obs_pmask, target_mask, remaining, src_t,
+                )
+                if self.flip_hard_mask
+                else None
+            )
             dst_logits_t = self.dst_head(
                 planet_emb, src_emb_t, obs_pmask, obs_my,
                 src_idx=src_t, reserved_norm=reserved_norm,
                 pair_feats=dst_pair, sun_block_mask=sun_block,
+                flip_block_mask=flip_block,
             )
             if deterministic:
                 dst_t = jnp.argmax(dst_logits_t, axis=-1).astype(jnp.int32)
@@ -493,9 +531,12 @@ class ActorCritic(nn.Module):
                 remaining.astype(jnp.float32), src_t[..., None], axis=-1
             )[..., 0]
             pct_pair = pct_pair_features(garr_dst_chosen, rem_src_chosen)
+            min_bin = pct_min_bin_index(garr_dst_chosen, rem_src_chosen)
+            pct_mask = pct_low_bin_mask(min_bin, self.num_pct_bins)
             pct_logits_t = self.pct_head(
                 src_emb_t, dst_emb_t, global_emb, src_remaining_norm,
                 pair_feats=pct_pair,
+                pct_low_bin_mask=pct_mask,
             )
             if deterministic:
                 pct_t = jnp.argmax(pct_logits_t, axis=-1).astype(jnp.int32)

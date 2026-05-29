@@ -87,6 +87,8 @@ class TrainConfig:
     n_heads: int = 4
     ff_dim: int = 128
     max_fleets_per_turn: int = constants.MAX_FLEETS_PER_TURN
+    emit_hard_stop: bool = False
+    flip_hard_mask: bool = False
 
     ppo: PPOConfig = field(default_factory=PPOConfig)
     selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)
@@ -227,6 +229,8 @@ def train(
         n_heads=cfg.n_heads,
         ff_dim=cfg.ff_dim,
         max_fleets_per_turn=cfg.max_fleets_per_turn,
+        emit_hard_stop=cfg.emit_hard_stop,
+        flip_hard_mask=cfg.flip_hard_mask,
     )
 
     env_rngs = jax.random.split(rng_envs, cfg.num_envs)
