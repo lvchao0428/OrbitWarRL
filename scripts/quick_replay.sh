@@ -51,8 +51,12 @@ DST_PAIR_DIM=$(echo "$ARCH_INFO" | awk '{print $4}')
 if [ "$PLANET_DIM" = "19" ]; then
   TEMPLATE="submission_rl_v4.py"
 elif [ "$PLANET_DIM" = "28" ] && [ "$HAS_PAIR" = "1" ]; then
-  if [ "$DST_PAIR_DIM" = "5" ]; then
-    if [ -f submission_rl_v11_f31.py ] && echo "$TAG" | grep -q 'f31'; then
+  if [ "$DST_PAIR_DIM" = "7" ]; then
+    TEMPLATE="submission_rl_v11_f32.py"
+  elif [ "$DST_PAIR_DIM" = "5" ]; then
+    if [ -f submission_rl_v11_f33.py ] && echo "$TAG" | grep -q 'f33'; then
+      TEMPLATE="submission_rl_v11_f33.py"
+    elif [ -f submission_rl_v11_f31.py ] && echo "$TAG" | grep -q 'f31'; then
       TEMPLATE="submission_rl_v11_f31.py"
     elif grep -q '^EMIT_HARD_STOP\s*=\s*1' orbit_wars_rl/configs/multi_action_v11_f29b.yaml 2>/dev/null \
        && echo "$CKPT" | grep -q 'f29b'; then
@@ -62,6 +66,8 @@ elif [ "$PLANET_DIM" = "28" ] && [ "$HAS_PAIR" = "1" ]; then
     else
       TEMPLATE="submission_rl_v11_f29.py"
     fi
+  elif [ "$DST_PAIR_DIM" = "4" ]; then
+    TEMPLATE="submission_rl_v11_f26.py"
   elif grep -q '^MIN_BIN_PCT_FEAT\s*=' submission_rl_v11_f27.py 2>/dev/null; then
     TEMPLATE="submission_rl_v11_f27.py"
   else
@@ -106,11 +112,14 @@ flip = float(fb.get("fleet_arrival_rate", 0.0) or 0.0) * 100.0
 z0 = float(fb.get("zero_emit_rate", 0.0) or 0.0) * 100.0
 emit_dist = fb.get("emit_count_distribution") or []  # list, index = n_emits
 e2_plus = sum(float(p) for i, p in enumerate(emit_dist) if i >= 2)
+e8 = float(emit_dist[8]) * 100.0 if len(emit_dist) > 8 else 0.0
+bin_dist = fb.get("pct_bin_distribution") or []
+bin0 = float(bin_dist[0]) * 100.0 if bin_dist else 0.0
 oc = fb.get("outcome", {}) or {}
 wld = f"{oc.get('win', 0)}/{oc.get('loss', 0)}/{oc.get('draw', 0)}"
 
-print(f"tag=$TAG  spf={spf:.2f}  garr={garr:.2f}  flip={flip:.2f}%  "
-      f"z0={z0:.1f}%  e2+={e2_plus*100:.1f}%  WLD={wld}")
+print(f"tag=$TAG  bin0={bin0:.1f}%  spf={spf:.2f}  garr={garr:.2f}  flip={flip:.2f}%  "
+      f"z0={z0:.1f}%  e8={e8:.1f}%  e2+={e2_plus*100:.1f}%  WLD={wld}")
 print()
 print("Day5 first-80 gate (Top10 calibrated):")
 print(f"  spf  > 10    actual {spf:.2f}    {'OK' if spf > 10 else 'FAIL'}")
@@ -154,6 +163,12 @@ home_le1_emit_rate = (
     100.0 * home_le1_emits / total_emits if total_emits else 0.0
 )
 
+print()
+print("f31/f32 gate (aggregate first-80):")
+print(f"  bin0 < 15%     actual {bin0:.1f}%   {'OK' if bin0 < 15 else 'FAIL'}")
+print(f"  e8   < 5%      actual {e8:.1f}%    {'OK' if e8 < 5 else 'FAIL'}")
+print(f"  z0   > 8%      actual {z0:.1f}%    {'OK' if z0 > 8 else 'FAIL'}  (f32 target)")
+print(f"  z0   > 10%     actual {z0:.1f}%    {'OK' if z0 > 10 else 'FAIL'}  (f31 target)")
 print()
 print("f31 anti-spam metrics (player_0, first 80 / all launches):")
 print(f"  min_game_spf       = {min_game_spf:.2f}   (gate > 5)")

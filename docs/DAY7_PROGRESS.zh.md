@@ -1,6 +1,6 @@
 # DAY7 进展 — buf_mix 结论 → f25 特征 → f26 pair head
 
-> **2026-05-28 更新**  
+> **2026-05-29 更新**  
 > 接续 [`DAY6_PROGRESS.zh.md`](DAY6_PROGRESS.zh.md)。  
 > **项目综述（架构图 + 全流程）**：[`OVERVIEW.zh.md`](OVERVIEW.zh.md)
 
@@ -10,23 +10,25 @@
 
 | 维度 | 状态 |
 |---|---|
-| **buf_mix** | ✅ 完成；@299 bin0=59% → **参数调参无效** |
-| **v11_f25** | ✅ @299 replay；bin0 **9.1%** ✅，spf/garr/flip **全 fail** → pivot f26 |
-| **v11_f26** | ✅ 800 upd 训完 + replay；**pair_needed_pct 误导 → bin0 回弹 38%** → **pivot f27** |
-| **v11_f27** | ✅ 800 upd + @099/199/299/699/799 全量 replay；**pct fix 单独无效**；bin0 32-38%、spf 2.6-4.8、flip ~1% → **pivot f28** |
-| **v11_f28** | ✅ **代码已落地 + 5090 开训中**；resume f27 @799 + mixed_v20_top10 buffer (0.8) + ent_coef_pct=0.012 |
-| **当前主线** | **v11_f28**：用 buffer-reset 中段状态破 self-play 1-ship spam 局部最优 |
-| **训练** | `bash scripts/run_v11_f28.sh`（resume f27 @799；400 upd） |
+| **f29** | ✅ **最优 track**：bin0 9.7%, spf 13.15, emit=8 0.2%；但 HTML 显示 home=1 连发 |
+| **f30** | ✅ 中止（续训不修根因） |
+| **f31** | ✅ 600 upd 完成 + replay；hard masks 有效但**过度保守**：z0=2%, emit=1.08, flip=1% |
+| **当前主线** | **v11_f32**：速度感知 pair 特征 + 放宽阈值 bin5→bin3 + fleet-size shaping |
+| **训练** | `bash scripts/run_v11_f32.sh`（fresh 600 upd, seed=321） |
 | **决策标准** | **replay vs v20 only**（训练 spf/garr 不作 promote 依据） |
 
-### 策略 pivot 链（Day7 五次）
+### 策略 pivot 链（Day7 八次）
 
 ```
 buf_mix 参数 sweep 无效
-    → f25 turn-start 特征 → bin0 修好(9.1%)，spf/garr 全 fail
-        → f26 K-loop pair → garr↑ 但 bin0 回弹 38%、1-ship spam
-            → f27 min_bin_norm pct fix → bin0 36%（pct fix 无效）
-                → f28 mixed_v20_top10 buffer + ent_pct↑ → 当前
+  → f25 turn-start 特征 → bin0 修好(9.1%)，spf/garr 全 fail
+    → f26 K-loop pair → garr↑ 但 bin0 回弹 38%、1-ship spam
+      → f27 min_bin_norm pct fix → bin0 36%（pct fix 无效）
+        → f28 buffer-reset → bin0/flip 仍锁死
+          → f29 信号栈 → bin0 9.7% 最优，但 HTML 1-ship spam
+            → f30 续训 → 中止
+              → f31 hard masks → 有效但过度保守（z0=2%, emit=1.08）
+                → f32 速度感知 + 放宽阈值 → 当前
 ```
 
 **关键诊断（f27 @099/199/299/699/799 全部 replay 后）**：
@@ -396,17 +398,30 @@ bash scripts/quick_replay.sh ckpt_multi_action_v11_f28/ckpt_000399.pkl v11_f28_u
 - [x] **结论：f29 无 buffer 最优** — bin0 ~10%, e8 ~0%, spf ~13; flip ~3% 仍不足
 - [x] f29_buf / f29b 未 beat f29 bin0；f29b u599 退化
 
-### 8.7 v11_f30 — 续训 🟡
+### 8.7 v11_f30 — 续训 ✅ 中止
 
 - [x] config + run script（resume f29 @599, 800 upd, lr 8e-5）
-- [ ] 5090 训练 + @299/@599/@799 replay gate
+- [x] HTML postmortem → 中止（续训不修 worth_it 软门控根因）
 
-### 8.8 勿再踩坑
+### 8.8 v11_f31 — hard masks ✅
+
+- [x] emit_hard_stop + flip_hard_mask + config/script/submission
+- [x] 5090 600 upd 完成；bin0 ~9%, z0 2%, emit 1.08, flip 1%
+- [x] **诊断：hard masks 有效但过度保守 → pivot f32**
+
+### 8.9 v11_f32 — 速度感知 🟡
+
+- [x] pair.py: dst_pair 5→7, emit_pair 4→5, 阈值 bin5→bin3
+- [x] weights.py: infer_arch_from_flat 支持 f32 dims
+- [x] config + script + submission + parity 16/16
+- [ ] 5090 训练 + @299/@599 replay gate
+
+### 8.10 勿再踩坑
 
 - [ ] **不要** BC pct/emit（用户明确拒绝）
-- [ ] **不要** resume f27/f28 ckpt 到 f29（dst_fc1 维变）
+- [ ] **不要** resume f31 ckpt 到 f32（dst_pair_dim 5→7）
 - [ ] **不要** 用 `strong_ckpt_path` 塞 v20
-- [ ] f29 决策 **不看** 训练 spf；看 replay first-80
+- [ ] 决策 **不看** 训练 spf；看 replay first-80
 
 ---
 
@@ -569,32 +584,74 @@ bash scripts/quick_replay.sh ckpt_multi_action_v11_f31/ckpt_000599.pkl v11_f31_u
 # seed0 HTML vs f29
 ```
 
-### 10.10 Phase D 预留（f32，条件触发）
+### 10.10 Phase D — v11_f32（当前）
 
-**触发**：f31 @599 未过 §10.9 gate（尤其 min_game_spf / one_ship_rate / HTML flip）。
+**触发**：f31 @599 训练指标显示过度保守（z0=2%, emit=1.08, flip=1%）。
 
-**方向**：
+**f31 诊断**：hard masks 在 bin5 (70%) 有效止 spam，但模型不知道大舰队更快，导致只发 1 路大军或不发。需要速度感知特征 + 放宽阈值。
 
-- `encode.py` 已有 turn-start `[24-26]`：`capturable_bin3/5`, `needed_pct_norm`
-- f32：K-loop 内用 **remaining garrison** 刷新 planet-level capturable / needed_pct
-- 注入 PctHead/DstHead，让策略在不同敌方 garrison 下学会选目标
-- 仍无 BC；fresh 或 f31@599 resume 视 mask 是否仍必要
+**f32 变更（相对 f31）**：
+
+| 变更 | f31 | f32 | 原因 |
+|---|---|---|---|
+| **dst pair dim** | 5 | **7**（+speed_norm, +eta_norm） | 模型不知 fleet speed ∝ log(ships) |
+| **emit pair dim** | 4 | **5**（+feasible_avg_speed_norm） | emit head 不知可行舰队速度 |
+| **flip_hard_mask** | bin5 (70%) | **bin3 (40%)** | 70% 太保守，漏掉 40% 能攻占的目标 |
+| **emit_worth_it** | bin5 | **bin3** | 与 flip mask 对齐 |
+| **FLEET_LOG** | 0.0 | **0.005** | 微弱大舰队奖励 |
+| **RELEASE** | 0.05 | **0.003** | 蓄力后释放奖励 |
+| arch | 不变 | 不变 | 仍 d_model=128, 2层, 4头 |
+
+**速度公式**：`speed = 1 + 5 * (ln(ships)/ln(1000))^1.5`，归一化到 [0,1]。
+
+| Ships | Speed_norm | 含义 |
+|---|---|---|
+| 1 | 0.167 | 极慢 |
+| 10 | 0.327 | 慢 |
+| 50 | 0.522 | 中等 |
+| 100 | 0.620 | 快 |
+| 500 | 0.878 | 很快 |
+
+| 项 | 值 |
+|---|---|
+| config | `orbit_wars_rl/configs/multi_action_v11_f32.yaml` |
+| script | `scripts/run_v11_f32.sh` |
+| submission | `submission_rl_v11_f32.py`（`EMIT_HARD_STOP=1`, `F32_HARD_MASKS=1`） |
+| seed / upd | 321 / 600 fresh |
+| buffer / BC | 无 |
+
+**f32 gate（replay vs v20，first-80）**：
+
+| 指标 | f31 @599 | f32 目标 | 优先级 |
+|---|---|---|---|
+| bin0 | ~9% | <15% | P0 |
+| z0 | ~2% | >8% | P0 |
+| emit | ~1.08 | 1.2-2.0 | P1 |
+| spf | ~41 | >5 | P1 |
+| garr | ~48 | >60 | P1 |
+| flip | ~1% | >3% | P1 |
+| WLD | 0/5 | >=1/5 | P2 |
+| e8 | ~8% | <5% | P0 |
 
 ### 10.11 执行命令
 
 ```bash
-# f31 parity（16/16，需 emit_hard_stop + flip_hard_mask）
+# f32 parity（16/16，需 emit-hard-stop + flip-hard-mask）
 JAX_PLATFORMS=cpu python3 -m orbit_wars_rl.inference.test_parity \
   --num-states 16 --emit-hard-stop --flip-hard-mask
 
-# 5090 f31 训练
-bash scripts/run_v11_f31.sh
-tail -f logs/v11_f31.log
+# 5090 f32 训练
+bash scripts/run_v11_f32.sh
+tail -f logs/v11_f32.log
+
+# replay gate
+bash scripts/quick_replay.sh ckpt_multi_action_v11_f32/ckpt_000299.pkl v11_f32_u299
+bash scripts/quick_replay.sh ckpt_multi_action_v11_f32/ckpt_000599.pkl v11_f32_u599
 ```
 
 ---
 
-## 12. 路径备忘（f29/f31）
+## 12. 路径备忘（f29–f32）
 
 | 用途 | 路径 |
 |---|---|
@@ -605,3 +662,6 @@ tail -f logs/v11_f31.log
 | f31 config / log | `orbit_wars_rl/configs/multi_action_v11_f31.yaml`, `logs/v11_f31.log` |
 | f31 ckpt | `ckpt_multi_action_v11_f31/ckpt_XXXXXX.pkl` |
 | f31 submission | `submission_rl_v11_f31.py` |
+| f32 config / log | `orbit_wars_rl/configs/multi_action_v11_f32.yaml`, `logs/v11_f32.log` |
+| f32 ckpt | `ckpt_multi_action_v11_f32/ckpt_XXXXXX.pkl` |
+| f32 submission | `submission_rl_v11_f32.py` |

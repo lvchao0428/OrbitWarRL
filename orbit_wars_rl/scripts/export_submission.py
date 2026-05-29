@@ -117,7 +117,9 @@ def _read_template_mask_flags(template_path: str) -> dict[str, bool]:
 
     txt = Path(template_path).read_text(encoding="utf-8")
     emit_m = re.search(r"^EMIT_HARD_STOP\s*=\s*(\d+)", txt, flags=re.MULTILINE)
-    flip_m = re.search(r"^F31_HARD_MASKS\s*=\s*(\d+)", txt, flags=re.MULTILINE)
+    flip_m = re.search(
+        r"^F(?:31|32)_HARD_MASKS\s*=\s*(\d+)", txt, flags=re.MULTILINE
+    )
     return {
         "emit_hard_stop": bool(int(emit_m.group(1))) if emit_m else False,
         "flip_hard_mask": bool(int(flip_m.group(1))) if flip_m else False,
@@ -150,8 +152,13 @@ def _assert_template_matches_ckpt(template_path: str, arch: dict[str, int]) -> N
         )
     if mismatches:
         if arch["planet_feat_dim"] == 28 and ckpt_has_pair:
-            if arch.get("dst_pair_dim") == 5:
+            dpd = arch.get("dst_pair_dim", 0)
+            if dpd == 7:
+                hint = "submission_rl_v11_f32.py"
+            elif dpd == 5:
                 hint = "submission_rl_v11_f31.py"
+            elif dpd == 4:
+                hint = "submission_rl_v11_f26.py"
             else:
                 hint = "submission_rl_v11_f27.py"
         elif arch["planet_feat_dim"] == 28:

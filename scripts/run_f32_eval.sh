@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Post-train f31 eval: replay @299/@599 vs v20 + gate table.
+# Post-train f32 eval: replay @299/@599 vs v20 + gate table.
 #
 # Usage (5090 or local after ckpts exist):
-#   bash scripts/run_f31_eval.sh
-#   CKPT_DIR=ckpt_multi_action_v11_f31 bash scripts/run_f31_eval.sh
+#   bash scripts/run_f32_eval.sh
+#   CKPT_DIR=ckpt_multi_action_v11_f32 bash scripts/run_f32_eval.sh
 
 set -euo pipefail
 
@@ -14,17 +14,18 @@ if [ -z "${PYTHON:-}" ] && [ -x /home/charlie/anaconda3/bin/python ]; then
   export PYTHON=/home/charlie/anaconda3/bin/python
 fi
 
-CKPT_DIR="${CKPT_DIR:-ckpt_multi_action_v11_f31}"
+CKPT_DIR="${CKPT_DIR:-ckpt_multi_action_v11_f32}"
+F31_CKPT="${F31_CKPT:-ckpt_multi_action_v11_f31/ckpt_000599.pkl}"
 F29_CKPT="${F29_CKPT:-ckpt_multi_action_v11_f29/ckpt_000599.pkl}"
 
-echo "=== f31 eval: $CKPT_DIR vs v20 ==="
+echo "=== f32 eval: $CKPT_DIR vs v20 ==="
 for U in 099 299 599; do
   CKPT="$CKPT_DIR/ckpt_$(printf '%06d' "$U").pkl"
   if [ ! -f "$CKPT" ]; then
     echo "[skip] $CKPT not found"
     continue
   fi
-  TAG="v11_f31_u${U}"
+  TAG="v11_f32_u${U}"
   bash scripts/quick_replay.sh "$CKPT" "$TAG"
   if [ "$U" = "599" ]; then
     SUB="submission_rl_${TAG}.py"
@@ -32,6 +33,7 @@ for U in 099 299 599; do
     if [ -f "$SUB" ]; then
       echo ""
       echo "=== seed0 HTML: $TAG vs v20 ==="
+      PY="${PYTHON:-python3}"
       "$PY" -m orbit_wars_rl.scripts.replay_html \
         --agent-a "$SUB" \
         --agent-b submission_v20_0513.py \
@@ -43,7 +45,15 @@ for U in 099 299 599; do
 done
 
 echo ""
-echo "=== f29@599 baseline (comparison) ==="
+echo "=== f31@599 baseline ==="
+if [ -f "$F31_CKPT" ]; then
+  bash scripts/quick_replay.sh "$F31_CKPT" "v11_f31_u599_baseline"
+else
+  echo "[skip] $F31_CKPT not found"
+fi
+
+echo ""
+echo "=== f29@599 baseline ==="
 if [ -f "$F29_CKPT" ]; then
   bash scripts/quick_replay.sh "$F29_CKPT" "v11_f29_u599_baseline"
 else
@@ -51,9 +61,9 @@ else
 fi
 
 echo ""
-echo "=== gate table (from summary files) ==="
-for U in 099 299 599; do
-  SUM="logs/replay_analyze/v11_f31_u${U}_vs_v20.summary.txt"
+echo "=== gate summaries ==="
+for TAG in v11_f32_u099 v11_f32_u299 v11_f32_u599; do
+  SUM="logs/replay_analyze/${TAG}_vs_v20.summary.txt"
   if [ -f "$SUM" ]; then
     head -1 "$SUM"
   fi
