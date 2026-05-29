@@ -41,6 +41,19 @@ Feature layouts (kept in lock-step with the heads):
     [27]    weak_target_score -- (1 - log1p(ships)/8) * (is_enemy + is_neutral), clip [0,1].
                                Highlights soft targets globally — helps emit head count
                                multi-route opportunities. 0 for mine / strong enemies.
+    [28]    garrison_rank    -- f35: my garrison / my_max_garrison (0 if not mine).
+                               Un-compressed "am I the firepower hub?" signal for src head.
+    [29]    safe_surplus_norm -- f35: (my_garr - foe_soft_inbound) / my_total_garrison,
+                               clip [-1,1]. v20 calculate_safe_surplus analogue: ships I
+                               can safely peel off this planet. 0 if not mine.
+    [30]    is_strong_source -- f35: 1 if mine AND garrison > my_avg_garrison.
+                               Binary nudge to launch from above-average stockpiles.
+    [31]    prod_per_need    -- f35: prod^2 / (target_garr + pad) / 8, clip [0,1].
+                               v20 neutral_mfg: high-prod factories over low-prod mites.
+                               0 for mine.
+    [32]    v20_target_score -- f35: (prod*20 + weak*30) * dist_decay - need*0.5, /100,
+                               clip [-1,1]. v20 target_score distillation: near high-prod
+                               targets dominate. dist_decay=1/(1+eta_proxy*0.1). 0 for mine.
 
   fleet (10 dims):
     [0]     is_mine
@@ -85,7 +98,7 @@ from orbit_wars_rl.env.dynamics import fleet_speed
 from orbit_wars_rl.env.state import EnvState
 
 
-PLANET_FEAT_DIM = 28
+PLANET_FEAT_DIM = 33  # f35: +5 src-quality / v20-target-score dims (28..32)
 FLEET_FEAT_DIM = 10
 GLOBAL_FEAT_DIM = 17
 
@@ -388,6 +401,78 @@ def _encode_planets(
     )
     weak_target_score = inv_strength * is_capturable_target
 
+    # === f35: src-quality + v20-style target-score features (dims 28-32) ===
+    # Motivation (DAY8 §11/§12): the policy launches 55% of fleets from
+    # near-empty planets (median src garrison = 3). The src head only saw
+    # log1p(remaining)/8 which compresses 50 vs 5 ships to 0.49 vs 0.22 -- it
+    # cannot tell a "stockpile" from an "empty shell". These five features
+    # inject the v20 heuristics (calculate_safe_surplus / target_score /
+    # neutral_mfg) directly so PPO does not have to rediscover them.
+    my_ships_f = state.planet_ships.astype(jnp.float32)
+
+    # [28] garrison_rank: this planet's garrison percentile among MY planets.
+    #   1.0 = my biggest stockpile, 0.0 = my smallest / not mine. Tells the
+    #   src head "am I the firepower hub?" without log-compression.
+    my_garr_only = jnp.where(is_mine, my_ships_f, jnp.float32(0.0))
+    #   rank = (# of my planets I am >=) / (# my planets). Strict-greater +
+    #   half-equal would need pairwise; a cheap monotone proxy is garr/max.
+    garrison_rank = jnp.where(
+        is_mine,
+        my_garr_only / jnp.maximum(my_max_garrison, jnp.float32(1.0)),
+        jnp.float32(0.0),
+    )
+
+    # [29] safe_surplus_norm: v20 calculate_safe_surplus analogue.
+    #   (my garrison - foe soft inbound here) / my_total_garrison, clipped.
+    #   Positive = ships I can safely peel off this planet to attack with.
+    safe_surplus = (my_ships_f - foe_soft) * is_mine.astype(jnp.float32)
+    safe_surplus_norm = jnp.clip(
+        safe_surplus / jnp.maximum(my_total_garrison, jnp.float32(1.0)),
+        -1.0,
+        1.0,
+    )
+
+    # [30] is_strong_source: my planet whose garrison exceeds my average.
+    #   Binary nudge toward launching from above-average stockpiles.
+    is_strong_source = (
+        is_mine & (my_ships_f > my_avg_garrison)
+    ).astype(jnp.float32)
+
+    # --- v20 target_score distillation (dst-side, enemy/neutral only) ---
+    #   need ~= target garrison + padding (mirror capture_need's first pass).
+    pad = jnp.where(is_neutral, jnp.float32(2.0), jnp.float32(8.0))
+    need_est = jnp.maximum(target_garr + pad, jnp.float32(1.0))
+
+    # [31] prod_per_need: v20 neutral_mfg = prod^2 / need. Favours high-prod
+    #   factories over low-prod mites at similar cost. 0 for my planets.
+    prod_f = state.planet_prod.astype(jnp.float32)
+    prod_per_need = jnp.where(
+        is_capturable_target > 0,
+        jnp.clip(prod_f * prod_f / need_est / 8.0, 0.0, 1.0),
+        jnp.float32(0.0),
+    )
+
+    # [32] v20_target_score_norm: distance-decayed value minus cost. Uses ETA
+    #   proxy from distance to my CLOSEST planet (cheaper than per-src eta but
+    #   captures "near targets dominate"). distance_decay = 1/(1+eta*0.1).
+    my_x = jnp.where(is_mine, state.planet_x, jnp.float32(1e6))
+    my_y = jnp.where(is_mine, state.planet_y, jnp.float32(1e6))
+    #   min distance from each planet to any of my planets.
+    dx = state.planet_x[:, None] - my_x[None, :]
+    dy = state.planet_y[:, None] - my_y[None, :]
+    dist_to_mine = jnp.sqrt(dx * dx + dy * dy)  # (P, P)
+    min_dist_to_mine = dist_to_mine.min(axis=-1)  # (P,)
+    eta_proxy = min_dist_to_mine / jnp.float32(2.0)  # ~speed of a small fleet
+    distance_decay = 1.0 / (1.0 + eta_proxy * jnp.float32(0.10))
+    prod_value = prod_f * jnp.float32(20.0)  # prod * horizon proxy
+    target_value = (prod_value + weak_target_score * 30.0) * distance_decay
+    cost_term = need_est * jnp.float32(0.5)
+    v20_target_score = jnp.where(
+        is_capturable_target > 0,
+        jnp.clip((target_value - cost_term) / jnp.float32(100.0), -1.0, 1.0),
+        jnp.float32(0.0),
+    )
+
     feats = jnp.stack(
         [
             is_mine.astype(jnp.float32),
@@ -418,6 +503,11 @@ def _encode_planets(
             needed_pct_norm,
             capturable_bin5,
             weak_target_score,
+            garrison_rank,
+            safe_surplus_norm,
+            is_strong_source,
+            prod_per_need,
+            v20_target_score,
         ],
         axis=-1,
     )

@@ -1,0 +1,73 @@
+# v11_f35 — f33 arch + 5 src-quality / v20-target-score feats + anti-1-ship reward.
+#
+# Big swing (user-requested "0->1, must SEE it work"): attack the verified root
+# cause that 8 prior versions never fixed — 55% of launches from <=3-ship
+# planets, never builds a big stockpile, never beats v20.
+#
+# Three deltas vs f33 (intentionally combined; not small-step):
+#   1. PLANET_FEAT_DIM 28 -> 33: src-quality + v20 target_score distillation
+#      [28] garrison_rank [29] safe_surplus [30] is_strong_source
+#      [31] prod_per_need [32] v20_target_score
+#   2. reward: ONE_SHIP_PENALTY (sharp anti-trickle) + HIGH_PROD_CAPTURE
+#   3. lower frozen_ratio 0.25 + 800-upd early stop to avoid f33's late
+#      self-play inflation (f29 cannot be a strong-opponent anchor here —
+#      its 28-dim arch is shape-incompatible with f35's 33-dim encoder).
+#
+# PPO recipe = f33 (top-player: ent 0.05, lr 3e-5, ppo_epochs 1, clip 0.20).
+# Hard masks (emit_hard_stop + flip_hard_mask) kept from f33.
+# Fresh train 800 upd (stop before f33-style late self-play inflation).
+#
+# Reward env vars set by scripts/run_v11_f35.sh:
+#   ORBITWARS_SHAPING_ONE_SHIP_PENALTY=0.01  (flat -0.01 per <=3-ship launch)
+#   ORBITWARS_SHAPING_ONE_SHIP_THRESH=3.0
+#   ORBITWARS_SHAPING_HIGH_PROD_CAPTURE=0.05 (capture prod>=3 factories)
+#   ORBITWARS_SHAPING_HIGH_PROD_THRESH=3.0
+#   + f33 base shaping (PLANET_SHARE, RELEASE, CAPTURE, PROD_SHARE_DELTA)
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_f35
+  ckpt_every: 100
+  log_every: 1
+  seed: 351
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  flip_hard_mask: true
+
+ppo:
+  lr_peak: 0.00003
+  lr_warmup_steps: 2000
+  lr_decay_steps: 500000
+  lr_floor: 0.00001
+  clip_eps: 0.20
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.05
+  ent_coef_dst: 0.05
+  ent_coef_pct: 0.05
+  ent_coef_emit: 0.05
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.25
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0

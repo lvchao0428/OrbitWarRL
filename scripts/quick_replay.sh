@@ -50,6 +50,9 @@ DST_PAIR_DIM=$(echo "$ARCH_INFO" | awk '{print $4}')
 
 if [ "$PLANET_DIM" = "19" ]; then
   TEMPLATE="submission_rl_v4.py"
+elif [ "$PLANET_DIM" = "33" ] && [ "$HAS_PAIR" = "1" ]; then
+  # f35: f33 arch + 5 src-quality / v20-target-score planet feats (dst_pair=5).
+  TEMPLATE="submission_rl_v11_f35.py"
 elif [ "$PLANET_DIM" = "28" ] && [ "$HAS_PAIR" = "1" ]; then
   if [ "$DST_PAIR_DIM" = "7" ]; then
     TEMPLATE="submission_rl_v11_f32.py"

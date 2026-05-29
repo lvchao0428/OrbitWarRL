@@ -144,6 +144,30 @@ SHAPING_CAPTURE: float = float(_os.environ.get("ORBITWARS_SHAPING_CAPTURE", "0.0
 # When 1, emit_log only applies if at least one valid launch has release_factor>0.
 SHAPING_EMIT_GATED: float = float(_os.environ.get("ORBITWARS_SHAPING_EMIT_GATED", "0.0"))
 
+# --- Day 8 / f35: anti-1-ship + high-prod capture ---
+#
+# Root cause (DAY8 §11/§12): 55% of launches send 1-3 ships from near-empty
+# source planets. The smooth fleet_size_log floor barely penalizes this. A
+# sharp per-launch penalty for tiny fleets gives PPO a direct gradient against
+# the "trickle from empty shells" failure mode.
+#
+# ONE_SHIP_PENALTY: -coef per valid launch with ships <= ONE_SHIP_THRESH.
+#   Flat penalty (not log) so it bites regardless of source size.
+# HIGH_PROD_CAPTURE: extra reward when a newly-captured planet has prod>=THRESH,
+#   scaled by its production -- pushes the policy to target factories, not mites.
+SHAPING_ONE_SHIP_PENALTY: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_ONE_SHIP_PENALTY", "0.0")
+)
+SHAPING_ONE_SHIP_THRESH: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_ONE_SHIP_THRESH", "3.0")
+)
+SHAPING_HIGH_PROD_CAPTURE: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_HIGH_PROD_CAPTURE", "0.0")
+)
+SHAPING_HIGH_PROD_THRESH: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_HIGH_PROD_THRESH", "3.0")
+)
+
 
 def player_total_ships(state: EnvState, player: int) -> jnp.ndarray:
     """Total ships (planets + fleets) for ``player``, masked by validity.
@@ -406,6 +430,46 @@ def emit_log_reward_gated(
     release_factor = _release_factors(state, src_idx, valid_mask)
     has_release = ((release_factor * valid_f) > 0.0).any()
     return jnp.where(has_release, base, jnp.float32(0.0))
+
+
+def one_ship_penalty_reward(
+    valid_mask: jnp.ndarray, ships_per_launch: jnp.ndarray
+) -> jnp.ndarray:
+    """-SHAPING_ONE_SHIP_PENALTY per valid launch with ships <= ONE_SHIP_THRESH.
+
+    Flat per-launch penalty (NOT log-scaled) for tiny "trickle" fleets. With
+    K=8 slots the worst case is ``-coef * 8`` per turn, so keep coef small
+    (e.g. 0.01 -> -0.08/turn floor). Returns 0 when the coef is 0 so existing
+    configs are reward-bit-exact.
+    """
+    if SHAPING_ONE_SHIP_PENALTY <= 0.0:
+        return jnp.float32(0.0)
+    valid_f = valid_mask.astype(jnp.float32)
+    ships_f = ships_per_launch.astype(jnp.float32)
+    tiny = (ships_f <= jnp.float32(SHAPING_ONE_SHIP_THRESH)).astype(jnp.float32)
+    n_tiny = (tiny * valid_f).sum()
+    return -jnp.float32(SHAPING_ONE_SHIP_PENALTY) * n_tiny
+
+
+def high_prod_capture_reward(
+    prev_state: EnvState, next_state: EnvState, player: int
+) -> jnp.ndarray:
+    """SHAPING_HIGH_PROD_CAPTURE * sum(prod) over newly-captured prod>=THRESH planets.
+
+    Rewards capturing factories specifically (v20 target_score prioritizes
+    high-prod neutrals). Normalized by total production so the scale matches
+    the other share-based terms. Returns 0 when coef is 0.
+    """
+    if SHAPING_HIGH_PROD_CAPTURE <= 0.0:
+        return jnp.float32(0.0)
+    prev_mine = (prev_state.planet_owner == player) & prev_state.planet_mask
+    next_mine = (next_state.planet_owner == player) & next_state.planet_mask
+    gained = next_mine & jnp.logical_not(prev_mine)
+    prod_f = next_state.planet_prod.astype(jnp.float32)
+    is_high = prod_f >= jnp.float32(SHAPING_HIGH_PROD_THRESH)
+    prod_gained = jnp.where(gained & is_high, prod_f, jnp.float32(0.0)).sum()
+    total_prod = jnp.maximum(prod_f.sum(), jnp.float32(1.0))
+    return jnp.float32(SHAPING_HIGH_PROD_CAPTURE) * prod_gained / total_prod
 
 
 def capture_flip_reward(
