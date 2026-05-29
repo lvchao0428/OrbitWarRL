@@ -32,7 +32,7 @@ fi
 # Latest update
 echo ""
 echo "--- Latest Update ---"
-tail -1 "$LOG" | grep "^upd " || echo "(no update line at end)"
+grep "^upd " "$LOG" | tail -1 || echo "(no update lines found)"
 
 # clip_frac trend (last 10 updates)
 echo ""
@@ -84,9 +84,54 @@ done
 # Key gameplay metrics
 echo ""
 echo "--- Gameplay Metrics (last update) ---"
-LAST=$(tail -1 "$LOG" | grep "^upd " || echo "")
+LAST=$(grep "^upd " "$LOG" | tail -1 || echo "")
 if [ -n "$LAST" ]; then
-  echo "$LAST" | sed 's/.*emits \([0-9.]*\)/  emits=\1/' | sed 's/.*spf \([0-9.]*\)/  spf=\1/' | sed 's/.*z0 \([0-9.]*\)/  z0=\1/' | sed 's/.*garr \([0-9.]*\)/  garr=\1/' | sed 's/.*e2 \([0-9.]*\)/  e2=\1/'
+  echo "$LAST" | awk '{
+    for (i=1;i<=NF;i++) {
+      if ($i=="emits") emits=$(i+1)
+      if ($i=="spf") spf=$(i+1)
+      if ($i=="z0") z0=$(i+1)
+      if ($i=="garr") garr=$(i+1)
+      if ($i=="e2") e2=$(i+1)
+      if ($i=="clip") clip=$(i+1)
+    }
+    printf "  emits=%s  spf=%s  z0=%s  garr=%s  e2=%s  clip=%s\n", emits, spf, z0, garr, e2, clip
+  }'
+fi
+
+# Self-play inflation detector (spf spike + z0 collapse)
+echo ""
+echo "--- Self-Play Inflation Check ---"
+if command -v awk >/dev/null 2>&1; then
+  awk '
+    /^upd / {
+      upd = $2 + 0
+      for (i=1;i<=NF;i++) {
+        if ($i=="spf") spf = $(i+1) + 0
+        if ($i=="z0") z0 = $(i+1) + 0
+        if ($i=="emits") emits = $(i+1) + 0
+      }
+      if (upd <= 200) { early_n++; early_spf += spf }
+      if (upd >= 350 && upd <= 420) { pre_n++; pre_spf += spf; pre_z0 += z0 }
+      last_spf = spf; last_z0 = z0; last_emits = emits; last_upd = upd
+    }
+    END {
+      if (early_n > 0) early_avg = early_spf / early_n; else early_avg = 0
+      if (pre_n > 0) {
+        pre_avg_spf = pre_spf / pre_n
+        pre_avg_z0 = pre_z0 / pre_n
+        printf "  early_avg_spf (upd<=200) = %.1f\n", early_avg
+        printf "  pre_collapse (upd350-420) spf=%.1f z0=%.1f%%\n", pre_avg_spf, pre_avg_z0 * 100
+      }
+      if (last_upd != "") {
+        printf "  latest (upd %d) spf=%.1f z0=%.1f%% emits=%.2f\n", last_upd, last_spf, last_z0 * 100, last_emits
+        if (early_avg > 0 && last_spf > early_avg * 4)
+          printf "  [WARN] spf > 4x early avg — likely self-play inflation (replay before promote)\n"
+        if (last_z0 < 0.02)
+          printf "  [WARN] z0 < 2%% — hyper-emit (training metric, check replay vs v20)\n"
+      }
+    }
+  ' "$LOG"
 fi
 
 # Warnings
@@ -105,7 +150,7 @@ if command -v awk >/dev/null 2>&1; then
 fi
 
 # Check KL divergence
-LAST_KL=$(tail -1 "$LOG" | grep "^upd " | sed 's/.*kl \([+-][0-9.]*\).*/\1/' 2>/dev/null || echo "0")
+LAST_KL=$(grep "^upd " "$LOG" | tail -1 | sed 's/.*kl \([+-][0-9.]*\).*/\1/' 2>/dev/null || echo "0")
 if [ -n "$LAST_KL" ] && [ "$LAST_KL" != "0" ]; then
   is_high=$(awk "BEGIN { print ($LAST_KL > 0.05) ? 1 : 0 }" 2>/dev/null || echo "0")
   if [ "$is_high" = "1" ]; then

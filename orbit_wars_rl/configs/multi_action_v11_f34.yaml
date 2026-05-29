@@ -1,0 +1,59 @@
+# v11_f34 — f33 recipe + f29 strong opponent to curb self-play inflation.
+#
+# f33 @449+ pathology (training log): spf 55 -> 232 -> 400+, z0 -> 0%, replay TBD.
+# Single delta vs f33: anchor self-play to f29 @599 (best replay arch so far).
+#
+#   strong_ckpt_path + strong_ratio=0.35  (fixed f29 opponent)
+#   frozen_ratio 0.40 -> 0.25             (less pure frozen-pool spiral)
+#   num_updates 800                       (stop before f33-style late collapse)
+#   ckpt_every 100                        (dense replay sweep)
+#
+# Arch / features / PPO hparams FROZEN to f33 (same as f31).
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 800
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_f34
+  ckpt_every: 100
+  log_every: 1
+  seed: 341
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  flip_hard_mask: true
+
+ppo:
+  lr_peak: 0.00003
+  lr_warmup_steps: 2000
+  lr_decay_steps: 500000
+  lr_floor: 0.00001
+  clip_eps: 0.20
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.05
+  ent_coef_dst: 0.05
+  ent_coef_pct: 0.05
+  ent_coef_emit: 0.05
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.25
+  eval_vs_frozen: true
+  strong_ckpt_path: "ckpt_multi_action_v11_f29/ckpt_000599.pkl"
+  strong_ratio: 0.35

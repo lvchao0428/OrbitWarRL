@@ -10,12 +10,14 @@
 
 | 维度 | 状态 |
 |---|---|
-| **f32** | 🔴 **@599 评估完成 — 不 promote**；replay vs v20：WLD **0/5**，gate 全 fail |
-| **f32 病理** | 非「更敢打」：z0 **0.5%**（比 f31 更 hyper-emit）+ **bin7≈64%** + spf≈6 + flip≈2.4% + **e8=8%** |
-| **训练 vs replay** | final eval WR vs random **0.688**；与 replay 脱节（self-play 学会多路小舰队 spam） |
-| **当前主线** | **Pivot → f33**；提交候选仍 **f29 @599**（bin0/spf 最优）；f31/f32 均不提交 |
-| **决策标准** | replay vs v20 only（训练 spf/garr / random WR 不作 promote 依据） |
-| **f33 方向** | 场景 **C+**（见 §7.3）：一次只改一个 delta；优先从 **f31 arch** 回退 flip→bin5 或去掉 flip_hard_mask |
+| **f32** | 🔴 **@599 不 promote**；WLD 0/5；bin7≈64% + z0=0.5% + spf≈6 |
+| **f33** | 🟡 **2000 upd 训完**（65M steps）；训练健康（clip max 0.10）；**@449 起 self-play 膨胀**；**replay 待跑** |
+| **f33 训练亮点** | @399：spf=55 garr=65 emits=1.16 z0=3%（collapse 前最后 ckpt） |
+| **f33 训练病理** | @449 spf 232→@1999 spf=436 z0=0% emits=3.27（与 f32 同类 self-play 锁死） |
+| **f32 clip_frac** | ✅ 已查：max **0.39**（失控）；f33 max **0.10**（超参轨有效） |
+| **当前主线** | ① `bash scripts/run_f33_eval.sh`（优先 **@399**）② **f34** f29 强对手锚定 |
+| **提交候选** | 仍 **f29 @599**（replay 最优）；f31/f32/f33@1999 均不提交 |
+| **决策标准** | replay vs v20 only |
 
 ---
 
@@ -102,8 +104,98 @@
 
 ### 2.4 仍待确认
 
-- ❓ f32 `logs/v11_f32.log` 的 **clip_frac** 曲线（5090 上 `check_training_health.sh`）
-- ❓ f33 应先 **单独** 验证：仅速度特征 vs 仅 bin3 阈值（f32 一次改了 4 件事）
+- ✅ f32 `logs/v11_f32.log` **clip_frac**：max **0.39**（>0.20 告警，f32 lr/ent 变更导致优化器失控）
+- ✅ f33 训练完成；**replay 待 5090 跑** `bash scripts/run_f33_eval.sh`
+- ❓ f33 **@399** vs **@1999** replay 谁更接近 v20（训练 log 强烈指向 @399）
+
+---
+
+## 8. f33 训练完成（2000 upd，replay 待跑）
+
+### 8.1 实现
+
+| 项 | 值 |
+|---|---|
+| 轨道 | **f33c**（DAY8 §7.3 #3）：f31 arch + 顶层选手 PPO |
+| 超参 | ent=0.05×4, lr=3e-5, ppo_epochs=1, clip=0.20, vf=0.5 |
+| 步数 | 2000 upd ≈ **65M steps**（f31 的 3.4×） |
+| 脚本 | `scripts/run_v11_f33.sh`, `orbit_wars_rl/configs/multi_action_v11_f33.yaml` |
+| ckpt | `ckpt_multi_action_v11_f33/ckpt_*.pkl`（5090 上，本地未 sync） |
+| final eval | WR vs random **0.844**；WR vs frozen **0.94**（不可作 promote 依据） |
+
+### 8.2 训练健康 vs f32
+
+| 指标 | f32 @599 | f33 @1999 |
+|---|---|---|
+| clip_frac max | **0.39** ❌ | **0.10** ✅ |
+| clip_frac last | ~0.31 | 0.04 |
+| KL last | ~0.003 | 0.004 |
+| SPS | ~5K | ~16.6K |
+
+顶层选手 PPO 配方 **稳定了优化器**；f32 的高 clip_frac 与 replay 失败相关。
+
+### 8.3 Self-play 膨胀时间线（训练 log）
+
+| upd | emits | spf | z0 | garr | 备注 |
+|---|---|---|---|---|---|
+| 199 | 1.18 | 38.7 | 3% | 54 | 正常 |
+| **399** | 1.16 | **55.1** | **3%** | **65** | **collapse 前 sweet spot** |
+| **449** | 1.44 | **231.6** | 3% | 173 | ⚠️ spf 4× 跳变（frozen self-play） |
+| 599 | 1.55 | 404.5 | 2% | 316 | 已膨胀 |
+| 1199 | 1.71 | 475.1 | 1% | 346 | 平台期 |
+| 1999 | 3.27 | 435.7 | **0%** | 294 | 晚期 hyper-emit |
+
+**解读**：与 f32 相同模式 — 训练 spf/garr 虚高，z0 归零；**@449 后指标不可信**。Promote 必须 replay；**优先评 @399**，勿默认 @1999。
+
+### 8.4 待执行（5090）
+
+```bash
+bash scripts/run_f33_eval.sh
+# 重点: logs/replay_analyze/v11_f33_u399_vs_v20.summary.txt
+bash scripts/check_training_health.sh logs/v11_f33.log
+```
+
+### 8.5 决策树（replay 后）
+
+| f33 @399 replay | 动作 |
+|---|---|
+| WLD≥1/5 且 spf>10 flip>3% | Promote @399；可选 f34 mixed buffer 续训 |
+| 优于 f29 部分 gate 但 WLD=0 | 保留 f29 提交；f34 强对手轨 |
+| 与 f31 同级 fail | Pivot f33b（去 flip_hard_mask + ETA） |
+
+---
+
+## 9. f34 — f29 强对手锚定（下一轨）
+
+**动机**：f33 @449 collapse = 纯 frozen pool 螺旋；f29 是 replay 最优 arch，作 fixed strong opponent 拉回 v20 分布。
+
+**单 delta vs f33**：
+
+| 参数 | f33 | f34 |
+|---|---|---|
+| strong_ckpt | — | f29 @599 |
+| strong_ratio | 0 | **0.35** |
+| frozen_ratio | 0.40 | **0.25** |
+| num_updates | 2000 | **800**（在 collapse 前停） |
+
+```bash
+# 需 f29 ckpt 存在
+bash scripts/run_v11_f34.sh
+bash scripts/run_f34_eval.sh   # 训完后
+```
+
+配置：`orbit_wars_rl/configs/multi_action_v11_f34.yaml`
+
+---
+
+## 10. f32 clip_frac 确认
+
+```
+f32 max clip_frac=0.39  [CRITICAL]
+f33 max clip_frac=0.10  (none)
+```
+
+f32 同时改 4 件事 + 原 f31 低 ent/lr 组合 → clip 失控；f33 对齐顶层选手后 clip 正常，但 **self-play 膨胀仍发生**（问题不在 clip，在对手分布）。
 
 ---
 
@@ -256,3 +348,8 @@ bash scripts/check_training_health.sh logs/v11_f32.log
 | 训练健康检查 | `scripts/check_training_health.sh` |
 | Day7 进展 | `docs/DAY7_PROGRESS.zh.md` |
 | 顶层选手经验 | `top_players_rl.txt` |
+| f33 config / log | `orbit_wars_rl/configs/multi_action_v11_f33.yaml`, `logs/v11_f33.log` |
+| f33 ckpt | `ckpt_multi_action_v11_f33/ckpt_XXXXXX.pkl` |
+| f33 eval | `scripts/run_f33_eval.sh` |
+| f34 config / script | `orbit_wars_rl/configs/multi_action_v11_f34.yaml`, `scripts/run_v11_f34.sh` |
+| f34 eval | `scripts/run_f34_eval.sh` |

@@ -54,7 +54,7 @@ elif [ "$PLANET_DIM" = "28" ] && [ "$HAS_PAIR" = "1" ]; then
   if [ "$DST_PAIR_DIM" = "7" ]; then
     TEMPLATE="submission_rl_v11_f32.py"
   elif [ "$DST_PAIR_DIM" = "5" ]; then
-    if [ -f submission_rl_v11_f33.py ] && echo "$TAG" | grep -q 'f33'; then
+    if [ -f submission_rl_v11_f33.py ] && echo "$TAG" | grep -qE 'f33|f34'; then
       TEMPLATE="submission_rl_v11_f33.py"
     elif [ -f submission_rl_v11_f31.py ] && echo "$TAG" | grep -q 'f31'; then
       TEMPLATE="submission_rl_v11_f31.py"
