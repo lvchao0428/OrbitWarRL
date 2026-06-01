@@ -87,6 +87,20 @@ def _inject(template_path: str, out_path: str, payload_b64: str) -> None:
         )
 
 
+def _rewrite_top_level_int_assign(path: str, name: str, value: int) -> None:
+    import re
+
+    txt = Path(path).read_text(encoding="utf-8")
+    pat = rf"^{name}\s*=\s*\d+"
+    repl = f"{name} = {int(value)}"
+    new_txt, n_sub = re.subn(pat, repl, txt, count=1, flags=re.MULTILINE)
+    if n_sub != 1:
+        raise RuntimeError(
+            f"could not find top-level '{name} = <int>' in {path} for override"
+        )
+    Path(path).write_text(new_txt, encoding="utf-8")
+
+
 def _read_template_dims(template_path: str) -> dict[str, int]:
     """Parse PLANET/GLOBAL feat dims and K from submission template source."""
     import re
@@ -117,11 +131,15 @@ def _read_template_mask_flags(template_path: str) -> dict[str, bool]:
 
     txt = Path(template_path).read_text(encoding="utf-8")
     emit_m = re.search(r"^EMIT_HARD_STOP\s*=\s*(\d+)", txt, flags=re.MULTILINE)
+    emit_min_step_m = re.search(
+        r"^EMIT_HARD_STOP_MIN_STEP\s*=\s*(\d+)", txt, flags=re.MULTILINE
+    )
     flip_m = re.search(
         r"^F(?:31|32)_HARD_MASKS\s*=\s*(\d+)", txt, flags=re.MULTILINE
     )
     return {
         "emit_hard_stop": bool(int(emit_m.group(1))) if emit_m else False,
+        "emit_hard_stop_min_step": int(emit_min_step_m.group(1)) if emit_min_step_m else 1,
         "flip_hard_mask": bool(int(flip_m.group(1))) if flip_m else False,
     }
 
@@ -244,6 +262,12 @@ def main() -> int:
     ap.add_argument("--tol", type=float, default=5e-3,
                     help="logit drift threshold (informational; argmax must always match)")
     ap.add_argument("--num-states", type=int, default=16)
+    ap.add_argument(
+        "--emit-hard-stop-min-step",
+        type=int,
+        default=None,
+        help="override EMIT_HARD_STOP_MIN_STEP in the output submission",
+    )
     args = ap.parse_args()
 
     if not os.path.exists(args.ckpt):
@@ -267,6 +291,11 @@ def main() -> int:
 
     if not args.skip_parity:
         mask_flags = _read_template_mask_flags(args.template)
+        emit_hard_stop_min_step = (
+            args.emit_hard_stop_min_step
+            if args.emit_hard_stop_min_step is not None
+            else mask_flags["emit_hard_stop_min_step"]
+        )
         print(f"[export] running parity test against {args.ckpt} "
               f"(tol={args.tol}, num_states={args.num_states})")
         status = run_parity(
@@ -279,6 +308,7 @@ def main() -> int:
             n_heads=arch["n_heads"],
             ff_dim=arch["ff_dim"],
             emit_hard_stop=mask_flags["emit_hard_stop"],
+            emit_hard_stop_min_step=emit_hard_stop_min_step,
             flip_hard_mask=mask_flags["flip_hard_mask"],
         )
         if status != 0:
@@ -295,6 +325,12 @@ def main() -> int:
           f"compressed+base64 ~{enc_size/1024:.1f}KB")
 
     _inject(args.template, out_path, payload)
+    if args.emit_hard_stop_min_step is not None:
+        _rewrite_top_level_int_assign(
+            out_path,
+            "EMIT_HARD_STOP_MIN_STEP",
+            args.emit_hard_stop_min_step,
+        )
     print(f"[export] wrote {out_path}")
 
     # Smoke test: forward must not raise; empty moves only warn (v11 may z0 on calm obs).

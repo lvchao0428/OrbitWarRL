@@ -88,6 +88,7 @@ class TrainConfig:
     ff_dim: int = 128
     max_fleets_per_turn: int = constants.MAX_FLEETS_PER_TURN
     emit_hard_stop: bool = False
+    emit_hard_stop_min_step: int = 1
     flip_hard_mask: bool = False
 
     ppo: PPOConfig = field(default_factory=PPOConfig)
@@ -230,6 +231,7 @@ def train(
         ff_dim=cfg.ff_dim,
         max_fleets_per_turn=cfg.max_fleets_per_turn,
         emit_hard_stop=cfg.emit_hard_stop,
+        emit_hard_stop_min_step=cfg.emit_hard_stop_min_step,
         flip_hard_mask=cfg.flip_hard_mask,
     )
 

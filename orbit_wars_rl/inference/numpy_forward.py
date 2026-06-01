@@ -567,6 +567,7 @@ def greedy_multi_action(
     planet_y: np.ndarray | None = None,
     home_idx: int = 0,
     emit_hard_stop: bool = False,
+    emit_hard_stop_min_step: int = 1,
     flip_hard_mask: bool = False,
 ) -> Tuple[list, list, list, list, float]:
     """Greedy multi-fleet action mirroring ActorCritic.__call__(deterministic=True).
@@ -621,7 +622,11 @@ def greedy_multi_action(
                 home_idx, home_init, total_init,
             )
         emit_worth_it = (emit_pair_g is not None) and (float(emit_pair_g[0]) > 0.0)
-        emit_force_stop = emit_hard_stop and (t > 0) and (not emit_worth_it)
+        emit_force_stop = (
+            emit_hard_stop
+            and (t >= emit_hard_stop_min_step)
+            and (not emit_worth_it)
+        )
         e_logits = emit_head(
             W, global_emb, planet_pool, t,
             max_steps=max_fleets_per_turn,

@@ -14,7 +14,7 @@ Must match ``orbit_wars_rl/features/encode.py`` + ``features/pair.py`` (f29/f31)
   - DST_PAIR_DIM = 5  (+ pair_margin_norm; dst_fc1 input 2*d+6)
 
 Hard masks (f31/f33, beyond f29 soft signals):
-  EmitHead  -- ``EMIT_HARD_STOP=1``: worth_it=0 -> force stop (step>0)
+  EmitHead  -- ``EMIT_HARD_STOP=1``: worth_it=0 -> force stop (step>=EMIT_HARD_STOP_MIN_STEP)
   DstHead   -- ``F31_HARD_MASKS=1``: block dst where floor(rem*0.7) <= garr[dst]
 
 ``F29_SIGNALS = 1`` + ``F31_HARD_MASKS = 1`` for export/replay routing.
@@ -55,6 +55,7 @@ F29_SIGNALS = 1
 F31_HARD_MASKS = 1
 DST_PAIR_DIM = 5
 EMIT_HARD_STOP = 1
+EMIT_HARD_STOP_MIN_STEP = 1
 NUM_PCT_BINS = 8
 PCT_BIN_VALUES = (0.10, 0.20, 0.30, 0.40, 0.55, 0.70, 0.85, 1.00)
 NEUTRAL_OWNER = -1
@@ -755,7 +756,11 @@ def greedy_multi_action(W, enc, home_idx: int = 0) -> Tuple[List[int], List[int]
             remaining, home_idx, home_init, total_init,
         )
         emit_worth_it = float(emit_pair_g[0]) > 0.0
-        emit_force_stop = bool(EMIT_HARD_STOP) and (t > 0) and (not emit_worth_it)
+        emit_force_stop = (
+            bool(EMIT_HARD_STOP)
+            and (t >= EMIT_HARD_STOP_MIN_STEP)
+            and (not emit_worth_it)
+        )
         e_logits = _emit_head(
             W, global_emb, planet_pool, t,
             total_remaining_norm=total_remaining_norm,

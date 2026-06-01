@@ -1,6 +1,7 @@
 # DAY8 进展 — f32 结果分析 + 顶层选手对标
 
 > **2026-05-29 更新**
+> **2026-06-01 补记**：`f35` 训练 + replay 已完成，结论见 §13；Day9 转入「动作机制 + 训练分布」路线规划。
 > 接续 [`DAY7_PROGRESS.zh.md`](DAY7_PROGRESS.zh.md)。
 > **项目综述（架构图 + 全流程）**：[`OVERVIEW.zh.md`](OVERVIEW.zh.md)
 
@@ -16,9 +17,10 @@
 | **f33 replay 最差** | **@599**：spf=**4.27**（训练 spf=404 → replay 崩塌，验证膨胀不可信） |
 | **f33 新病理** | **bin7≈77–81%**（高于 f29 66%）；e2+≈0% @399（非 f32 式 spam，而是 **bin7 拉满 + 几乎单路 emit**） |
 | **f32 clip_frac** | ✅ max **0.39**；f33 max **0.10**（超参轨有效，但挡不住 self-play 膨胀） |
-| **f35** | 🟢 **大改已实现待训**：33 维特征（src-quality + v20 target_score 蒸馏）+ anti-1-ship reward；parity 16/16，2-upd 训练 smoke 通过 |
-| **当前主线** | **跑 f35**：`bash scripts/run_v11_f35.sh`（直击「55% 从小星球发兵」根因） |
-| **提交候选** | **f29 @599**；f33 各 ckpt 均不提交 |
+| **f35** | 🔴 **replay 完成 — @199/@299 均 WLD 0/5，不 promote**；garr 上来了，但 spf/flip/z0/e2+ 全 fail |
+| **f35 replay 结论** | **单路小舰队病仍在**：bin7≈60–63%，e2+=0%，z0<1%，one_ship_rate≈35% |
+| **当前主线** | **Day9 路线三规划**：不再加特征，转向「动作机制 + 训练分布」 |
+| **提交候选** | **f29 @599**；f32/f33/f35 均不提交 |
 | **决策标准** | replay vs v20 only |
 
 ---
@@ -230,7 +232,7 @@ bash scripts/run_f33_eval.sh
 
 ---
 
-## 13. f35 — 三管齐下大改（已实现，待训）
+## 13. f35 — 三管齐下大改（已完成训练 + replay，已关闭）
 
 > 用户决策：**三个都改，0→1 也值得，先求能看**。不走小步快跑。
 
@@ -277,29 +279,67 @@ bash scripts/run_f33_eval.sh
 | num_updates | **800**（在 f33 式 @449 collapse 前停） |
 | strong opponent | ❌ 不用（f29 是 28 维，与 f35 33 维 shape 不兼容） |
 
-### 13.4 执行
+### 13.4 训练完成（800 upd）
+
+| upd | emits | spf | z0 | garr | clip | 判定 |
+|---|---|---|---|---|---|---|
+| 199 | 1.15 | 38.4 | 1% | 45.3 | 0.02 | 仍可评 replay |
+| 299 | 1.18 | 45.4 | 2% | 51.1 | 0.02 | 仍可评 replay |
+| 349 | 1.23 | 58.5 | 2% | 61.2 | 0.04 | 边缘，接近 collapse |
+| 399 | 1.46 | 213.5 | 2% | 181.1 | 0.02 | **collapse 开始** |
+| 799 | 1.68 | 461.6 | 1% | 364.9 | 0.03 | 晚期膨胀，不可信 |
+
+`f35` 的 PPO/优化器侧保持稳定（`clip_frac` 未失控），但 **self-play 膨胀仍在 `@350-400` 左右出现**；因此决策只看早期 checkpoint replay，不看晚期训练指标。
+
+### 13.5 replay 实测（vs v20，first-80，5 seeds）
+
+> 先评最有希望的早期 ckpt：`@199`、`@299`。两者均已足够完成 go/no-go 判断。
+
+| 指标 | f35 @199 | f35 @299 | f35 期望 | 结论 |
+|---|---|---|---|---|
+| bin0 | 7.6% | 13.9% | <15% | ✅ |
+| spf | 5.94 | 6.81 | >10 | ❌ |
+| garr | 68.36 | 79.56 | >60 | ✅ |
+| flip | 4.30% | 3.17% | >6% | ❌ |
+| z0 | 0.6% | 0.7% | >8% | ❌ |
+| e8 | 0.0% | 0.0% | <5% | ✅ |
+| e2+ | 0.0% | 0.0% | >5% | ❌ |
+| one_ship_rate | 35.4% | 35.9% | <15% | ❌ |
+| min_game_spf | 1.23 | 1.20 | >5 | ❌ |
+| WLD | 0/5 | 0/5 | >=1/5 | ❌ |
+
+**关键观察**：
+
+1. **f35 修到的是“表象”，不是“机制”**：`garr` 上来了，`bin0`/`e8` 也健康，但 `spf` 仍只有 6-7，远低于 v20 的 16+。
+2. **单路 emit 病完全没治好**：两次 replay 都是 `n1=98.8%`、`e2+=0%`，说明策略仍然几乎每回合只发一次。
+3. **1-ship / 小源星 trickle 仍在**：`one_ship_rate≈35%`，而且 `bin7≈60%+` 仍是在把小守军星球“拉满 pct”。
+4. **早期最佳窗口也不接近 promote**：即使只看最有希望的 `@199/@299`，`WLD` 仍是 `0/5`，且 `flip/z0/e2+` 三个核心指标都远未过线。
+
+### 13.6 结论
+
+| 动作 | 说明 |
+|---|---|
+| **不 promote f35** | `@199/@299` 已足够证明无胜场且离 gate 较远 |
+| **关闭 f35 路线** | `src-quality + target_score 蒸馏 + anti-1-ship reward` 这组思路不再作为主线继续迭代 |
+| **保留 f29 @599** | 仍是当前唯一稳定提交候选 |
+| **Day9 转路线三** | 不再优先加特征，转向 **动作机制 + 训练分布**（见 `DAY9_PLAN.zh.md`） |
+
+### 13.7 执行 / 路径备忘
 
 ```bash
 bash scripts/run_v11_f35.sh          # 训练（含 parity smoke gate）
 tail -f logs/v11_f35.log
-bash scripts/check_training_health.sh logs/v11_f35.log   # 看 spf 膨胀告警
-bash scripts/run_f35_eval.sh         # 训完 replay vs v20
+bash scripts/check_training_health.sh logs/v11_f35.log
+
+# 已跑 replay
+bash scripts/quick_replay.sh ckpt_multi_action_v11_f35/ckpt_000199.pkl v11_f35_u199
+bash scripts/quick_replay.sh ckpt_multi_action_v11_f35/ckpt_000299.pkl v11_f35_u299
 ```
-
-### 13.5 成功判据（replay vs v20，first-80）
-
-| 指标 | f33 基线 | f35 期望（「能看见」） |
-|---|---|---|
-| **one_ship_rate** | 31% | **< 15%**（核心 KPI） |
-| **min_game_spf** | 1.13 | **> 5** |
-| 源星驻军中位数 | 3 | 显著上升 |
-| spf | 18 | 上升且非 bin7 虚胖 |
-| WLD | 0/5 | **≥1/5**（终极目标） |
-
-### 13.6 路径备忘
 
 | 用途 | 路径 |
 |---|---|
+| f35 训练 log | `logs/v11_f35.log` |
+| f35 replay | `logs/replay_analyze/v11_f35_u{199,299}_vs_v20.json` |
 | f35 特征 | `orbit_wars_rl/features/encode.py`（dims 28-32） |
 | f35 reward | `orbit_wars_rl/env/rewards.py`（`one_ship_penalty_reward`, `high_prod_capture_reward`） |
 | f35 config | `orbit_wars_rl/configs/multi_action_v11_f35.yaml` |

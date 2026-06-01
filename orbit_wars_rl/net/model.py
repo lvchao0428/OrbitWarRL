@@ -192,6 +192,7 @@ class ActorCritic(nn.Module):
     num_pct_bins: int = constants.NUM_PCT_BINS
     max_fleets_per_turn: int = constants.MAX_FLEETS_PER_TURN
     emit_hard_stop: bool = False
+    emit_hard_stop_min_step: int = 1
     flip_hard_mask: bool = False
 
     def setup(self) -> None:
@@ -313,7 +314,7 @@ class ActorCritic(nn.Module):
             src_logits_t = self.src_head(planet_emb, eff_mask, remaining_norm)
             emit_worth_it = emit_pair_g[..., 0] > 0
             emit_force_stop = (
-                jnp.bool_(t > 0) & jnp.logical_not(emit_worth_it)
+                jnp.bool_(t >= self.emit_hard_stop_min_step) & jnp.logical_not(emit_worth_it)
                 if self.emit_hard_stop
                 else None
             )
@@ -453,7 +454,7 @@ class ActorCritic(nn.Module):
             src_logits_t = self.src_head(planet_emb, eff_mask, remaining_norm)
             emit_worth_it = emit_pair_g[..., 0] > 0
             emit_force_stop = (
-                jnp.bool_(t > 0) & jnp.logical_not(emit_worth_it)
+                jnp.bool_(t >= self.emit_hard_stop_min_step) & jnp.logical_not(emit_worth_it)
                 if self.emit_hard_stop
                 else None
             )

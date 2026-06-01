@@ -57,7 +57,7 @@ elif [ "$PLANET_DIM" = "28" ] && [ "$HAS_PAIR" = "1" ]; then
   if [ "$DST_PAIR_DIM" = "7" ]; then
     TEMPLATE="submission_rl_v11_f32.py"
   elif [ "$DST_PAIR_DIM" = "5" ]; then
-    if [ -f submission_rl_v11_f33.py ] && echo "$TAG" | grep -qE 'f33|f34'; then
+    if [ -f submission_rl_v11_f33.py ] && echo "$TAG" | grep -qE 'f33|f34|f36a|f36b'; then
       TEMPLATE="submission_rl_v11_f33.py"
     elif [ -f submission_rl_v11_f31.py ] && echo "$TAG" | grep -q 'f31'; then
       TEMPLATE="submission_rl_v11_f31.py"
@@ -86,11 +86,17 @@ fi
 
 echo "[quick_replay] ckpt=$CKPT  template=$TEMPLATE  out=$SUB  json=$JSON"
 
+EXPORT_ARGS=()
+if [ -n "${EMIT_HARD_STOP_MIN_STEP:-}" ]; then
+  EXPORT_ARGS+=(--emit-hard-stop-min-step "$EMIT_HARD_STOP_MIN_STEP")
+fi
+
 JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES="" \
   "$PY" -m orbit_wars_rl.scripts.export_submission \
   --ckpt "$CKPT" \
   --template "$TEMPLATE" \
-  --out "$SUB"
+  --out "$SUB" \
+  "${EXPORT_ARGS[@]}"
 
 # replay_analyze writes JSON + prints first-80 + full-game tables
 "$PY" -m orbit_wars_rl.scripts.replay_analyze \

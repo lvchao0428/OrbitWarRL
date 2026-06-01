@@ -1,0 +1,62 @@
+# v11_f36b — Day9 route 3B: training distribution delta only.
+#
+# Goal: keep the action mechanism frozen to f33, but anchor training away from
+# the self-play collapse region with a fixed strong opponent and a short run.
+#
+# Single delta family vs f33:
+#   strong_ckpt_path = f29 @599
+#   strong_ratio     = 0.35
+#   frozen_ratio     = 0.25
+#   num_updates      = 350
+#   ckpt_every       = 50
+#
+# Action mechanism stays untouched (emit_hard_stop=true, min_step=1).
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 350
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_f36b
+  ckpt_every: 50
+  log_every: 1
+  seed: 362
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 1
+  flip_hard_mask: true
+
+ppo:
+  lr_peak: 0.00003
+  lr_warmup_steps: 2000
+  lr_decay_steps: 500000
+  lr_floor: 0.00001
+  clip_eps: 0.20
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.05
+  ent_coef_dst: 0.05
+  ent_coef_pct: 0.05
+  ent_coef_emit: 0.05
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.25
+  eval_vs_frozen: true
+  strong_ckpt_path: "ckpt_multi_action_v11_f29/ckpt_000599.pkl"
+  strong_ratio: 0.35
