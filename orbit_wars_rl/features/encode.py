@@ -83,6 +83,11 @@ Feature layouts (kept in lock-step with the heads):
     [16]   ships_to_capture_all_weak_norm -- log1p(sum garrison of weak targets) / 10.
                                             Total cost to flip all soft targets; supports
                                             emit head deciding "spread vs concentrate".
+    [17]   min_effective_fleet_norm -- ABS_MIN_BATCH(8) / max(my_avg_garrison, 1).
+                                      Tells the model what fraction of an average
+                                      planet's garrison constitutes the minimum
+                                      viable fleet. High = my planets are weak;
+                                      low = I have strong stockpiles.
 """
 
 from __future__ import annotations
@@ -100,7 +105,7 @@ from orbit_wars_rl.env.state import EnvState
 
 PLANET_FEAT_DIM = 33  # f35: +5 src-quality / v20-target-score dims (28..32)
 FLEET_FEAT_DIM = 10
-GLOBAL_FEAT_DIM = 17
+GLOBAL_FEAT_DIM = 18
 
 LEAD_TIMES = (15.0, 30.0)
 
@@ -516,6 +521,7 @@ def _encode_planets(
     # Aux scalars for the global encoder.
     aux = {
         "my_max_garrison": my_max_garrison,
+        "my_avg_garrison": my_avg_garrison,
         "weak_target_score": weak_target_score,
         "target_garr": target_garr,
     }
@@ -649,13 +655,18 @@ def _encode_global(
         max_garr_norm = jnp.float32(0.0)
         n_weak_targets_norm = jnp.float32(0.0)
         ships_to_capture_all_weak_norm = jnp.float32(0.0)
+        min_effective_fleet_norm = jnp.float32(1.0)
     else:
         max_garr_norm = jnp.log1p(aux["my_max_garrison"]) / jnp.float32(10.0)
-        # treat planets with weak_target_score > 0.3 as "soft" enough to consider this turn
         weak_mask = (aux["weak_target_score"] > jnp.float32(0.3)).astype(jnp.float32)
         n_weak_targets_norm = weak_mask.sum() / jnp.float32(constants.MAX_PLANETS)
         total_weak_garr = (weak_mask * aux["target_garr"]).sum()
         ships_to_capture_all_weak_norm = jnp.log1p(total_weak_garr) / jnp.float32(10.0)
+        # [17] min viable fleet as fraction of avg garrison (v20 ABS_MIN_BATCH=8)
+        min_effective_fleet_norm = jnp.clip(
+            jnp.float32(8.0) / jnp.maximum(aux["my_avg_garrison"], jnp.float32(1.0)),
+            0.0, 1.0,
+        )
 
     return jnp.stack(
         [
@@ -676,6 +687,7 @@ def _encode_global(
             max_garr_norm,
             n_weak_targets_norm,
             ships_to_capture_all_weak_norm,
+            min_effective_fleet_norm,
         ],
     )
 

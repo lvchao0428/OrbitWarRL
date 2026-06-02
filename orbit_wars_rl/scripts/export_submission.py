@@ -169,7 +169,9 @@ def _assert_template_matches_ckpt(template_path: str, arch: dict[str, int]) -> N
             f"ckpt={ckpt_has_pair}"
         )
     if mismatches:
-        if arch["planet_feat_dim"] == 33 and ckpt_has_pair:
+        if arch["planet_feat_dim"] == 33 and arch["global_feat_dim"] == 18 and ckpt_has_pair:
+            hint = "submission_rl_v11_f37.py"
+        elif arch["planet_feat_dim"] == 33 and ckpt_has_pair:
             hint = "submission_rl_v11_f35.py"
         elif arch["planet_feat_dim"] == 28 and ckpt_has_pair:
             dpd = arch.get("dst_pair_dim", 0)

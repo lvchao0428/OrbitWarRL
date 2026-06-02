@@ -103,21 +103,29 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
     emit_in = int(flat[emit_key].shape[0])
     # emit input layouts:
     #   legacy (pre-f26):  2*d_model + K + 1 (total_remaining_norm)
-    #   f26:               2*d_model + K + 1 + 4 (pair_feats_g)
-    # Detect by checking which interpretation yields a sensible K in [1, 16].
+    #   f26-f36:           2*d_model + K + 1 + 4 (pair_feats_g, 4-dim)
+    #   f37+:              2*d_model + K + 1 + 6 (pair_feats_g, 6-dim)
+    # Try each interpretation; pick the first that yields K in [1, 16].
     k_legacy = emit_in - 2 * d_model - 1
     k_f26 = emit_in - 2 * d_model - 5
+    k_f37 = emit_in - 2 * d_model - 7
     has_emit_pair = False
-    if 1 <= k_f26 <= 32:
+    emit_pair_dim = 0
+    if 1 <= k_f37 <= 16:
+        max_fleets_per_turn = k_f37
+        has_emit_pair = True
+        emit_pair_dim = 6
+    elif 1 <= k_f26 <= 16:
         max_fleets_per_turn = k_f26
         has_emit_pair = True
+        emit_pair_dim = 4
     elif 1 <= k_legacy <= 32:
         max_fleets_per_turn = k_legacy
     else:
         raise ValueError(
             f"cannot infer max_fleets_per_turn from {emit_key} shape "
             f"{flat[emit_key].shape} d_model={d_model} "
-            f"(legacy={k_legacy}, f26={k_f26})"
+            f"(legacy={k_legacy}, f26={k_f26}, f37={k_f37})"
         )
 
     # Detect dst pair feats and pct pair feats via fc1 input shape.
@@ -178,6 +186,7 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
         "has_dst_pair": has_dst_pair,
         "has_f29_dst": has_f29_dst,
         "dst_pair_dim": dst_pair_dim,
+        "emit_pair_dim": emit_pair_dim,
         "has_pct_pair": has_pct_pair,
     }
 

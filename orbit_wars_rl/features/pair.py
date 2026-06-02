@@ -237,13 +237,15 @@ def emit_pair_globals(
     home_init: jnp.ndarray,      # (...,) float -- starting garrison at home (HOME_PLANET_SHIPS or first-turn)
     total_init: jnp.ndarray,     # (...,) float -- total my garrison at turn start (sum of ships_raw on mine)
 ) -> jnp.ndarray:
-    """4 scalar features describing remaining attack budget & emit stop signal.
+    """6 scalar features describing remaining attack budget & emit stop signal.
 
-    Returns (..., 4):
+    Returns (..., 6):
       [0] emit_worth_it           -- 1.0 iff any (src,dst) pair has margin>0 with current remaining
       [1] best_pair_margin_norm   -- log1p(max over feasible pairs of margin) / log1p(MAX_PLANET_SHIPS)
       [2] home_remain_ratio       -- remaining[home] / max(home_init, 1)  clip [0,1]
       [3] total_remain_ratio      -- (sum remaining over mine) / max(total_init, 1) clip [0,1]
+      [4] feasible_target_count_norm -- how many distinct dst can be flipped / MAX_PLANETS
+      [5] surplus_ratio           -- (total_remaining - sum_min_needs) / total_remaining, clip [0,1]
     """
     P = planet_x.shape[-1]
 
@@ -267,7 +269,6 @@ def emit_pair_globals(
     margin_masked = jnp.where(feasible, margin, jnp.float32(0.0))
     best_margin = margin_masked.reshape(margin_masked.shape[:-2] + (P * P,)).max(axis=-1)
     best_margin = jnp.maximum(best_margin, jnp.float32(0.0))
-    # log1p / log1p(1000): same scale family as planet log_ships.
     best_margin_norm = jnp.log1p(best_margin) / jnp.float32(8.0)
     best_margin_norm = jnp.clip(best_margin_norm, 0.0, 1.0)
 
@@ -282,8 +283,31 @@ def emit_pair_globals(
         total_remaining / jnp.maximum(total_init, jnp.float32(1.0)), 0.0, 1.0
     )
 
+    # [4] feasible_target_count: how many distinct dst planets can be flipped
+    # by at least one of my src planets. Tells emit head "there are N soft
+    # targets right now" -- direct multi-route signal.
+    dst_flippable = feasible.any(axis=-2)  # (..., P) -- any src can flip this dst
+    feasible_count = dst_flippable.astype(jnp.float32).sum(axis=-1)  # (...,)
+    feasible_target_count_norm = jnp.clip(
+        feasible_count / jnp.float32(constants.MAX_PLANETS), 0.0, 1.0
+    )
+
+    # [5] surplus_ratio: after flipping all feasible targets with the cheapest
+    # src for each, how much of my total remaining is left over?
+    # For each feasible dst, min_need = garr_dst + 1 (cheapest flip cost).
+    target_need = (garr_dst + jnp.float32(1.0)) * target_mask.astype(jnp.float32)
+    # Only count dst that are actually flippable by at least one src.
+    flippable_need = target_need * dst_flippable.astype(jnp.float32)
+    sum_min_needs = flippable_need.sum(axis=-1)  # (...,)
+    surplus_ratio = jnp.clip(
+        (total_remaining - sum_min_needs) / jnp.maximum(total_remaining, jnp.float32(1.0)),
+        0.0,
+        1.0,
+    )
+
     return jnp.stack(
-        [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio],
+        [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio,
+         feasible_target_count_norm, surplus_ratio],
         axis=-1,
     )
 
@@ -337,6 +361,6 @@ def pct_pair_features(
 
 # --------------------- public constants for sanity checks ---------------------
 DST_PAIR_DIM = 5
-EMIT_PAIR_DIM = 4
+EMIT_PAIR_DIM = 6
 PCT_PAIR_DIM = 2
 SUN_BLOCK_THRESH = float(_SUN_BLOCK_THRESH)

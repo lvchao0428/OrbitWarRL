@@ -40,16 +40,21 @@ SUMMARY="logs/replay_analyze/${TAG}_vs_v20.summary.txt"
 ARCH_INFO=$(JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES="" "$PY" - <<PY
 from orbit_wars_rl.inference.weights import load_flat_params, infer_arch_from_flat
 a = infer_arch_from_flat(load_flat_params("$CKPT"))
-print(a["planet_feat_dim"], a["max_fleets_per_turn"], int(a.get("has_pair", False)), int(a.get("dst_pair_dim", 0)))
+print(a["planet_feat_dim"], a["max_fleets_per_turn"], int(a.get("has_pair", False)), int(a.get("dst_pair_dim", 0)), a.get("global_feat_dim", 17), a.get("emit_pair_dim", 0))
 PY
 )
 PLANET_DIM=$(echo "$ARCH_INFO" | awk '{print $1}')
 CKPT_K=$(echo "$ARCH_INFO" | awk '{print $2}')
 HAS_PAIR=$(echo "$ARCH_INFO" | awk '{print $3}')
 DST_PAIR_DIM=$(echo "$ARCH_INFO" | awk '{print $4}')
+GLOBAL_DIM=$(echo "$ARCH_INFO" | awk '{print $5}')
+EMIT_PAIR_DIM=$(echo "$ARCH_INFO" | awk '{print $6}')
 
 if [ "$PLANET_DIM" = "19" ]; then
   TEMPLATE="submission_rl_v4.py"
+elif [ "$PLANET_DIM" = "33" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "18" ]; then
+  # f37: f35 feats + GLOBAL_FEAT_DIM=18 + EMIT_PAIR_DIM=6
+  TEMPLATE="submission_rl_v11_f37.py"
 elif [ "$PLANET_DIM" = "33" ] && [ "$HAS_PAIR" = "1" ]; then
   # f35: f33 arch + 5 src-quality / v20-target-score planet feats (dst_pair=5).
   TEMPLATE="submission_rl_v11_f35.py"

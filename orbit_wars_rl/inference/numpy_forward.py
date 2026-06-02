@@ -163,8 +163,22 @@ def _emit_pair_globals_np(
     total_remaining = float(rem_my.sum())
     total_remain_ratio = float(min(total_remaining / max(total_init, 1.0), 1.0))
 
+    # [4] feasible_target_count: how many distinct dst planets can be flipped
+    dst_flippable = feasible.any(axis=0)  # (P,) any src can flip this dst
+    feasible_count = float(dst_flippable.astype(np.float32).sum())
+    feasible_target_count_norm = float(min(feasible_count / _MAX_PLANETS, 1.0))
+
+    # [5] surplus_ratio: after flipping all feasible targets cheaply, leftover
+    target_need = (garr_dst + np.float32(1.0)) * target_mask.astype(np.float32)
+    flippable_need = target_need * dst_flippable.astype(np.float32)
+    sum_min_needs = float(flippable_need.sum())
+    surplus_ratio = float(
+        min(max((total_remaining - sum_min_needs) / max(total_remaining, 1.0), 0.0), 1.0)
+    )
+
     return np.array(
-        [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio],
+        [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio,
+         feasible_target_count_norm, surplus_ratio],
         dtype=np.float32,
     )
 

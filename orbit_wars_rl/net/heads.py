@@ -250,9 +250,10 @@ class EmitHead(nn.Module):
         still have available this turn -- prevents the policy from emitting
         a 6th fleet when the source planet is already empty.
 
-        f26: ``pair_feats_g`` (..., 4) per-step global pair signals:
+        f26: ``pair_feats_g`` (..., 6) per-step global pair signals:
             [emit_worth_it, best_pair_margin_norm,
-             home_remain_ratio, total_remain_ratio]
+             home_remain_ratio, total_remain_ratio,
+             feasible_target_count_norm, surplus_ratio]
         directly answers "should I emit one more fleet from this state?".
 
         f29: ``emit_force_stop`` (...,) bool -- when True (step>0 and no
