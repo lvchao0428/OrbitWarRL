@@ -144,6 +144,74 @@ def load_checkpoint(path: str):
         return pickle.load(f)
 
 
+def _adapt_strong_params(target_params, strong_params):
+    """Zero-pad strong ckpt weights to match current model when only feature dims differ.
+
+    Handles the case where a strong opponent was trained with fewer feature
+    dimensions (e.g. f29: planet=28, global=17, emit_pair=4) and needs to
+    run inside a model with more features (e.g. f38: planet=33, global=18,
+    emit_pair=6).  New feature dimensions are padded with zeros so they have
+    no effect on the opponent's inference.
+
+    Returns adapted params or None if adaptation is not possible.
+    """
+    import numpy as np
+    from orbit_wars_rl.inference.weights import flatten_params
+
+    target_flat = flatten_params(target_params)
+    strong_flat = flatten_params(strong_params)
+
+    if set(target_flat.keys()) != set(strong_flat.keys()):
+        return None
+
+    adapted = {}
+    mismatches = []
+    for key in target_flat:
+        t_shape = target_flat[key].shape
+        s_shape = strong_flat[key].shape
+        if t_shape == s_shape:
+            adapted[key] = strong_flat[key]
+        elif len(t_shape) == len(s_shape):
+            # Pad each axis that is smaller in strong than target
+            can_pad = all(s <= t for s, t in zip(s_shape, t_shape))
+            if not can_pad:
+                return None
+            pad_widths = [(0, t - s) for s, t in zip(s_shape, t_shape)]
+            adapted[key] = np.pad(
+                np.asarray(strong_flat[key]),
+                pad_widths,
+                mode="constant",
+                constant_values=0,
+            )
+            mismatches.append(f"  {key}: {s_shape} -> {t_shape}")
+        else:
+            return None
+
+    if not mismatches:
+        return None
+
+    print("[shape-adapter] padded tensors:", flush=True)
+    for m in mismatches:
+        print(m, flush=True)
+
+    # Unflatten back into the nested dict structure matching target_params
+    def _unflatten(flat_dict):
+        root = {}
+        for path, arr in flat_dict.items():
+            parts = path.split("/")
+            node = root
+            for p in parts[:-1]:
+                node = node.setdefault(p, {})
+            node[parts[-1]] = jnp.asarray(arr)
+        return root
+
+    unflat = _unflatten(adapted)
+    # Re-wrap with outer "params" key if target_params has it
+    if isinstance(target_params, dict) and set(target_params.keys()) == {"params"}:
+        unflat = {"params": unflat}
+    return unflat
+
+
 class Logger:
     """Tiny stdout + optional tensorboard logger."""
 
@@ -345,12 +413,21 @@ def train(
                 f"[curriculum] loaded strong opponent from {cfg.selfplay.strong_ckpt_path}",
                 flush=True,
             )
-        except Exception as exc:  # noqa: BLE001
-            print(
-                f"[curriculum] WARN strong ckpt shape mismatch, disabling: {exc}",
-                flush=True,
-            )
-            sp_strong = 0.0
+        except Exception:  # noqa: BLE001
+            strong_params = _adapt_strong_params(params, strong_ckpt["params"])
+            if strong_params is not None:
+                print(
+                    f"[curriculum] shape-adapted strong opponent from "
+                    f"{cfg.selfplay.strong_ckpt_path}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[curriculum] WARN strong ckpt shape mismatch and "
+                    f"adaptation failed, disabling: {cfg.selfplay.strong_ckpt_path}",
+                    flush=True,
+                )
+                sp_strong = 0.0
 
     for update in range(cfg.num_updates):
         rng_iter, r_step, r_opp_pick, r_pool_sample = jax.random.split(rng_iter, 4)

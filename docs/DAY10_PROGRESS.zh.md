@@ -203,3 +203,283 @@ f37 训练中 (3000 upd, ~100M steps)
 | 不碰 reward shaping | f37 去掉所有 shaping | 发现 RELEASE=0.05 是 trickle attractor 的直接原因 |
 
 关键反思：Day9 的假设（"问题在 turn-level 动作结构"）方向正确，但药方（"改闸门/改训练分布"）开错了。正确的药方是**给 action head 足够直接的信号**让它知道"什么时候蓄力够了"、"当前能打几个目标"。
+
+---
+
+## 8. f37 Replay 结果分析 — 策略塌缩确认
+
+### 8.1 Replay 结果（vs v20，first_80turns）
+
+| ckpt | WLD | emits | z0 | e2+ | spf | garr | flip | captures | bin7 | one_ship_rate |
+|------|-----|-------|----|-----|-----|------|------|----------|------|---------------|
+| @199 | 0/5/0 | 1.28 | 4.2% | **14.8%** | 2.65 | 4.87 | 1.53% | 9 | 64.1% | 32.8% |
+| @499 | 0/5/0 | 0.99 | 0.6% | 0.2% | 5.26 | 65.0 | 3.47% | — | — | 28.5% |
+| @999 | 0/5/0 | 0.99 | 1.2% | 0.0% | 5.01 | 60.2 | 2.45% | — | — | 33.8% |
+| @1999 | 0/5/0 | 0.99 | 0.6% | **0.0%** | 6.89 | 96.1 | 4.96% | 26 | 92.9% | 39.0% |
+
+### 8.2 @199 vs @1999 详细对比
+
+@199 是 f37 的**最佳时刻**，也是整个 f33-f37 系列中唯一一个 `e2+` 通过 5% gate 的 ckpt：
+
+| 指标 | @199 | @1999 | 趋势 |
+|------|------|-------|------|
+| e2+ | 14.8% | 0.0% | 从"会多路进攻"退化到"只会单路" |
+| z0 | 4.2% | 0.6% | 从"偶尔等待"退化到"永不停歇" |
+| emit_count 分布 | 2路=5.8%, 3路=4.2%, 8路=1.0% | **1路=98.8%**, 其余全 0% | 多样性完全消失 |
+| spf | 2.65 | 6.89 | 舰队变大但 garrison 涨更多（膨胀） |
+| bin7 (100%) | 64.1% | 92.9% | 从部分兵力分配退化到永远全押 |
+| one_ship_rate | 32.8% | 39.0% | trickle 比例反而增加 |
+| captures | 9 | 26 | 翻转稍多但仍远不及 v20 的 123 |
+
+### 8.3 训练指标 vs Replay 指标 — 严重脱节
+
+| 指标 | 训练日志 @u2000 | Replay @u1999 vs v20 | 差异来源 |
+|------|-----------------|---------------------|---------|
+| e2+ | 0.27-0.33 (27-33%) | **0.0%** | 自我对弈中 garrison 膨胀，轻松多路；面对 v20 被压制后无法多路 |
+| z0 | 0.03-0.06 (3-6%) | **0.6%** | 自我对弈中偶有空回合；面对 v20 的进攻压力下每回合都被迫行动 |
+| emits | 1.41-1.56 | 0.99 | 自我对弈 garrison 高，有能力多发；实战只能单路 |
+| spf | 19-23 | 6.89 | 自我对弈 garrison=30+ 所以 spf 自然高；实战 garrison 被 v20 压制 |
+| garr | 27-34 | 96 (replay) | 自我对弈的是友好生态下的 garrison，不代表对外战力 |
+| WR vs random | 0.88 | — | 能打 random 但对 v20 WLD=0/5/0 |
+
+**核心问题**：训练指标完全不可信。`e2+=30%` 和 `spf=20` 都是自我对弈膨胀的假象。唯一可信的评估是 replay vs 外部对手。
+
+### 8.4 塌缩时间线
+
+```
+u0-u49:   warmup（vs random），模型探索阶段
+u50-u199: 自我对弈开始，策略多样性最高 -> @199 是峰值（e2+=14.8%）
+u200-u499: 策略快速退化，e2+ 从 14.8% 暴跌到 0.2%
+u500-u2000+: 完全锁死在 "单路 trickle + bin7 全押" attractor
+```
+
+f37 特征增强（feasible_target_count_norm / surplus_ratio / min_effective_fleet_norm）在 @199 确实产生了效果（首次突破 e2+ > 5%），但这个信号无法在自我对弈中存活——两个弱策略互相 trickle 形成的均衡是一个**稳定但退化的纳什均衡**。
+
+---
+
+## 9. 根因分析 — 为什么 f33-f37 反复塌缩
+
+### 9.1 实验时间线回顾
+
+| 实验 | 核心改动 | 结果 | 是否打破 trickle |
+|------|---------|------|-----------------|
+| f33 | 基线配置 | WLD 0/5 全 ckpt | 否 |
+| f35 | 33 维特征 + v20 target score | 同上 | 否 |
+| f36a | emit_hard_stop_min_step=2 | 同上 | 否 |
+| f36b | strong opponent（被禁用） | 同上（无效实验） | — |
+| f37 | 18 维 global + 6 维 pair + 纯终局 | @199 有信号，随后塌缩 | **瞬间打破，无法维持** |
+
+五次实验全部失败，收敛到同一个 attractor：单路 trickle + bin7 全押 + z0<1% + e2+=0%。
+
+### 9.2 鸡生蛋问题 — 为什么纯 +1/-1 在这里不够
+
+Lin Myat Ko 说"+1/-1 is enough for 2p mode"。但这有一个隐含前提：**模型的特征/架构足以让它在早期自然学会翻转星球**。
+
+我们面临的困境：
+
+```
+纯 +1/-1 reward
+    |
+    v
+早期模型不知道怎么翻转星球
+    |
+    v
+自我对弈两方都在 trickle -> 谁也翻不了
+    |
+    v
+胜负完全取决于地图初始布局 -> reward 信号 ≈ 随机噪声
+    |
+    v
+PPO 找不到梯度 -> 策略不变 -> 继续 trickle
+    |
+    v
+(循环)
+```
+
+对比 Lin Myat Ko 的情况：他的 feature engineering 更成熟（"even with basic features, we can train it to have a decent performance"），模型在早期就能偶然翻转足够多星球产生有效的 reward 信号。而我们的模型在 500 步 episode 中翻转率只有 1.5-5%（vs v20 的 13-17%），梯度信号太弱。
+
+### 9.3 自我对弈塌缩机制
+
+基于 AlphaStar League、OpenAI Five、Lux AI 冠军方案、以及最新研究 (arxiv:2605.22217, SPIRAL) 的调研：
+
+**机制一：退化纳什均衡**
+
+两个同水平的弱策略自我对弈时，"双方都 trickle" 是一个**稳定均衡**：
+- 任何一方单独切换到"蓄力+爆发"不会立即受益（因为对方在 trickle，蓄力期间不会被有效攻击，但 trickle 也不会翻转）
+- 终局 reward 主要由地图对称性决定（≈50/50），PPO 看到的 advantage 几乎为零
+- 结果：策略停留在退化均衡，训练指标看起来"正常"但对外战力为零
+
+**机制二：对手池封闭导致漂移**
+
+当前系统 `pool_capacity=8, snapshot_every=50`，对手全部是自身的最近快照。如果当前策略已退化，pool 中全是退化策略的变体，形成正反馈循环：
+- 退化策略 vs 退化策略 = 退化继续
+- 没有外部锚点打破循环
+
+AlphaStar 用 League（Main Agent + Main Exploiter + League Exploiter）解决此问题。OpenAI Five 用 80% 最新策略 + 20% 历史策略。Lux AI 冠军用 teacher-student + KL 约束。
+
+**机制三：数据管门缺失**
+
+最新研究（2026, arxiv:2605.22217）发现："自我对弈稳定性由数据层决定，不由 reward 层决定。严格的数据过滤足以在任何 reward 设计下防止塌缩；而没有数据过滤时，没有任何 reward 设计能防止塌缩。" 当前系统没有对自我对弈产生的 trajectory 做任何质量过滤。
+
+### 9.4 为什么 f37 的特征增强不够
+
+f37 加了 `feasible_target_count_norm`、`surplus_ratio`、`min_effective_fleet_norm`。在 @199 确实产生了效果（e2+=14.8%），说明**特征方向是对的**。但问题在于：
+
+1. 这些特征提供了"能打几个目标"的信息，但 **reward 不提供"翻转星球"的梯度**
+2. 模型学会了利用这些特征在自我对弈中多路 emit，但当 garrison 膨胀后（两方都不有效进攻），多路 emit 变得 trivial 而不是 strategic
+3. 随着 self-play 进行，模型发现"单路 trickle + bin7 全押"在退化生态中也能获得 ≈50% 胜率，于是策略简化
+
+---
+
+## 10. f38 方案 — Curriculum + Capture Shaping + External Anchor
+
+### 10.1 核心思路
+
+从 Lux AI 冠军方案和 AlphaStar 中提取三个关键教训：
+
+1. **Shaped -> Sparse Curriculum**：先用 dense reward 教会基础技能（翻转星球），再退火到 sparse reward 优化终局胜率
+2. **External Anchor**：在对手池中保留一个不随训练漂移的外部对手，防止 population 整体退化
+3. **只奖励翻转，不奖励发兵**：CAPTURE shaping 奖励"成功翻转星球"这个关键事件，而不是 RELEASE（奖励发兵本身，这是 trickle 的直接诱因）
+
+### 10.2 三阶段课程
+
+#### 阶段一：Shaped Reward Bootstrap（update 0-500）
+
+| 参数 | 值 | 作用 |
+|------|----|------|
+| `CAPTURE` | 0.05 | 成功翻转星球时的奖励，提供"翻转=好"的直接梯度 |
+| `PROD_SHARE_DELTA` | 0.02 | 夺取产能星球的 delta 奖励，credit assignment 紧密 |
+| 其余 shaping | 0.0 | 不奖励发兵本身（避免 RELEASE 诱导 trickle） |
+| 对手 | random（warmup=50）+ frozen self-play | 先打 random 学会基础翻转 |
+
+#### 阶段二：Anneal（update 500-1000）
+
+| 参数 | 变化 | 说明 |
+|------|------|------|
+| `CAPTURE` | 0.05 -> 0.0 线性退火 | 逐步转向纯终局 reward |
+| `PROD_SHARE_DELTA` | 0.02 -> 0.0 线性退火 | 同上 |
+| self-play | 正常 frozen_ratio=0.40 | 模型此时已学会翻转，可以安全进入 self-play |
+
+#### 阶段三：Pure Terminal + Anchor（update 1000-3000）
+
+| 参数 | 值 | 说明 |
+|------|----|------|
+| 全部 shaping | 0.0 | 纯 +1/-1 终局 reward |
+| strong_ratio | 0.20 | 20% 对局 vs f29@599（外部锚点） |
+| frozen_ratio | 0.40 | 40% 对局 vs frozen self |
+| random | 40% | 剩余 vs random |
+
+### 10.3 External Anchor — Shape Adapter 方案
+
+f29@599（28 维 planet, 17 维 global, 4 维 emit pair）与 f38（33 维 planet, 18 维 global, 6 维 emit pair）存在 shape 不兼容。解决方案：
+
+在 `runner.py` 的 strong checkpoint 加载逻辑中实现 shape adapter：
+- 对 strong ckpt 中 planet feature 相关的权重矩阵做 zero-padding（28 -> 33 维）
+- 对 global feature 相关的权重矩阵做 zero-padding（17 -> 18 维）
+- 对 emit pair 相关的权重做 zero-padding（4 -> 6 维）
+- 新增维度填零 = 这些新特征对 strong opponent 的推理不产生影响
+
+### 10.4 Shaping Anneal 实现方案
+
+通过环境变量实现分阶段 shaping 不够灵活（进程启动时就固定了）。方案：
+
+**在训练脚本中分段启动**：
+- 第一阶段（0-500 upd）：带 CAPTURE=0.05 + PROD_SHARE_DELTA=0.02 启动，`num_updates=500`
+- 第二阶段需要从 ckpt 500 resume，减半 shaping 系数，再跑 500 upd
+- 第三阶段从 ckpt 1000 resume，shaping=0，跑到 3000
+
+优点：不需要改 reward.py 代码，用现有的 `--resume-from` 机制即可。
+
+### 10.5 配置要点
+
+| 参数 | 值 | 说明 |
+|------|----|------|
+| 特征维度 | 33 planet + 18 global + 6 emit pair | 沿用 f37 |
+| num_updates | 3000（分三段） | ~100M steps |
+| strong_ckpt_path | f29@599 (第三阶段启用) | 外部锚点 |
+| strong_ratio | 0.20 (第三阶段) | 外部对手比例 |
+| frozen_ratio | 0.40 | 自我对弈 |
+| PPO 配方 | 同 f37 | 不变 |
+
+### 10.6 风险评估
+
+| 风险 | 概率 | 应对 |
+|------|------|------|
+| CAPTURE shaping 再次诱导 spam 发兵 | 中 | CAPTURE 只奖励翻转（不奖励发兵），且只用 500 upd 就退火 |
+| shape adapter 导致 strong opponent 行为异常 | 低 | 新维度填零不影响原有推理；可通过 parity test 验证 |
+| 三段训练中间 resume 失败 | 低 | resume 机制已在 f33 验证过 |
+| 退火后仍塌缩 | 中 | 如果阶段一学会翻转但退火后丢失，考虑保留微量 CAPTURE=0.005 |
+
+---
+
+## 11. Top 选手经验总结 + 竞赛方案对比
+
+### 11.1 Lin Myat Ko（第 7 名）关键信息
+
+| 主题 | 原文要点 | 对我们的启示 |
+|------|---------|------------|
+| **Reward** | "+1 -1 is enough for 2p mode" | 终局 reward 足够，但前提是模型能在早期学会翻转 |
+| **Self-play** | "About 100M samples with pure self-play should beat all public agents by 90%" | 我们已跑 ~70M steps（f37 @u2083），还未 beat v20 |
+| **Architecture** | "entity transformer", "600K params" -> SPS 10K | 我们 680K params, SPS 16K — 架构规模相当 |
+| **Feature engineering** | "put as many inductive bias as possible" | 特征方向正确，但需要配合 reward curriculum |
+| **Stability** | Opus (AI) "shipped 7 changes... couldn't tell which one was responsible" | 一次只改一个变量 |
+| **clip_frac** | "your most reliable warning sign... 0.10 -> 0.30+ over a few million" | 我们 clip_frac 始终 <0.02，训练稳定但策略不进步 |
+| **Explained variance** | "should go up to at least 0.8 in 100 iters" | 我们 @u49 已达 0.92 — value head 正常 |
+
+### 11.2 其他竞赛参与者的经验
+
+**alekh（第 135 名）** 遇到与我们相同的问题：
+> "entropy stays fine, its more the winrate against the eval set that collapses… could be something about the distribution shift when new self-play snapshots enters the opponent pool"
+
+这与我们的"训练指标正常但 replay 塌缩"完全一致。Lin Myat Ko 的回应只是"self-play should work fine for this game"——说明他的系统有某些我们没有的东西（可能是更好的特征让早期策略不退化）。
+
+### 11.3 Lux AI 冠军方案对比
+
+| 方案 | Reward 策略 | Self-play 策略 | 关键技术 |
+|------|-----------|---------------|---------|
+| **Lux AI S1 冠军** (IsaiahPressman) | Shaped reward 前 20M steps -> sparse reward | Teacher-student + KL 约束 | IMPALA + UPGO + TD-lambda |
+| **Lux AI S3 第 5 名** (Kiwis) | 分三阶段：小地图 dense -> 大地图 dense -> 大地图 sparse | 先 teacher 后 self-play | xLSTM backbone |
+| **Lux AI S3 第 1 名** (tonykozlovsky) | 动态 reward scaling + adaptive entropy | Teacher-student + opponent pool | ResNet + ConvLSTM |
+| **我们 (OrbitWar f37)** | 纯 +1/-1 从头开始 | Self-play, 无外部锚点 | Entity Transformer + PPO |
+
+共同模式：**所有成功方案都用了 shaped -> sparse 的 curriculum**。没有任何冠军方案从 pure +1/-1 cold start。
+
+### 11.4 学术研究启示
+
+| 研究 | 核心发现 | 对 f38 的指导 |
+|------|---------|-------------|
+| **AlphaStar** (Nature 2019) | PFSP + League（Main/Exploiter 角色）防止策略循环 | 我们资源不支持 league，用 external anchor 模拟 |
+| **OpenAI Five** (2019) | 80% 最新 + 20% 历史策略 | 已有 frozen_ratio=0.40，但缺外部锚点 |
+| **SPIRAL** (2026) | Role-conditioned Advantage Estimation 防止 "thinking collapse" | 对称零和博弈，RAE 可简化为标准 advantage |
+| **Data Gating** (arxiv:2605.22217, 2026) | 数据管门 > reward 设计 | 考虑在 f38 之后加 trajectory 质量过滤 |
+| **Entropy Preservation** (2026) | PPO clipping 隐式约束 entropy 变化率 | 我们 entropy 稳定，非当前瓶颈 |
+
+---
+
+## 12. Day10 修订后执行决策树
+
+```
+f38 三阶段课程训练
+│
+├── 阶段一（0-500 upd）: CAPTURE=0.05 + PROD_SHARE_DELTA=0.02
+│   ├── @199: 看 flip > 3%，captures > 20
+│   │   ├── 有改善 -> 继续到 @499
+│   │   └── 无改善 -> 加大 CAPTURE=0.10
+│   └── @499: 看是否学会翻转
+│       ├── flip > 5% + captures > 40 -> 进入阶段二
+│       └── 否 -> 止损，重新审视特征/架构
+│
+├── 阶段二（500-1000 upd）: Anneal shaping + self-play
+│   ├── @750: 看 shaping 减半后是否保持翻转能力
+│   └── @999: 进入阶段三前的 replay gate
+│       ├── WLD >= 1/5 vs v20 -> 继续
+│       └── WLD 0/5 + 翻转能力丢失 -> 保留微量 CAPTURE=0.005
+│
+├── 阶段三（1000-3000 upd）: 纯终局 + f29 anchor
+│   └── @1999, @2999: 全面 replay 评估
+│       ├── WLD >= 2/5 -> 进入提交候选
+│       └── WLD 0/5 -> 考虑 data gating / trajectory filtering
+│
+└── 提交候选
+    └── 与 f29@599 对比，取更强者提交
+```
