@@ -33,6 +33,10 @@ def main() -> int:
                     help="tensorboard log dir; set None to disable tb")
     ap.add_argument("--num-updates", type=int, default=None,
                     help="override config num_updates (for quick experiments)")
+    ap.add_argument("--ckpt-every", type=int, default=None,
+                    help="override config ckpt_every")
+    ap.add_argument("--ckpt-dir", type=str, default=None,
+                    help="override config ckpt_dir")
     ap.add_argument("--resume-from", type=str, default=None,
                     help="warm-start params from a checkpoint pkl (shape-checked)")
     args = ap.parse_args()
@@ -44,6 +48,10 @@ def main() -> int:
 
     if args.num_updates is not None:
         train_cfg_dict["num_updates"] = args.num_updates
+    if args.ckpt_every is not None:
+        train_cfg_dict["ckpt_every"] = args.ckpt_every
+    if args.ckpt_dir is not None:
+        train_cfg_dict["ckpt_dir"] = args.ckpt_dir
 
     ppo_cfg = PPOConfig(**ppo_cfg_dict)
     selfplay_cfg = SelfPlayConfig(**selfplay_cfg_dict)

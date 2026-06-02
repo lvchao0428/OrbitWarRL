@@ -170,7 +170,7 @@ def _assert_template_matches_ckpt(template_path: str, arch: dict[str, int]) -> N
         )
     if mismatches:
         if arch["planet_feat_dim"] == 33 and arch["global_feat_dim"] == 18 and ckpt_has_pair:
-            hint = "submission_rl_v11_f37.py"
+            hint = "submission_rl_v11_f37.py or submission_rl_v11_f38.py"
         elif arch["planet_feat_dim"] == 33 and ckpt_has_pair:
             hint = "submission_rl_v11_f35.py"
         elif arch["planet_feat_dim"] == 28 and ckpt_has_pair:
@@ -270,6 +270,20 @@ def main() -> int:
         default=None,
         help="override EMIT_HARD_STOP_MIN_STEP in the output submission",
     )
+    ap.add_argument(
+        "--emit-hard-stop",
+        type=int,
+        choices=(0, 1),
+        default=None,
+        help="override EMIT_HARD_STOP in parity and the output submission",
+    )
+    ap.add_argument(
+        "--flip-hard-mask",
+        type=int,
+        choices=(0, 1),
+        default=None,
+        help="override F31_HARD_MASKS/F32_HARD_MASKS in parity and the output submission",
+    )
     args = ap.parse_args()
 
     if not os.path.exists(args.ckpt):
@@ -293,6 +307,10 @@ def main() -> int:
 
     if not args.skip_parity:
         mask_flags = _read_template_mask_flags(args.template)
+        if args.emit_hard_stop is not None:
+            mask_flags["emit_hard_stop"] = bool(args.emit_hard_stop)
+        if args.flip_hard_mask is not None:
+            mask_flags["flip_hard_mask"] = bool(args.flip_hard_mask)
         emit_hard_stop_min_step = (
             args.emit_hard_stop_min_step
             if args.emit_hard_stop_min_step is not None
@@ -327,6 +345,14 @@ def main() -> int:
           f"compressed+base64 ~{enc_size/1024:.1f}KB")
 
     _inject(args.template, out_path, payload)
+    if args.emit_hard_stop is not None:
+        _rewrite_top_level_int_assign(out_path, "EMIT_HARD_STOP", args.emit_hard_stop)
+    if args.flip_hard_mask is not None:
+        hard_name = "F31_HARD_MASKS"
+        try:
+            _rewrite_top_level_int_assign(out_path, hard_name, args.flip_hard_mask)
+        except RuntimeError:
+            _rewrite_top_level_int_assign(out_path, "F32_HARD_MASKS", args.flip_hard_mask)
     if args.emit_hard_stop_min_step is not None:
         _rewrite_top_level_int_assign(
             out_path,

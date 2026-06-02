@@ -53,8 +53,11 @@ EMIT_PAIR_DIM=$(echo "$ARCH_INFO" | awk '{print $6}')
 if [ "$PLANET_DIM" = "19" ]; then
   TEMPLATE="submission_rl_v4.py"
 elif [ "$PLANET_DIM" = "33" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "18" ]; then
-  # f37: f35 feats + GLOBAL_FEAT_DIM=18 + EMIT_PAIR_DIM=6
-  TEMPLATE="submission_rl_v11_f37.py"
+  if echo "$TAG" | grep -qE 'f38|f40'; then
+    TEMPLATE="submission_rl_v11_f38.py"
+  else
+    TEMPLATE="submission_rl_v11_f37.py"
+  fi
 elif [ "$PLANET_DIM" = "33" ] && [ "$HAS_PAIR" = "1" ]; then
   # f35: f33 arch + 5 src-quality / v20-target-score planet feats (dst_pair=5).
   TEMPLATE="submission_rl_v11_f35.py"
@@ -95,13 +98,16 @@ EXPORT_ARGS=()
 if [ -n "${EMIT_HARD_STOP_MIN_STEP:-}" ]; then
   EXPORT_ARGS+=(--emit-hard-stop-min-step "$EMIT_HARD_STOP_MIN_STEP")
 fi
+if echo "$TAG" | grep -q 'f40_bc'; then
+  EXPORT_ARGS+=(--emit-hard-stop 0 --flip-hard-mask 0)
+fi
 
 JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES="" \
   "$PY" -m orbit_wars_rl.scripts.export_submission \
   --ckpt "$CKPT" \
   --template "$TEMPLATE" \
   --out "$SUB" \
-  "${EXPORT_ARGS[@]}"
+  ${EXPORT_ARGS+"${EXPORT_ARGS[@]}"}
 
 # replay_analyze writes JSON + prints first-80 + full-game tables
 "$PY" -m orbit_wars_rl.scripts.replay_analyze \

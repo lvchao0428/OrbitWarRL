@@ -1,0 +1,52 @@
+# v11_f38s1b — stronger CAPTURE bootstrap (Path B retry after f38 s1 gate miss).
+#
+# Same arch as f38/f37. Only delta vs f38 s1: CAPTURE=0.10 (env var in run script).
+# ckpt_dir / seed separated so s1 and s1b runs do not collide.
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 500
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_f38s1b
+  ckpt_every: 100
+  log_every: 1
+  seed: 383
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  flip_hard_mask: true
+
+ppo:
+  lr_peak: 0.00003
+  lr_warmup_steps: 2000
+  lr_decay_steps: 500000
+  lr_floor: 0.00001
+  clip_eps: 0.20
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.05
+  ent_coef_dst: 0.05
+  ent_coef_pct: 0.05
+  ent_coef_emit: 0.05
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 50
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.40
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0

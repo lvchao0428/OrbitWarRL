@@ -64,9 +64,12 @@ class SelfPlayConfig:
     eval_vs_frozen: bool = True       # additionally compute WR vs latest snapshot
     strong_ckpt_path: str = ""        # C1: fixed strong opponent snapshot (same arch)
     strong_ratio: float = 0.0         # fraction vs strong_ckpt (post-warmup)
+    pool_seed_paths: list[str] = field(default_factory=list)
+    snapshot_current: bool = True     # if false, only externally gated seeds are sampled
     # Plan B: v20 state-buffer curriculum
     buffer_path: str = ""             # path to .npz from collect_states.py
     buffer_reset_ratio: float = 0.30  # fraction of resets that use a buffer state
+    buffer_rollout_ratio: float = 1.0 # fraction of post-warmup updates spent in buffer rollout
 
 
 @dataclass
@@ -287,7 +290,15 @@ def train(
     if cfg.selfplay.enabled and cfg.selfplay.buffer_path:
         print(
             f"[buffer-curriculum] buffer_path={cfg.selfplay.buffer_path} "
-            f"buffer_reset_ratio={cfg.selfplay.buffer_reset_ratio}",
+            f"buffer_reset_ratio={cfg.selfplay.buffer_reset_ratio} "
+            f"buffer_rollout_ratio={cfg.selfplay.buffer_rollout_ratio}",
+            flush=True,
+        )
+    if cfg.selfplay.enabled and cfg.selfplay.pool_seed_paths:
+        print(
+            "[gated-pool] seed_paths="
+            + ", ".join(cfg.selfplay.pool_seed_paths)
+            + f" snapshot_current={cfg.selfplay.snapshot_current}",
             flush=True,
         )
 
@@ -398,7 +409,7 @@ def train(
     sp_frozen = float(cfg.selfplay.frozen_ratio) if cfg.selfplay.enabled else 0.0
     sp_strong = float(cfg.selfplay.strong_ratio) if cfg.selfplay.enabled else 0.0
     sp_buffer = (
-        float(cfg.selfplay.buffer_reset_ratio)
+        float(cfg.selfplay.buffer_rollout_ratio)
         if cfg.selfplay.enabled and cfg.selfplay.buffer_path
         else 0.0
     )
@@ -429,6 +440,22 @@ def train(
                 )
                 sp_strong = 0.0
 
+    if cfg.selfplay.enabled and pool is not None and cfg.selfplay.pool_seed_paths:
+        for seed_path in cfg.selfplay.pool_seed_paths:
+            seed_ckpt = load_checkpoint(seed_path)
+            try:
+                chex.assert_trees_all_equal_shapes(params, seed_ckpt["params"])
+                seed_params = seed_ckpt["params"]
+                status = "loaded"
+            except Exception:  # noqa: BLE001
+                seed_params = _adapt_strong_params(params, seed_ckpt["params"])
+                status = "shape-adapted" if seed_params is not None else "disabled"
+            if seed_params is None:
+                print(f"[gated-pool] WARN cannot load seed {seed_path}", flush=True)
+                continue
+            pool.snapshot(seed_params)
+            print(f"[gated-pool] {status} seed opponent {seed_path}", flush=True)
+
     for update in range(cfg.num_updates):
         rng_iter, r_step, r_opp_pick, r_pool_sample = jax.random.split(rng_iter, 4)
 
@@ -454,7 +481,11 @@ def train(
                     params, frozen_params, states, env_rngs,
                 )
                 opp_tag = "frzn"
-            elif buffer_rollout_fn is not None and sp_buffer > 0.0:
+            elif (
+                buffer_rollout_fn is not None
+                and sp_buffer > 0.0
+                and roll < sp_strong + sp_frozen + sp_buffer
+            ):
                 # Buffer-reset: use frozen params = current params (no frozen opp).
                 # The buffer state mixing happens inside the rollout fn itself.
                 states, env_rngs, rollout = buffer_rollout_fn(
@@ -480,7 +511,11 @@ def train(
         if cfg.selfplay.enabled and pool is not None:
             metrics_py["pool_size"] = float(len(pool))
 
-        if cfg.selfplay.enabled and (update + 1) % cfg.selfplay.snapshot_every == 0:
+        if (
+            cfg.selfplay.enabled
+            and cfg.selfplay.snapshot_current
+            and (update + 1) % cfg.selfplay.snapshot_every == 0
+        ):
             pool.snapshot(params)  # type: ignore[union-attr]
 
         if cfg.eval_every > 0 and (update + 1) % cfg.eval_every == 0:

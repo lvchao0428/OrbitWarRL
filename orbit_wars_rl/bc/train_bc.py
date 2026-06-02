@@ -11,8 +11,8 @@ What this does
 --------------
 1. Loads the .npz produced by ``collect_data.py``.
 2. Splits 90/10 into train/val (deterministic shuffle).
-3. Initialises an ActorCritic with the v7 architecture (heads accept
-   reserved-aware inputs).
+3. Initialises an ActorCritic with the current multi-action architecture
+   (heads accept reserved-aware pair inputs).
 4. Trains by minimising a masked cross-entropy over each head:
 
        L = w_src * CE(src) + w_dst * CE(dst) + w_pct * CE(pct)
@@ -127,19 +127,41 @@ def _masked_ce(logits: jnp.ndarray, target: jnp.ndarray, mask: jnp.ndarray) -> j
 
     Returns scalar.
     """
+    target_logit = jnp.take_along_axis(logits, target[..., None], axis=-1)[..., 0]
+    effective_mask = mask & (target_logit > jnp.float32(-1.0e8))
     log_probs = jax.nn.log_softmax(logits, axis=-1)
     one_hot = jax.nn.one_hot(target, logits.shape[-1], dtype=logits.dtype)
     per_step_ce = -(log_probs * one_hot).sum(axis=-1)  # (B, K)
-    masked = jnp.where(mask, per_step_ce, jnp.float32(0.0))
-    n = jnp.maximum(jnp.float32(mask.sum()), jnp.float32(1.0))
+    masked = jnp.where(effective_mask, per_step_ce, jnp.float32(0.0))
+    n = jnp.maximum(jnp.float32(effective_mask.sum()), jnp.float32(1.0))
     return masked.sum() / n
 
 
+def _masked_weighted_ce(
+    logits: jnp.ndarray,
+    target: jnp.ndarray,
+    mask: jnp.ndarray,
+    class_weights: jnp.ndarray,
+) -> jnp.ndarray:
+    target_logit = jnp.take_along_axis(logits, target[..., None], axis=-1)[..., 0]
+    effective_mask = mask & (target_logit > jnp.float32(-1.0e8))
+    log_probs = jax.nn.log_softmax(logits, axis=-1)
+    one_hot = jax.nn.one_hot(target, logits.shape[-1], dtype=logits.dtype)
+    per_step_ce = -(log_probs * one_hot).sum(axis=-1)
+    weights = jnp.take(class_weights.astype(logits.dtype), target)
+    weighted = per_step_ce * weights
+    masked = jnp.where(effective_mask, weighted, jnp.float32(0.0))
+    denom = jnp.where(effective_mask, weights, jnp.float32(0.0)).sum()
+    return masked.sum() / jnp.maximum(denom, jnp.float32(1.0))
+
+
 def _masked_acc(logits: jnp.ndarray, target: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
+    target_logit = jnp.take_along_axis(logits, target[..., None], axis=-1)[..., 0]
+    effective_mask = mask & (target_logit > jnp.float32(-1.0e8))
     pred = jnp.argmax(logits, axis=-1)
     hit = (pred == target).astype(jnp.float32)
-    n = jnp.maximum(jnp.float32(mask.sum()), jnp.float32(1.0))
-    return (jnp.where(mask, hit, jnp.float32(0.0))).sum() / n
+    n = jnp.maximum(jnp.float32(effective_mask.sum()), jnp.float32(1.0))
+    return (jnp.where(effective_mask, hit, jnp.float32(0.0))).sum() / n
 
 
 def _bc_loss_and_metrics(
@@ -147,10 +169,11 @@ def _bc_loss_and_metrics(
     apply_fn,
     batch: dict[str, jnp.ndarray],
     w_emit: float,
+    emit_pos_weight: float,
 ) -> tuple[jnp.ndarray, dict[str, jnp.ndarray]]:
     """Compute BC loss + per-head accuracy on a single batch.
 
-    Calls ``ActorCritic.evaluate(obs, src, dst, pct, emit, planet_ships_raw)``.
+    Calls ``ActorCritic.evaluate`` with the same raw geometry fields PPO uses.
     """
     enc = _to_encoded_obs(batch)
     src = jnp.asarray(batch["src"])
@@ -160,14 +183,12 @@ def _bc_loss_and_metrics(
     loss_mask = jnp.asarray(batch["loss_mask"])
     emit_free = jnp.asarray(batch["emit_free"])
     ships_raw = jnp.asarray(batch["planet_ships_raw"])
-    # f26: pair features need geometry + home idx. BC datasets predate f26;
-    # supply zeros (pair feats degrade to dist=0, sun_risk=1, needed=1, ...)
-    # which is fine for warm-starting argmax — re-collect data once BC is
-    # in active use again.
+    # Current pair features depend on true geometry and the player's home slot.
+    # Legacy datasets may not have these fields, but f40 datasets should.
     px = jnp.asarray(batch.get("planet_x_raw", jnp.zeros_like(ships_raw, dtype=jnp.float32)))
     py = jnp.asarray(batch.get("planet_y_raw", jnp.zeros_like(ships_raw, dtype=jnp.float32)))
     leading = ships_raw.shape[:-1]
-    home = jnp.zeros(leading, dtype=jnp.int32)
+    home = jnp.asarray(batch.get("home_idx_raw", jnp.zeros(leading, dtype=jnp.int32)))
 
     out = apply_fn(
         {"params": params["params"]},
@@ -184,7 +205,10 @@ def _bc_loss_and_metrics(
     # emit head supervised on loss_mask & emit_free
     emit_target = emit.astype(jnp.int32)
     emit_supervise = loss_mask & emit_free
-    emit_ce = _masked_ce(out.emit_logits, emit_target, emit_supervise)
+    emit_class_weights = jnp.asarray([1.0, emit_pos_weight], dtype=jnp.float32)
+    emit_ce = _masked_weighted_ce(
+        out.emit_logits, emit_target, emit_supervise, emit_class_weights
+    )
 
     total = src_ce + dst_ce + pct_ce + w_emit * emit_ce
 
@@ -224,10 +248,16 @@ def main() -> int:
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--w-emit", type=float, default=2.0,
                         help="loss weight for emit head (v20 is 64% stop)")
+    parser.add_argument("--emit-pos-weight", type=float, default=1.0,
+                        help="class weight for emit=True continuation labels")
     parser.add_argument("--d-model", type=int, default=128)
     parser.add_argument("--n-layers", type=int, default=2)
     parser.add_argument("--n-heads", type=int, default=4)
     parser.add_argument("--ff-dim", type=int, default=512)
+    parser.add_argument("--emit-hard-stop", action="store_true",
+                        help="train/evaluate with the inference hard stop mask")
+    parser.add_argument("--flip-hard-mask", action="store_true",
+                        help="train/evaluate with the dst flip hard mask")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--val-frac", type=float, default=0.1)
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
@@ -237,6 +267,15 @@ def main() -> int:
 
     print(f"loading dataset: {args.data}")
     data = _load_dataset(args.data)
+    required = ["planet_x_raw", "planet_y_raw", "home_idx_raw"]
+    missing = [k for k in required if k not in data]
+    if missing:
+        print(
+            "WARNING: dataset is missing current raw geometry fields: "
+            + ", ".join(missing)
+            + ". Falling back to zeros; recollect data before serious f40 runs.",
+            flush=True,
+        )
     n = data["src"].shape[0]
     print(f"  {n} samples, shape: src={data['src'].shape}, "
           f"planet_feats={data['planet_feats'].shape}")
@@ -253,6 +292,8 @@ def main() -> int:
         n_heads=args.n_heads,
         ff_dim=args.ff_dim,
         max_fleets_per_turn=_K,
+        emit_hard_stop=args.emit_hard_stop,
+        flip_hard_mask=args.flip_hard_mask,
     )
 
     # Build a dummy single sample for init
@@ -268,9 +309,9 @@ def main() -> int:
         neutral_planet_mask=jnp.asarray(train_data["neutral_planet_mask"][0]),
     )
     dummy_ships = jnp.asarray(train_data["planet_ships_raw"][0])
-    dummy_px = jnp.zeros_like(dummy_ships, dtype=jnp.float32)
-    dummy_py = jnp.zeros_like(dummy_ships, dtype=jnp.float32)
-    dummy_home = jnp.int32(0)
+    dummy_px = jnp.asarray(train_data.get("planet_x_raw", np.zeros_like(train_data["planet_ships_raw"], dtype=np.float32))[0])
+    dummy_py = jnp.asarray(train_data.get("planet_y_raw", np.zeros_like(train_data["planet_ships_raw"], dtype=np.float32))[0])
+    dummy_home = jnp.asarray(train_data.get("home_idx_raw", np.zeros((train_data["src"].shape[0],), dtype=np.int32))[0])
     params = model.init(rng_init, dummy_enc, rng_init, dummy_ships,
                         dummy_px, dummy_py, dummy_home)
 
@@ -286,7 +327,9 @@ def main() -> int:
 
     # Compiled train step. We jit per-batch grad.
     def loss_fn(params, batch):
-        loss, metrics = _bc_loss_and_metrics(params, model.apply, batch, args.w_emit)
+        loss, metrics = _bc_loss_and_metrics(
+            params, model.apply, batch, args.w_emit, args.emit_pos_weight
+        )
         return loss, metrics
 
     @jax.jit
@@ -301,7 +344,9 @@ def main() -> int:
 
     @jax.jit
     def eval_step(params, batch):
-        _, metrics = _bc_loss_and_metrics(params, model.apply, batch, args.w_emit)
+        _, metrics = _bc_loss_and_metrics(
+            params, model.apply, batch, args.w_emit, args.emit_pos_weight
+        )
         return metrics
 
     # Move data to jnp once (small enough for local val; train slices each iter)

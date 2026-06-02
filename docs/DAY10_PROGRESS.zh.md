@@ -1,9 +1,9 @@
 # DAY10 进展 — f36a/f36b 分析 + f37 方案启动
 
-> **2026-06-02 更新**
+> **2026-06-02 晚更新**
 > 接续 [`DAY9_PLAN.zh.md`](DAY9_PLAN.zh.md)。
-> f36a/f36b 训练 + replay 完成；两条支线均未达到 promote 标准。
-> 根据对弈分析和根因诊断，提出并启动 f37 方案。
+> Day10 完成 f36a/f36b 分析、f37/f38 训满与 replay、f38s1b 对照实验，并启动 **f40 Expert-Seeded Gated League** 基建与 smoke 验证。
+> 详见 [`DAY11_PLAN.zh.md`](DAY11_PLAN.zh.md)。
 
 ---
 
@@ -15,8 +15,11 @@
 | **f36b** | 🔴 **strong opponent 被静默禁用**（shape mismatch 33 vs 28）；实际退化为 f33-like 短训 |
 | **根因诊断** | 问题不在动作机制或训练分布，而是 **四个 action head 缺乏足够直接的输入信号** |
 | **Vadasz 对弈分析** | 顶级选手 z0=34%、e2+=37%、spf 中位 25；我们 z0<1%、e2+=0%、spf≈5-17 |
-| **f37 方案** | ✅ 已实施并启动训练：**特征强化 + 纯终局 reward + 3000 upd** |
-| **提交候选** | **f29 @599** 仍为基线；f37 待训练完成后评估 |
+| **f37 方案** | 训满 3000 upd；@199 e2+=14.8% 峰值，@499+ 塌缩 |
+| **f38 s1** | CAPTURE=0.05 完成；@199 captures=19/e2+=15.2%，@499 塌缩 → **不进入 s2/s3** |
+| **f38s1b** | 🔴 **500 upd 完成**；@199 **劣于 s1**（captures 8 vs 19）；@499 e2+=20.2% 但 flip/captures 仍 fail → **f38 全系关闭** |
+| **f40** | 🟡 **基建 + smoke 完成**；BC seed / PPO@4 replay 未过 promote；**新主线** |
+| **提交候选** | **f29 @599** 仍为基线 |
 
 ---
 
@@ -483,3 +486,161 @@ f38 三阶段课程训练
 └── 提交候选
     └── 与 f29@599 对比，取更强者提交
 ```
+
+---
+
+## 13. f38 Stage 1 Replay 结果 + Gate 决策（2026-06-02）
+
+### 13.1 f38 s1 replay（vs v20，first-80）
+
+| ckpt | WLD | z0 | e2+ | spf | flip | captures | bin0 | one_ship |
+|------|-----|----|-----|-----|------|----------|------|----------|
+| @199 | 0/5/0 | 4.5% | **15.2%** | 3.14 | 2.13% | **19** | 2.4% | 29.5% |
+| @499 | 0/5/0 | 1.4% | 0.8% | 3.56 | 2.07% | 10 | 1.3% | 34.5% |
+
+对比 f37 同 ckpt：
+
+| ckpt | 指标 | f38 s1 | f37 | 趋势 |
+|------|------|--------|-----|------|
+| @199 | e2+ | 15.2% | 14.8% | f38 略优 |
+| @199 | captures | **19** | 9 | f38 明显优 |
+| @199 | flip | 2.13% | 1.53% | f38 优 |
+| @499 | e2+ | 0.8% | 0.2% | 两者均塌缩 |
+| @499 | captures | 10 | 20 | f38 更差 |
+
+### 13.2 Stage 1 Gate 判定
+
+| Gate | @199 标准 | @199 实际 | @499 标准 | @499 实际 |
+|------|----------|----------|----------|----------|
+| flip | > 3% | 2.13% **FAIL** | > 5% | 2.07% **FAIL** |
+| captures | > 20 | 19 **FAIL** | > 40 | 10 **FAIL** |
+| e2+ | > 5% | 15.2% OK | > 5% | 0.8% FAIL |
+
+**结论**：@199 接近达标（captures 差 1、flip 差 0.9pp），特征+shaping 方向正确；@499 再次塌缩，**不进入 Stage 2/3**（从 @499 resume 无意义）。
+
+### 13.3 决策：Path B — 启动 f38s1b
+
+按决策树「@199 有改善但 @499 未达标 → CAPTURE=0.10 重训」：
+
+| 项 | 值 |
+|---|---|
+| 实验 | **f38s1b** |
+| CAPTURE | 0.10（s1 的 2x） |
+| PROD_SHARE_DELTA | 0.02（不变） |
+| 配置 | [`multi_action_v11_f38s1b.yaml`](orbit_wars_rl/configs/multi_action_v11_f38s1b.yaml) |
+| 脚本 | [`scripts/run_v11_f38s1b.sh`](scripts/run_v11_f38s1b.sh) |
+| Gate | @199/@499 replay，目标 captures@199>20、flip@499>5% |
+
+### 13.4 配套改动
+
+- 新增 [`submission_rl_v11_f38.py`](submission_rl_v11_f38.py) 提交模板（arch 同 f37）
+- 修复 [`scripts/quick_replay.sh`](scripts/quick_replay.sh) 空 `EXPORT_ARGS` 在 `set -u` 下崩溃
+- Stage 2/3 **暂缓**，待 f38s1b gate 通过后再 resume 课程
+
+---
+
+## 14. f38s1b 结果 + f38 路线关闭（2026-06-02 晚）
+
+### 14.1 实验设计
+
+| 项 | f38 s1 | f38s1b |
+|---|---|---|
+| CAPTURE | 0.05 | **0.10** |
+| PROD_SHARE_DELTA | 0.02 | 0.02 |
+| updates | 500 | 500 |
+| ckpt_dir | `ckpt_multi_action_v11_f38` | `ckpt_multi_action_v11_f38s1b` |
+
+### 14.2 replay（vs v20，first-80）
+
+| ckpt | 线 | WLD | z0 | e2+ | spf | flip | captures | bin0 | one_ship |
+|------|-----|-----|----|-----|-----|------|----------|------|----------|
+| @199 | f38 s1 | 0/5/0 | 4.5% | **15.2%** | 3.14 | 2.13% | **19** | 2.4% | 29.5% |
+| @199 | f38s1b | 0/5/0 | 5.0% | 5.3% | 2.99 | 1.63% | **8** | 0.7% | 36.1% |
+| @499 | f38 s1 | 0/5/0 | 1.4% | 0.8% | 3.56 | 2.07% | 10 | 1.3% | 34.5% |
+| @499 | f38s1b | 0/5/0 | 0.6% | **20.2%** | 2.73 | 1.68% | 14 | 1.2% | 23.3% |
+
+训练 log 末段（f38s1b @499）：`emits≈1.49 / spf≈21 / e2≈0.30 / z0≈0.03` — 与 replay 再次脱节。
+
+### 14.3 Gate 判定
+
+| Gate | @199 目标 | f38s1b @199 | @499 目标 | f38s1b @499 |
+|------|----------|-------------|----------|-------------|
+| captures | > 20 | 8 **FAIL** | > 40 | 14 **FAIL** |
+| flip | > 3% | 1.63% **FAIL** | > 5% | 1.68% **FAIL** |
+| e2+ | > 5% | 5.3% OK | > 5% | 20.2% OK |
+
+**结论**：加大 CAPTURE **未改善 @199 峰值**，反而丢失 s1 的 captures/e2+ 信号；@499 虽 e2+ 升高，但 **flip/captures/WLD 全线 fail**。**f38 全系归档**，不再 resume Stage 2/3，也不再调 shaping 系数。
+
+**可保留资产**：f38 s1 @199 ckpt 仍可作为 f40 的行为多样性 anchor 候选（e2+=15.2%, captures=19）。
+
+---
+
+## 15. f40 Expert-Seeded Gated League — 基建与 smoke（2026-06-02 晚）
+
+### 15.1 已实现
+
+| 模块 | 改动 |
+|------|------|
+| BC 采集 | [`collect_data.py`](../orbit_wars_rl/bc/collect_data.py) 保存 `planet_x/y_raw`、`home_idx_raw` |
+| BC 训练 | [`train_bc.py`](../orbit_wars_rl/bc/train_bc.py) 真实几何 + masked-label CE + emit 正类权重 |
+| Runner | [`runner.py`](../orbit_wars_rl/ppo/runner.py) 增加 `pool_seed_paths`、`snapshot_current`、`buffer_rollout_ratio` |
+| 配置/脚本 | `multi_action_v11_f40_buffer.yaml`、`collect_f40_expert_data.sh`、`run_f40_bc.sh`、`run_v11_f40_buffer.sh` |
+| Export | BC replay 可 `--emit-hard-stop 0 --flip-hard-mask 0` 导出 |
+
+### 15.2 数据与 ckpt
+
+| 产物 | 规模 |
+|------|------|
+| `data/bc_f40_v20_self.npz` | 20 局 v20，4972 samples |
+| `data/f40_mixed_states.npz` | 2160 states（v20 + top10 均衡采样） |
+| `ckpt_bc_f40/ckpt_final.pkl` | BC seed（emit_pos_weight=4.0） |
+| `ckpt_multi_action_v11_f40_buffer_smoke/ckpt_000004.pkl` | PPO smoke 5 upd |
+
+### 15.3 replay gate（vs v20，first-80）
+
+| tag | WLD | z0 | e2+ | spf | flip | captures | 判定 |
+|-----|-----|----|-----|-----|------|----------|------|
+| v11_f40_bc_seed | 0/5/0 | 3.3% | 3.0% | 4.61 | 2.44% | ~16 | **未过 BC gate**（目标 captures>40, e2+>10%） |
+| v11_f40_buffer_smoke_u4 | 0/5/0 | 3.2% | **9.8%** | 5.91 | 2.94% | ~18 | e2+ OK；flip/captures fail |
+
+PPO smoke 训练 5 upd 内：`emits≈2.56 / e2≈0.50 / spf≈19.4` — buffer curriculum 能恢复多路 emit，但 replay 翻转仍弱。
+
+### 15.4 尚未完成（移交 Day11）
+
+- BC 数据扩至 **200 局**；BC gate 过关后再长训
+- replay 驱动的 **gated pool 自动入池** + @100 回退
+- buffer step 20–120 分桶
+- f40 长训 500–1000 upd + 每 100 upd replay
+
+---
+
+## 16. Day10 总结与路线决策
+
+### 16.1 已证伪（Day10 追加）
+
+| 假设 | 反证 |
+|------|------|
+| CAPTURE 加倍可推过 f38 @199 gate | f38s1b @199 captures 8 < s1 的 19 |
+| f38 三阶段 curriculum 可继续 | s1 + s1b 均在 @499 前后 lose 有效翻转信号 |
+| 仅靠 shaping + self-play 可打破 trickle | f33–f38s1b 全线 **WLD 0/5** |
+
+### 16.2 仍有效的正信号
+
+| 信号 | 证据 |
+|------|------|
+| f37/f38 @199 的 e2+ 峰值 | 14.8%–15.2%，说明特征方向对 |
+| f38 s1 @199 captures | 19，全系列最高之一 |
+| buffer curriculum | f40 smoke 训练 e2≈50%，replay e2+=9.8% |
+| f29 @599 | 仍是动作结构最健康的提交基线 |
+
+### 16.3 路线决策
+
+| 线 | 决策 |
+|----|------|
+| **f38/f37 shaping 线** | **归档**；最多保留 s1@199 / f37@199 作 f40 anchor |
+| **f40** | **新主线**：BC seed → buffer PPO → gated league |
+| **Gate 口径** | 唯一 promote：**replay vs v20**；训练 log 仅健康检查 |
+
+### 16.4 下一步
+
+见 [`DAY11_PLAN.zh.md`](DAY11_PLAN.zh.md)。

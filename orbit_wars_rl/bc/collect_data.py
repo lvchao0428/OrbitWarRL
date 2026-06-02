@@ -3,8 +3,8 @@
 Each tuple holds:
   - encoded observation tensors (planet_feats, fleet_feats, global_feats, masks)
     -- already JAX-numpy ready for train_bc
-  - planet_ships_raw (P,) -- garrison at start of v20's turn (needed for
-    the K-step reserved book-keeping inside evaluate())
+  - planet_ships_raw / planet_x_raw / planet_y_raw / home_idx_raw -- raw
+    turn-start fields needed by current K-step pair features inside evaluate()
   - my_planet_mask (P,) -- separate bool array for use in PPO-style heads
   - K-step targets from action_inverse: src/dst/pct/emit/loss_mask/emit_free
 
@@ -88,6 +88,9 @@ def _encode_one(state, player: int, episode_steps: int) -> dict[str, np.ndarray]
         "enemy_planet_mask": np.asarray(enc.enemy_planet_mask),
         "neutral_planet_mask": np.asarray(enc.neutral_planet_mask),
         "planet_ships_raw": np.asarray(state.planet_ships, dtype=np.int32),
+        "planet_x_raw": np.asarray(state.planet_x, dtype=np.float32),
+        "planet_y_raw": np.asarray(state.planet_y, dtype=np.float32),
+        "home_idx_raw": np.asarray(state.home_planet_idx[player], dtype=np.int32),
     }
 
 
