@@ -1,0 +1,78 @@
+loading dataset: data/bc_f40_v20_self.npz
+  4972 samples, shape: src=(4972, 8), planet_feats=(4972, 40, 33)
+  train: 4475  val: 497
+initialising model...
+  model params: 680,653
+
+epoch 0 (random init):
+  loss/total: 8.4149
+  loss/emit: 0.5366
+  acc/src: 0.1645
+  acc/dst: 0.0879
+  acc/pct: 0.2456
+  acc/emit: 0.5652
+  step 0 | loss 8.6899  src 2.363  dst 3.267  pct 1.984  emit 0.538  gn 12.854
+
+epoch 1/15 (18.2s) train_loss 7.2361  | val acc src 0.260  dst 0.275  pct 0.439  emit 0.617
+
+
+epoch 2/15 (0.2s) train_loss 6.7656  | val acc src 0.264  dst 0.303  pct 0.431  emit 0.607
+
+  step 50 | loss 6.1043  src 1.864  dst 2.240  pct 1.255  emit 0.373  gn 2.441
+
+epoch 3/15 (0.2s) train_loss 6.5901  | val acc src 0.272  dst 0.306  pct 0.405  emit 0.610
+
+
+epoch 4/15 (0.2s) train_loss 6.4172  | val acc src 0.298  dst 0.321  pct 0.417  emit 0.636
+
+
+epoch 5/15 (0.2s) train_loss 6.2210  | val acc src 0.297  dst 0.336  pct 0.440  emit 0.622
+
+  step 100 | loss 6.0072  src 1.988  dst 2.238  pct 1.062  emit 0.360  gn 3.345
+
+epoch 6/15 (0.2s) train_loss 6.0519  | val acc src 0.283  dst 0.339  pct 0.440  emit 0.605
+
+
+epoch 7/15 (0.2s) train_loss 5.9157  | val acc src 0.299  dst 0.353  pct 0.445  emit 0.627
+
+
+epoch 8/15 (0.2s) train_loss 5.8155  | val acc src 0.288  dst 0.364  pct 0.473  emit 0.634
+
+  step 150 | loss 5.7790  src 2.004  dst 2.136  pct 1.006  emit 0.317  gn 4.382
+
+epoch 9/15 (0.2s) train_loss 5.6863  | val acc src 0.308  dst 0.352  pct 0.459  emit 0.639
+
+
+epoch 10/15 (0.2s) train_loss 5.5743  | val acc src 0.292  dst 0.364  pct 0.483  emit 0.628
+
+
+epoch 11/15 (0.2s) train_loss 5.4386  | val acc src 0.307  dst 0.362  pct 0.445  emit 0.632
+
+  step 200 | loss 5.1859  src 1.903  dst 1.828  pct 0.720  emit 0.367  gn 5.518
+
+epoch 12/15 (0.2s) train_loss 5.3092  | val acc src 0.305  dst 0.364  pct 0.445  emit 0.615
+
+
+epoch 13/15 (0.2s) train_loss 5.1923  | val acc src 0.302  dst 0.372  pct 0.481  emit 0.637
+
+
+epoch 14/15 (0.2s) train_loss 5.0686  | val acc src 0.303  dst 0.364  pct 0.423  emit 0.629
+
+  step 250 | loss 4.9495  src 1.781  dst 1.718  pct 0.631  emit 0.410  gn 7.110
+
+epoch 15/15 (0.2s) train_loss 4.9599  | val acc src 0.297  dst 0.369  pct 0.424  emit 0.617
+
+
+training done in 20.6s (15 epochs, 255 steps)
+  wrote ckpt_bc_f40/ckpt_final.pkl (8.2 MB)
+
+FINAL val metrics:
+  loss/total: 6.3531
+  loss/src: 1.9760
+  loss/dst: 2.2874
+  loss/pct: 1.2894
+  loss/emit: 0.4001
+  acc/src: 0.2968
+  acc/dst: 0.3690
+  acc/pct: 0.4237
+  acc/emit: 0.6168
