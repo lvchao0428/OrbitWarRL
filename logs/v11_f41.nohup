@@ -1,0 +1,5 @@
+[f41] py=/home/charlie/anaconda3/bin/python cfg=orbit_wars_rl/configs/multi_action_v11_f41.yaml resume=ckpt_multi_action_v11_f40_buffer/ckpt_000099.pkl log=logs/v11_f41.log foreground=0
+[f41] CAPTURE=0.05 ONE_SHIP_PEN=0.01 HIGH_PROD_CAP=0.02 PROD_SHARE_DELTA=0.005
+[f41] distro: strong=0.25 frozen=0.25 buffer=0.40 random=0.10
+pid=196154
+tail -f logs/v11_f41.log

@@ -168,6 +168,23 @@ SHAPING_HIGH_PROD_THRESH: float = float(
     _os.environ.get("ORBITWARS_SHAPING_HIGH_PROD_THRESH", "3.0")
 )
 
+# --- Day 11 / f42: fleet-scaled capture bonus ---
+#
+# Core insight: the model needs to learn "stockpile then strike with a large
+# fleet" (Vadasz z0=34%, spf=25). Current CAPTURE rewards all flips equally
+# regardless of fleet size, so trickle flips and decisive flips get the same
+# signal. CAPTURE_FLEET_SCALE gives a multiplicative bonus proportional to
+# the garrison left on a newly-captured planet (proxy for fleet size that
+# arrived), creating a gradient: large-fleet capture >> trickle capture.
+#
+# Formula: coef * sum_over_gained( prod_i * log1p(garrison_i) ) / total_prod / 8
+# The log1p/8 scale matches the fleet_size_log normalization.
+# Only fires when a flip actually happens (0/1 direction), and scales with
+# the investment that made it happen.
+SHAPING_CAPTURE_FLEET_SCALE: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_CAPTURE_FLEET_SCALE", "0.0")
+)
+
 
 def player_total_ships(state: EnvState, player: int) -> jnp.ndarray:
     """Total ships (planets + fleets) for ``player``, masked by validity.
@@ -488,6 +505,29 @@ def capture_flip_reward(
         next_state.planet_prod.astype(jnp.float32).sum(), jnp.float32(1.0)
     )
     return jnp.float32(SHAPING_CAPTURE) * prod_gained / total_prod
+
+
+def capture_fleet_scale_reward(
+    prev_state: EnvState, next_state: EnvState, player: int
+) -> jnp.ndarray:
+    """Bonus for capturing with large fleets: incentivizes stockpile-then-strike.
+
+    Only fires when a planet actually flips (0/1 gate). The bonus scales with
+    both the planet's production value and the garrison left after capture
+    (proxy for fleet size minus defender). This creates a gradient chain:
+      large garrison on capture <- large fleet sent <- stockpiled before sending <- z0
+    """
+    if SHAPING_CAPTURE_FLEET_SCALE <= 0.0:
+        return jnp.float32(0.0)
+    prev_mine = (prev_state.planet_owner == player) & prev_state.planet_mask
+    next_mine = (next_state.planet_owner == player) & next_state.planet_mask
+    gained = next_mine & jnp.logical_not(prev_mine)
+    prod_f = next_state.planet_prod.astype(jnp.float32)
+    garr_f = next_state.planet_ships.astype(jnp.float32)
+    total_prod = jnp.maximum(prod_f.sum(), jnp.float32(1.0))
+    scale = jnp.log1p(garr_f) / jnp.float32(8.0)
+    weighted = jnp.where(gained, prod_f * scale, jnp.float32(0.0)).sum()
+    return jnp.float32(SHAPING_CAPTURE_FLEET_SCALE) * weighted / total_prod
 
 
 def player_alive(state: EnvState, player: int) -> jnp.ndarray:

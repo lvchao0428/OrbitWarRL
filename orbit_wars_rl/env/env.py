@@ -111,12 +111,14 @@ class OrbitWarsEnv:
         # Day 8 / f35: sharp anti-1-ship + high-prod capture. Default 0.
         one_ship_r = rewards.one_ship_penalty_reward(valid_p0, ships_p0)
         high_prod_r = rewards.high_prod_capture_reward(state, s4, 0)
+        # Day 11 / f42: fleet-scaled capture bonus. Default 0.
+        capture_fs_r = rewards.capture_fleet_scale_reward(state, s4, 0)
         non_terminal_r = (
             shaping
             + keep_r + fleet_r
             + prod_r + planet_r + fleet_log_r
             + prod_d_r + capture_r + emit_log_r + release_r
-            + one_ship_r + high_prod_r
+            + one_ship_r + high_prod_r + capture_fs_r
         )
         reward_p0 = jnp.where(done_now, terminal_r, non_terminal_r)
 

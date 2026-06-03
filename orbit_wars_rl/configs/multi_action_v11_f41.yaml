@@ -1,0 +1,63 @@
+# v11_f41 — f40 @99 resume with stronger capture shaping + adjusted distribution.
+#
+# Changes vs f40:
+#   Reward:  CAPTURE 0.02->0.05, +ONE_SHIP_PENALTY 0.01, +HIGH_PROD_CAPTURE 0.02
+#   Distro:  buffer_rollout 0.30->0.40, strong 0.20->0.25, frozen 0.30->0.25
+#            (random drops from 0.20 to 0.10)
+#   Resume:  from f40 @99 (best e2+ ckpt)
+#
+# Architecture unchanged: planet=33, global=18, dst_pair=5, emit_pair=6.
+
+train:
+  num_envs: 128
+  rollout_length: 256
+  num_updates: 500
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 50
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v11_f41
+  ckpt_every: 50
+  log_every: 1
+  seed: 410
+  d_model: 128
+  n_layers: 2
+  n_heads: 4
+  ff_dim: 512
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  flip_hard_mask: true
+
+ppo:
+  lr_peak: 0.00003
+  lr_warmup_steps: 2000
+  lr_decay_steps: 500000
+  lr_floor: 0.00001
+  clip_eps: 0.20
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.03
+  ent_coef_dst: 0.03
+  ent_coef_pct: 0.03
+  ent_coef_emit: 0.04
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 32
+
+selfplay:
+  enabled: true
+  warmup_updates: 0
+  snapshot_every: 50
+  pool_capacity: 8
+  frozen_ratio: 0.25
+  eval_vs_frozen: true
+  strong_ckpt_path: ./ckpt_multi_action_v11_f29/ckpt_000599.pkl
+  strong_ratio: 0.25
+  pool_seed_paths:
+    - ./ckpt_multi_action_v11_f29/ckpt_000599.pkl
+  snapshot_current: false
+  buffer_path: data/f40_mixed_states.npz
+  buffer_reset_ratio: 0.80
+  buffer_rollout_ratio: 0.40
