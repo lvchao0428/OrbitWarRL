@@ -16,11 +16,13 @@ Self-play (optional, see ``SelfPlayConfig``):
 
 from __future__ import annotations
 
+import json
 import os
 import pickle
 import time
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 import chex
 import jax
@@ -93,9 +95,19 @@ class TrainConfig:
     emit_hard_stop: bool = False
     emit_hard_stop_min_step: int = 1
     flip_hard_mask: bool = False
+    # Train/replay alignment (Day11): rolling metrics for strn+frzn only.
+    align_roll_window: int = 20
+    # Inline mini replay vs v20 on CPU at eval_every (ground-truth gate).
+    eval_vs_v20: bool = False
+    eval_vs_v20_num_games: int = 3
 
     ppo: PPOConfig = field(default_factory=PPOConfig)
     selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)
+
+
+# Opponents whose rollout stats correlate better with replay vs v20.
+_ALIGN_OPPS = frozenset({"strn", "frzn"})
+_CKPT_PREFER_OPPS = frozenset({"strn", "frzn", "rand"})
 
 
 def load_state_buffer(path: str) -> "EnvState":
@@ -131,15 +143,28 @@ def load_state_buffer(path: str) -> "EnvState":
     )
 
 
-def save_checkpoint(path: str, params, opt_state, step: int) -> None:
+def save_checkpoint(
+    path: str,
+    params,
+    opt_state,
+    step: int,
+    meta: Optional[dict[str, Any]] = None,
+) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     payload = dict(
         params=jax.tree_util.tree_map(lambda x: jnp.asarray(x), params),
-        opt_state=jax.tree_util.tree_map(lambda x: jnp.asarray(x) if hasattr(x, "shape") else x, opt_state),
+        opt_state=jax.tree_util.tree_map(
+            lambda x: jnp.asarray(x) if hasattr(x, "shape") else x, opt_state
+        ),
         step=step,
+        meta=meta or {},
     )
     with open(path, "wb") as f:
         pickle.dump(payload, f)
+    if meta:
+        meta_path = path.replace(".pkl", ".meta.json")
+        with open(meta_path, "w") as f:
+            json.dump(meta, f, indent=2)
 
 
 def load_checkpoint(path: str):
@@ -414,6 +439,12 @@ def train(
         else 0.0
     )
 
+    align_window = max(1, int(cfg.align_roll_window))
+    align_roll: dict[str, deque] = {
+        k: deque(maxlen=align_window)
+        for k in ("spf", "z0", "garr", "e2")
+    }
+
     strong_params = None
     if cfg.selfplay.enabled and cfg.selfplay.strong_ckpt_path:
         strong_ckpt = load_checkpoint(cfg.selfplay.strong_ckpt_path)
@@ -505,11 +536,26 @@ def train(
         metrics_py["sps"] = total_env_steps / max(elapsed, 1e-6)
         metrics_py["update"] = update
         metrics_py["total_env_steps"] = total_env_steps
+        metrics_py["opp_tag"] = opp_tag
         metrics_py["opp_frozen"] = 1.0 if opp_tag == "frzn" else 0.0
         metrics_py["opp_strong"] = 1.0 if opp_tag == "strn" else 0.0
         metrics_py["opp_buffer"] = 1.0 if opp_tag == "buf" else 0.0
         if cfg.selfplay.enabled and pool is not None:
             metrics_py["pool_size"] = float(len(pool))
+
+        spf_step = metrics_py.get("mean_ships_per_fleet", 0.0)
+        z0_step = metrics_py.get("zero_emit_rate", 0.0)
+        garr_step = metrics_py.get("mean_garrison_my", 0.0)
+        e2_step = metrics_py.get("emit2_rate", 0.0)
+        if opp_tag in _ALIGN_OPPS:
+            align_roll["spf"].append(spf_step)
+            align_roll["z0"].append(z0_step)
+            align_roll["garr"].append(garr_step)
+            align_roll["e2"].append(e2_step)
+        for key, roll in align_roll.items():
+            if roll:
+                metrics_py[f"align/{key}"] = sum(roll) / len(roll)
+        metrics_py["align/n"] = float(len(align_roll["spf"]))
 
         if (
             cfg.selfplay.enabled
@@ -539,6 +585,38 @@ def train(
                 for k, v in frozen_eval.items():
                     metrics_py[f"eval_vs_frozen/{k}"] = v
 
+            if cfg.eval_vs_v20:
+                eval_ckpt = os.path.join(cfg.ckpt_dir, f"_eval_u{update:06d}.pkl")
+                save_checkpoint(eval_ckpt, params, opt_state, update)
+                try:
+                    from orbit_wars_rl.eval.v20_mini_gate import run_v20_mini_gate
+
+                    tag = f"train_u{update}"
+                    gate = run_v20_mini_gate(
+                        eval_ckpt,
+                        tag,
+                        project_root=os.getcwd(),
+                        num_games=cfg.eval_vs_v20_num_games,
+                    )
+                    metrics_py["eval_vs_v20/spf"] = gate["spf"]
+                    metrics_py["eval_vs_v20/garr"] = gate["garr"]
+                    metrics_py["eval_vs_v20/flip_pct"] = gate["flip_pct"]
+                    metrics_py["eval_vs_v20/z0_pct"] = gate["z0_pct"]
+                    metrics_py["eval_vs_v20/e2_plus_pct"] = gate["e2_plus_pct"]
+                    metrics_py["eval_vs_v20/wins"] = float(gate["wins"])
+                    print(
+                        f"[eval_vs_v20] u{update} {gate['summary_line']}",
+                        flush=True,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[eval_vs_v20] WARN failed: {exc}", flush=True)
+                finally:
+                    if os.path.isfile(eval_ckpt):
+                        os.remove(eval_ckpt)
+                    meta_sidecar = eval_ckpt.replace(".pkl", ".meta.json")
+                    if os.path.isfile(meta_sidecar):
+                        os.remove(meta_sidecar)
+
         if update % cfg.log_every == 0:
             wr_rand = metrics_py.get("eval/win_rate")
             wr_frzn = metrics_py.get("eval_vs_frozen/win_rate")
@@ -547,6 +625,19 @@ def train(
                 wr_str += f" WRr {wr_rand:.2f}"
             if wr_frzn is not None:
                 wr_str += f" WRf {wr_frzn:.2f}"
+            v20_spf = metrics_py.get("eval_vs_v20/spf")
+            if v20_spf is not None:
+                wr_str += (
+                    f" v20[spf {v20_spf:.1f} flip {metrics_py.get('eval_vs_v20/flip_pct', 0):.1f}% "
+                    f"e2+ {metrics_py.get('eval_vs_v20/e2_plus_pct', 0):.1f}%]"
+                )
+            align_str = ""
+            if align_roll["spf"]:
+                align_str = (
+                    f" align[spf {metrics_py.get('align/spf', 0):.1f} "
+                    f"e2 {metrics_py.get('align/e2', 0):.2f} "
+                    f"z0 {metrics_py.get('align/z0', 0):.2f} n={int(metrics_py.get('align/n', 0))}]"
+                )
             emits = metrics_py.get("mean_emits_per_turn", 0.0)
             ent_emit = metrics_py.get("ent_emit", 0.0)
             adv_std = metrics_py.get("adv_std", 0.0)
@@ -574,6 +665,7 @@ def train(
                 f"pS {pshare:.2f}  ptS {ptshare:.2f}  fLog {flog:.2f}  "
                 f"pdΔ {pdelta:+.4f}  pkR {pk_ratio:.2f}  "
                 f"clip {metrics_py['clip_frac']:.2f}  kl {metrics_py['approx_kl']:+.3f}"
+                + align_str
                 + wr_str
             )
 
@@ -582,8 +674,28 @@ def train(
 
         if cfg.ckpt_every > 0 and (update + 1) % cfg.ckpt_every == 0:
             ckpt_path = os.path.join(cfg.ckpt_dir, f"ckpt_{update:06d}.pkl")
-            save_checkpoint(ckpt_path, params, opt_state, update)
-            print(f"[ckpt] saved {ckpt_path}", flush=True)
+            ckpt_meta = {
+                "update": update,
+                "opp_tag": opp_tag,
+                "spf": spf_step,
+                "z0": z0_step,
+                "garr": garr_step,
+                "emit2_rate": e2_step,
+                "align_spf": metrics_py.get("align/spf"),
+                "align_e2": metrics_py.get("align/e2"),
+                "align_z0": metrics_py.get("align/z0"),
+                "eval_vs_v20_spf": metrics_py.get("eval_vs_v20/spf"),
+                "eval_vs_v20_e2_plus_pct": metrics_py.get("eval_vs_v20/e2_plus_pct"),
+                "eval_vs_v20_flip_pct": metrics_py.get("eval_vs_v20/flip_pct"),
+            }
+            save_checkpoint(ckpt_path, params, opt_state, update, meta=ckpt_meta)
+            warn = ""
+            if opp_tag not in _CKPT_PREFER_OPPS:
+                warn = (
+                    f" WARN opp={opp_tag} (prefer strn/frzn for replay-aligned ckpt; "
+                    f"see .meta.json)"
+                )
+            print(f"[ckpt] saved {ckpt_path} opp={opp_tag}{warn}", flush=True)
 
     logger.close()
     return dict(history=history, final_params=params, final_opt_state=opt_state)

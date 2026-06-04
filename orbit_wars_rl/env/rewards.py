@@ -185,6 +185,20 @@ SHAPING_CAPTURE_FLEET_SCALE: float = float(
     _os.environ.get("ORBITWARS_SHAPING_CAPTURE_FLEET_SCALE", "0.0")
 )
 
+# --- Day 11 / f43: gated multi-emit bonus ---
+#
+# f41 ONE_SHIP_PENALTY killed e2+ (2nd/3rd routes are often smaller). f43
+# replaces that tradeoff with a positive 0/1 gate: only reward 2+ launches
+# when at least one fleet is "substantial" (>= MIN_SHIPS, default 8 = v20
+# ABS_MIN_BATCH). Avoids paying for double-trickle while nudging multi-route
+# bursts after a main strike.
+SHAPING_MULTI_EMIT: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_MULTI_EMIT", "0.0")
+)
+SHAPING_MULTI_EMIT_MIN_SHIPS: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_MULTI_EMIT_MIN_SHIPS", "8.0")
+)
+
 
 def player_total_ships(state: EnvState, player: int) -> jnp.ndarray:
     """Total ships (planets + fleets) for ``player``, masked by validity.
@@ -528,6 +542,28 @@ def capture_fleet_scale_reward(
     scale = jnp.log1p(garr_f) / jnp.float32(8.0)
     weighted = jnp.where(gained, prod_f * scale, jnp.float32(0.0)).sum()
     return jnp.float32(SHAPING_CAPTURE_FLEET_SCALE) * weighted / total_prod
+
+
+def multi_emit_gated_bonus_reward(
+    valid_mask: jnp.ndarray, ships_per_launch: jnp.ndarray
+) -> jnp.ndarray:
+    """Bonus for 2+ valid launches when the largest fleet is substantial.
+
+    0/1 gate style: no reward for idle or single-launch turns; no reward for
+    multi-trickle (all launches <= MIN_SHIPS). Aligns with Vadasz "one big
+    burst + secondary routes" without ONE_SHIP_PENALTY punishing small 2nd legs.
+    """
+    if SHAPING_MULTI_EMIT <= 0.0:
+        return jnp.float32(0.0)
+    valid_f = valid_mask.astype(jnp.float32)
+    n_valid = valid_f.sum()
+    ships_f = ships_per_launch.astype(jnp.float32)
+    max_ships = jnp.max(jnp.where(valid_mask, ships_f, jnp.float32(0.0)))
+    multi = n_valid >= jnp.float32(2.0)
+    substantial = max_ships >= jnp.float32(SHAPING_MULTI_EMIT_MIN_SHIPS)
+    return jnp.float32(SHAPING_MULTI_EMIT) * jnp.where(
+        multi & substantial, jnp.float32(1.0), jnp.float32(0.0)
+    )
 
 
 def player_alive(state: EnvState, player: int) -> jnp.ndarray:

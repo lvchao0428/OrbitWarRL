@@ -1,8 +1,8 @@
-# DAY11 进展 — f40/f41 完成 + f42 训练中
+# DAY11 进展 — f40/f41/f42 完成 + f44 已启动
 
-> **2026-06-03 晚更新**
+> **2026-06-03 晚更新** · 后续计划见 [`DAY12_PLAN.zh.md`](DAY12_PLAN.zh.md)
 > 接续 [`DAY10_PROGRESS.zh.md`](DAY10_PROGRESS.zh.md)。
-> **f40** 500 upd 完成；**f41** 500 upd 完成；**f42** 训练中。
+> **f40** 500 upd 完成；**f41** 500 upd 完成；**f42** 500 upd 完成；**f43** 方案已落地，待远程训练。
 
 ---
 
@@ -13,11 +13,12 @@
 | **f40** | ✅ 500 upd 完成；@99 **flip=5.26% / e2+=24.8% / spf=8.51**（全系列综合最佳）；后续 spf 退化 |
 | **f41** | ✅ 500 upd 完成（从 f40 @99 resume）；**spf/flip 大幅改善，e2+ 塌缩** |
 | **f41 最佳** | @99: **spf=13.23 / flip=6.23%**（首次 replay 过 flip>6% promote gate）|
-| **f42** | 🔄 训练中（从 f41 @49 resume）；**CAPTURE_FLEET_SCALE** 新 reward |
+| **f42** | ✅ replay 完成；**@49 最佳**（e2+=6.5%, spf=11.47）；@99 训练峰值在 replay 塌缩 |
+| **f43** | ⏸ 暂缓（等 f44 验证对齐管线） |
+| **f44_align** | 🟡 待训：P0–P4 训练–replay 对齐基建 |
 | **核心矛盾** | **spf/flip vs e2+ 此消彼长**：f40 强在 e2+，f41 强在 spf/flip |
-| **f42 目标** | 打破 spf/flip vs e2+ 的 tradeoff，通过奖励大舰队翻转间接激励 z0 |
 | **提交基线** | 仍为 **f29 @599** |
-| **WLD** | f40/f41 全 ckpt 0/5/0 |
+| **WLD** | f40/f41 全 ckpt 0/5/0；f42 replay 待补 |
 
 ---
 
@@ -335,3 +336,166 @@ bash scripts/run_f42_eval.sh
 # 监控
 tail -f logs/v11_f42.log
 ```
+
+---
+
+## 6. f42 Replay 结果（vs v20，first-80）
+
+### 6.1 全 ckpt 汇总
+
+| ckpt | WLD | spf | flip | e2+ | z0 | garr | Day5 gate |
+|------|-----|-----|------|-----|-----|------|-----------|
+| **@49** | 0/5/0 | **11.47** | 4.40% | **6.5%** | 0.7% | **71.97** | spf✅ garr✅ e2+✅ |
+| @99 | 0/5/0 | 8.68 | 4.12% | 0.8% | 0.5% | 42.30 | 全 FAIL |
+| @249 | 0/5/0 | 10.25 | 5.27% | 0.0% | 0.6% | 41.99 | spf✅ |
+| @399 | 0/5/0 | 8.77 | **6.45%** | 0.0% | 0.8% | 36.79 | flip✅ |
+| @499 | 0/5/0 | 9.57 | 5.18% | 0.0% | 0.5% | 59.03 | — |
+
+对比 f40/f41 @99：
+
+| 指标 | f40 @99 | f41 @99 | **f42 @99** | **f42 @49** |
+|------|---------|---------|-------------|-------------|
+| spf | 8.51 | **13.23** | 8.68 | 11.47 |
+| flip | 5.26% | **6.23%** | 4.12% | 4.40% |
+| e2+ | **24.8%** | 2.0% | 0.8% | **6.5%** |
+| z0 | 0.6% | 0.7% | 0.5% | 0.7% |
+
+### 6.2 核心结论
+
+1. **CAPTURE_FLEET_SCALE 未达 f41 水平**：replay spf/flip 仍低于 f41 @99（13.2 / 6.23%），未兑现训练侧 spf≈50。
+2. **训练–replay 严重脱节**：@99 训练 e2=0.27、spf=49.5 → replay e2+=0.8%、spf=8.68；**不可用训练指标选 ckpt**。
+3. **@49 是唯一亮点**：e2+=6.5%（过 5% gate）、spf/garr 过线；emit 分布 92% 单路 + **6% 双路**（@99 仅 0.8% 双路）。
+4. **继续训导致 e2+ 归零**：@149 起 e2+≈0；@399 靠单路大 bin7（69%）抬 flip 到 6.45%，但 e2+=0。
+5. **z0 全线失败**：全 ckpt z0<1%，CAPTURE_FLEET_SCALE 未带来 replay 级「蓄力等待」。
+
+### 6.3 @99 行为快照（塌缩典型）
+
+- `mean_emits=0.99`，**98% 回合只发 1 路**，e2+=0.8%
+- `bin7@1.00` 占 **80.9%** → 单路拉满 bin，非 Vadasz 式多路爆发
+- v20 对比：flip 11.7%、z0=25%、spf=18.25
+
+### 6.4 决策
+
+- **不 promote f42**；提交基线仍 f29 @599
+- **f43 resume：`ckpt_000049.pkl`**（非 @99）
+- 若只要 flip gate：@399 可作对照，但无 e2+，不推荐作主线
+
+---
+
+## 7. f43 实验 — gated multi-emit（恢复 e2+）
+
+### 7.1 设计动机
+
+| 实验 | spf/flip | e2+ | 机制 |
+|------|----------|-----|------|
+| f40 @99 | 中 | **24.8%** | 多路小舰队，无 anti-trickle |
+| f41 @99 | **高** | 2% | ONE_SHIP_PEN 惩罚 ≤3 艘 → 杀死第 2/3 路 |
+| f42 @99 (train) | 高 | 0.27 (train) | 减半 PEN + fleet-scaled capture，replay 待证 |
+
+**假设**：用 **正奖励** 鼓励「一路大军 + 多路跟进」，比 **负惩罚** 小舰队更能同时保住 spf 与 e2+。
+
+### 7.2 MULTI_EMIT gated reward
+
+**公式**：`coef * 1{n_valid >= 2 AND max(ships) >= 8}`
+
+- 0/1 gate，与 CAPTURE_FLEET_SCALE 同哲学
+- `MIN_SHIPS=8` 对齐 v20 `ABS_MIN_BATCH`，避免双 trickle 刷分
+- **不惩罚** 小舰队第 2 路，只奖励「有主攻的多路」
+
+### 7.3 f43 vs f42 改动
+
+| 维度 | f42 | **f43** |
+|------|-----|---------|
+| CAPTURE | 0.05 | 0.05 |
+| CAPTURE_FLEET_SCALE | 0.10 | 0.10 |
+| ONE_SHIP_PENALTY | 0.005 | **0** |
+| **MULTI_EMIT** | — | **0.02** (min ships 8) |
+| Resume | f41 @49 | **f42 @49**（replay e2+=6.5%；@99 已塌） |
+
+### 7.4 期待与 gate
+
+- **e2+ replay > 10%** @99（向 f40 靠拢）
+- **spf > 10, flip > 6%** 保持 f41 水平
+- **z0 replay > 5%**（训练已见 12%，需 replay 验证）
+
+### 7.5 执行命令
+
+```bash
+bash sync_mirror_ultrapp.sh
+
+# 先补 f42 replay（若未跑）
+bash scripts/run_f42_eval.sh
+
+# 启动 f43
+bash scripts/run_v11_f43.sh
+tail -f logs/v11_f43.log
+
+# 评估
+bash scripts/run_f43_eval.sh
+```
+
+### 7.6 配置速查
+
+| 项 | 值 |
+|----|-----|
+| config | `orbit_wars_rl/configs/multi_action_v11_f43.yaml` |
+| script | `scripts/run_v11_f43.sh` |
+| resume | `ckpt_multi_action_v11_f42/ckpt_000049.pkl` |
+| shaping | CAPTURE=0.05, CAPTURE_FLEET_SCALE=0.10, MULTI_EMIT=0.02, ONE_SHIP_PEN=0 |
+
+---
+
+## 8. f44_align — 训练–replay 对齐实验（P0–P4）
+
+### 8.1 动机
+
+f42 证明：**训练 log 不能预测 replay**（@99 训练 spf=49 → replay 8.7）。在改 shaping（f43）之前，先让训练过程能观测 **vs v20 真值**。
+
+### 8.2 已实现基建
+
+| 优先级 | 实现 | 文件 |
+|--------|------|------|
+| P0 | ckpt 附带 `.meta.json`（`opp_tag`, align, eval_vs_v20）；`opp=buf` 存盘 WARN | `orbit_wars_rl/ppo/runner.py` |
+| P1 | log 增加 `align[strn+frzn]` 滚动均值（window=20） | 同上 |
+| P2 | 每 `eval_every` CPU 跑 3 局 `quick_replay` vs v20，log 行 `v20[spf …]` | `orbit_wars_rl/eval/v20_mini_gate.py` |
+| P3 | `buffer_rollout_ratio` 0.40→**0.15** | `multi_action_v11_f44_align.yaml` |
+| P4 | `strong_ratio` 0.25→**0.35** | 同上 |
+| 诊断 | 按 opp 解析历史 log | `scripts/parse_train_log_by_opp.py` |
+
+### 8.3 f44 vs f42
+
+| 项 | f42 | f44_align |
+|----|-----|-----------|
+| shaping | f42 | **同 f42** |
+| resume | f41@49 | **f42@49** |
+| buffer_rollout | 0.40 | **0.15** |
+| strong_ratio | 0.25 | **0.35** |
+| eval_vs_v20 | 无 | **每 50 upd，3 局** |
+| promote 依据 | 训练 spf/e2 | **`eval_vs_v20/*` + align 滚动** |
+
+### 8.4 如何判定「训完有效」
+
+1. 看 log 里 **`[eval_vs_v20]`** 行（first-80 spf/flip/e2+），不是 `opp buf` 后的 spf。
+2. 看 ckpt **`ckpt_XXXXXX.meta.json`**：`opp_tag` 优先 `strn`/`frzn`；`eval_vs_v20_e2_plus_pct` 上升。
+3. `align[spf/e2]` 应逐步接近 v20 行（仍可能偏高，但差距应缩小）。
+4. 早停：若连续 2 次 eval `eval_vs_v20/e2_plus_pct` 下降且 `<3%`，停止长训。
+
+### 8.5 执行命令
+
+```bash
+bash sync_mirror_ultrapp.sh
+
+# 长训（~25min + 每 50upd 额外 ~3–5min CPU replay）
+bash scripts/run_v11_f44_align.sh
+tail -f logs/v11_f44_align.log
+
+# 训练中解析 log
+python scripts/parse_train_log_by_opp.py logs/v11_f44_align.log --align-only
+
+# 训后全量 replay（可选，NUM_GAMES=5）
+bash scripts/run_f44_eval.sh
+```
+
+### 8.6 f43 状态
+
+**暂缓**。f44 若 `eval_vs_v20` 曲线与 replay 一致，再在最佳 ckpt 上叠 f43 的 MULTI_EMIT。
