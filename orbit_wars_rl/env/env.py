@@ -115,12 +115,14 @@ class OrbitWarsEnv:
         capture_fs_r = rewards.capture_fleet_scale_reward(state, s4, 0)
         # Day 11 / f43: gated multi-emit bonus. Default 0.
         multi_emit_r = rewards.multi_emit_gated_bonus_reward(valid_p0, ships_p0)
+        # v13: hold bonus — reward for choosing not to emit when garrison > 20.
+        hold_r = rewards.hold_bonus_reward(valid_p0, state, 0)
         non_terminal_r = (
             shaping
             + keep_r + fleet_r
             + prod_r + planet_r + fleet_log_r
             + prod_d_r + capture_r + emit_log_r + release_r
-            + one_ship_r + high_prod_r + capture_fs_r + multi_emit_r
+            + one_ship_r + high_prod_r + capture_fs_r + multi_emit_r + hold_r
         )
         reward_p0 = jnp.where(done_now, terminal_r, non_terminal_r)
 

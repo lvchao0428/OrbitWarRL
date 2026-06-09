@@ -25,7 +25,7 @@ train:
   episode_steps: 500
   eval_every: 100
   eval_num_envs: 32
-  ckpt_dir: ./ckpt_multi_action_v13_hold
+  ckpt_dir: ./ckpt_multi_action_v13b_hold
   ckpt_every: 200
   log_every: 1
   seed: 1301
@@ -45,15 +45,15 @@ train:
   symmetric_selfplay: true
   symmetric_warmup: 0
   zero_sum_value: true
-  resume_ckpt: ./ckpt_multi_action_v13_hold/ckpt_000399.pkl
+  resume_ckpt: ""
 
 ppo:
   lr_peak: 0.00005
   lr_warmup_steps: 50
   lr_decay_steps: 80000
   lr_floor: 0.00001
-  clip_eps: 0.15
-  value_clip_eps: 0.15
+  clip_eps: 0.10
+  value_clip_eps: 0.10
   value_coef: 0.5
   ent_coef_src: 0.001
   ent_coef_dst: 0.001
@@ -62,8 +62,9 @@ ppo:
   max_grad_norm: 0.5
   gamma: 0.9999
   gae_lambda: 0.95
-  update_epochs: 2
+  update_epochs: 1
   num_minibatches: 8
+  target_kl: 0.02
 
 selfplay:
   enabled: false

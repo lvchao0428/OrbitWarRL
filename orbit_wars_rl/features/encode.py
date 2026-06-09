@@ -103,9 +103,9 @@ from orbit_wars_rl.env.dynamics import fleet_speed
 from orbit_wars_rl.env.state import EnvState
 
 
-PLANET_FEAT_DIM = 33  # f35: +5 src-quality / v20-target-score dims (28..32)
+PLANET_FEAT_DIM = 39  # v13: +6 fleet arrival prediction dims (33..38)
 FLEET_FEAT_DIM = 10
-GLOBAL_FEAT_DIM = 18
+GLOBAL_FEAT_DIM = 24  # v13: +6 temporal proxy globals (18..23)
 
 LEAD_TIMES = (15.0, 30.0)
 
@@ -478,6 +478,68 @@ def _encode_planets(
         jnp.float32(0.0),
     )
 
+    # === B2: Fleet arrival prediction features (dims 33-38) ===
+    # Estimate ships arriving at each planet within 3 ETA windows.
+    # Gives the model tactical foresight: "will I be reinforced or attacked?"
+    _FLEET_SPEED = jnp.float32(constants.DEFAULT_MAX_SHIP_SPEED)
+    _ETA_W1 = jnp.float32(5.0)   # window 1: arriving within 5 steps
+    _ETA_W2 = jnp.float32(15.0)  # window 2: arriving within 15 steps
+    _ETA_W3 = jnp.float32(30.0)  # window 3: arriving within 30 steps
+
+    # Distance from each fleet to each planet: [F, P]
+    f_dx = state.planet_x[None, :] - state.fleet_x[:, None]  # [F, P]
+    f_dy = state.planet_y[None, :] - state.fleet_y[:, None]  # [F, P]
+    f_dist = jnp.sqrt(f_dx * f_dx + f_dy * f_dy + jnp.float32(1e-6))  # [F, P]
+    f_eta = f_dist / _FLEET_SPEED  # ETA in steps [F, P]
+
+    # Use the fleet heading to check if fleet is actually headed toward planet
+    f_dxn = jnp.cos(state.fleet_angle)  # [F]
+    f_dyn = jnp.sin(state.fleet_angle)  # [F]
+    f_proj = f_dx * f_dxn[:, None] + f_dy * f_dyn[:, None]  # [F, P]
+    headed_toward = f_proj > jnp.float32(0.0)  # [F, P]
+
+    fleet_ships_f = jnp.maximum(state.fleet_ships, 0).astype(jnp.float32)  # [F]
+    fleet_valid = state.fleet_mask  # [F]
+
+    # Mask: fleet is valid, headed toward planet, within time window
+    base_mask = fleet_valid[:, None] & headed_toward  # [F, P]
+    in_w1 = base_mask & (f_eta <= _ETA_W1)
+    in_w2 = base_mask & (f_eta <= _ETA_W2)
+    in_w3 = base_mask & (f_eta <= _ETA_W3)
+
+    is_my_fleet = (state.fleet_owner == player) & fleet_valid  # [F]
+    is_opp_fleet = (state.fleet_owner >= 0) & (state.fleet_owner != player) & fleet_valid
+
+    # [33] friendly_eta_w1: my ships arriving within 5 steps (log1p/8)
+    friendly_w1 = (fleet_ships_f[:, None] * in_w1 * is_my_fleet[:, None]).sum(axis=0)
+    friendly_eta_w1 = jnp.log1p(friendly_w1) / jnp.float32(8.0)
+
+    # [34] friendly_eta_w2: my ships arriving within 15 steps
+    friendly_w2 = (fleet_ships_f[:, None] * in_w2 * is_my_fleet[:, None]).sum(axis=0)
+    friendly_eta_w2 = jnp.log1p(friendly_w2) / jnp.float32(8.0)
+
+    # [35] enemy_eta_w1: enemy ships arriving within 5 steps
+    enemy_w1 = (fleet_ships_f[:, None] * in_w1 * is_opp_fleet[:, None]).sum(axis=0)
+    enemy_eta_w1 = jnp.log1p(enemy_w1) / jnp.float32(8.0)
+
+    # [36] enemy_eta_w2: enemy ships arriving within 15 steps
+    enemy_w2 = (fleet_ships_f[:, None] * in_w2 * is_opp_fleet[:, None]).sum(axis=0)
+    enemy_eta_w2 = jnp.log1p(enemy_w2) / jnp.float32(8.0)
+
+    # [37] net_garrison_t5: predicted garrison balance at t+5 (my ships - enemy ships)
+    my_garr_at_t = my_ships_f + friendly_w1 - enemy_w1
+    net_garrison_t5 = jnp.clip(
+        my_garr_at_t / jnp.maximum(my_total_garrison, jnp.float32(1.0)),
+        -1.0, 1.0,
+    ) * is_mine.astype(jnp.float32)
+
+    # [38] net_garrison_t15: predicted garrison balance at t+15
+    my_garr_at_t15 = my_ships_f + friendly_w2 - enemy_w2
+    net_garrison_t15 = jnp.clip(
+        my_garr_at_t15 / jnp.maximum(my_total_garrison, jnp.float32(1.0)),
+        -1.0, 1.0,
+    ) * is_mine.astype(jnp.float32)
+
     feats = jnp.stack(
         [
             is_mine.astype(jnp.float32),
@@ -513,6 +575,12 @@ def _encode_planets(
             is_strong_source,
             prod_per_need,
             v20_target_score,
+            friendly_eta_w1,
+            friendly_eta_w2,
+            enemy_eta_w1,
+            enemy_eta_w2,
+            net_garrison_t5,
+            net_garrison_t15,
         ],
         axis=-1,
     )
@@ -668,6 +736,52 @@ def _encode_global(
             0.0, 1.0,
         )
 
+    # === B1: Temporal proxy globals (dims 18-23) ===
+    # Production-momentum signals approximating temporal deltas from current state.
+    my_garr = player_garrison(player)
+    my_prod_rate = player_prod(player)
+    my_fleet_ships = jnp.where(
+        (state.fleet_owner == player) & state.fleet_mask,
+        state.fleet_ships, 0
+    ).sum().astype(jnp.float32)
+    my_total = jnp.maximum(my_garr + my_fleet_ships, jnp.float32(1.0))
+
+    # [18] garrison_to_prod_ratio: how many turns of production are stockpiled
+    garr_to_prod = jnp.clip(
+        my_garr / jnp.maximum(my_prod_rate * jnp.float32(10.0), jnp.float32(1.0)),
+        0.0, 1.0,
+    )
+    # [19] fleet_mass_ratio: fraction of my ships currently in transit
+    fleet_mass_ratio = my_fleet_ships / my_total
+    # [20] production_advantage: my prod vs opponent's
+    prod_advantage = jnp.clip(
+        (my_prod_rate - foe_prod) / jnp.maximum(my_prod_rate + foe_prod, jnp.float32(1.0)),
+        -1.0, 1.0,
+    )
+    # [21] garrison_advantage: my garrison vs opponent's
+    foe_garr = jnp.where(
+        (state.planet_owner >= 0) & (state.planet_owner != player) & state.planet_mask,
+        state.planet_ships, 0
+    ).sum().astype(jnp.float32)
+    garr_advantage = jnp.clip(
+        (my_garr - foe_garr) / jnp.maximum(my_garr + foe_garr, jnp.float32(1.0)),
+        -1.0, 1.0,
+    )
+    # [22] growth_potential: my prod / my garrison (high = fast recovery)
+    growth_potential = jnp.clip(
+        my_prod_rate / jnp.maximum(my_garr, jnp.float32(1.0)),
+        0.0, 1.0,
+    )
+    # [23] threat_pressure: enemy fleet ships / my garrison (high = under attack)
+    foe_fleet_ships = jnp.where(
+        (state.fleet_owner >= 0) & (state.fleet_owner != player) & state.fleet_mask,
+        state.fleet_ships, 0
+    ).sum().astype(jnp.float32)
+    threat_pressure = jnp.clip(
+        foe_fleet_ships / jnp.maximum(my_garr, jnp.float32(1.0)),
+        0.0, 2.0,
+    ) / jnp.float32(2.0)
+
     return jnp.stack(
         [
             step_norm,
@@ -688,6 +802,12 @@ def _encode_global(
             n_weak_targets_norm,
             ships_to_capture_all_weak_norm,
             min_effective_fleet_norm,
+            garr_to_prod,
+            fleet_mass_ratio,
+            prod_advantage,
+            garr_advantage,
+            growth_potential,
+            threat_pressure,
         ],
     )
 

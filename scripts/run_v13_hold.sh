@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# run_v13_hold.sh — v13: allow_hold + low entropy + min_pct_bin
+# run_v13_hold.sh — v13: allow_hold + split PPO + hold shaping + tighter stability
 #
-# 核心修复 (基于 v12 replay 诊断):
+# 核心修复 (基于 v12/v13 replay 诊断):
 #   1. allow_hold=true: 模型可以选择不发射 (学会积累)
-#   2. entropy 降 10x: 加速收敛,停止随机乱射
-#   3. min_pct_bin=2: 至少发 30% 兵力 (禁止 1-ship spam)
-#   4. emit_hard_stop=true: 没有好目标时不发
-#   5. 从 v12_lux_b ckpt_007399 继续训练
+#   2. Split PPO loss: emit head 独立 clip, 权重 60% (不被 src/dst/pct 梯度淹没)
+#   3. emit_hard_stop + raised threshold: 需要 30% overkill margin 才触发 emit
+#   4. hold_bonus shaping: 不发射且 garrison > 20 时给 +0.01 立即奖励
+#   5. release_bonus: 从高产星球释放大舰队给正奖励
+#   6. PPO stability: clip_eps=0.10, update_epochs=1, target_kl=0.02
 #
 # 用法:
 #   bash scripts/run_v13_hold.sh
-#
-# 监控:
-#   bash scripts/watch_v12_lux.sh logs/v13_hold.log
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,9 +23,13 @@ mkdir -p logs
 PY="${PYTHON:-python3}"
 if [ -x /home/charlie/anaconda3/bin/python ]; then PY=/home/charlie/anaconda3/bin/python; fi
 
+# Hold-friendly reward shaping (small, won't dominate terminal ±1)
+export ORBITWARS_SHAPING_HOLD_BONUS="0.01"
+export ORBITWARS_SHAPING_RELEASE="0.005"
+export ORBITWARS_SHAPING_RELEASE_K="15.0"
+
 echo "[v13_hold] config=$CONFIG"
-echo "[v13_hold] resume from ckpt_multi_action_v12_lux_b/ckpt_007399.pkl"
-echo "[v13_hold] key changes: allow_hold=true, ent=0.001, min_pct_bin=2, emit_hard_stop=true"
+echo "[v13_hold] key changes: split_ppo, hold_bonus=0.01, release=0.005, clip=0.10, target_kl=0.02"
 echo "[v13_hold] logging to $LOG"
 echo ""
 

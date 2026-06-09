@@ -50,6 +50,7 @@ class PPOConfig(NamedTuple):
     gae_lambda: float = 0.95
     update_epochs: int = 4
     num_minibatches: int = 4
+    target_kl: float = 0.0
 
 
 def make_optimizer(cfg: PPOConfig) -> optax.GradientTransformation:
@@ -196,15 +197,38 @@ def ppo_loss(
     old_turn_logp = (rollout.src_logp + rollout.dst_logp + rollout.pct_logp).sum(axis=-1) + rollout.emit_logp.sum(axis=-1)
     new_turn_logp = src_new_gated.sum(axis=-1) + dst_new_gated.sum(axis=-1) + pct_new_gated.sum(axis=-1) + emit_new_gated.sum(axis=-1)
 
-    ratio = jnp.exp(new_turn_logp - old_turn_logp)
+    # Split into emit ratio (hold/emit decisions) and action ratio (src+dst+pct).
+    # This gives the hold decision its own trust region so it isn't drowned out
+    # by the larger action logp variance.
+    old_emit_logp = rollout.emit_logp.sum(axis=-1)
+    new_emit_logp_sum = emit_new_gated.sum(axis=-1)
+    old_action_logp = (rollout.src_logp + rollout.dst_logp + rollout.pct_logp).sum(axis=-1)
+    new_action_logp = (src_new_gated + dst_new_gated + pct_new_gated).sum(axis=-1)
+
+    emit_ratio = jnp.exp(new_emit_logp_sum - old_emit_logp)
+    action_ratio = jnp.exp(new_action_logp - old_action_logp)
 
     adv_mean = advantages.mean()
     adv_std = advantages.std() + 1e-8
     adv_norm = (advantages - adv_mean) / adv_std
 
-    pg_loss_1 = -adv_norm * ratio
-    pg_loss_2 = -adv_norm * jnp.clip(ratio, 1.0 - cfg.clip_eps, 1.0 + cfg.clip_eps)
-    pg_loss = jnp.maximum(pg_loss_1, pg_loss_2).mean()
+    # Emit PPO loss (independent clip for hold/emit decisions)
+    has_free = (free_f.sum(axis=-1) > 0).astype(jnp.float32)
+    emit_pg_1 = -adv_norm * emit_ratio
+    emit_pg_2 = -adv_norm * jnp.clip(emit_ratio, 1.0 - cfg.clip_eps, 1.0 + cfg.clip_eps)
+    emit_pg_loss = (jnp.maximum(emit_pg_1, emit_pg_2) * has_free).sum() / jnp.maximum(has_free.sum(), 1.0)
+
+    # Action PPO loss (independent clip for src+dst+pct)
+    has_action = (rollout.emit_mask.astype(jnp.float32).sum(axis=-1) > 0).astype(jnp.float32)
+    action_pg_1 = -adv_norm * action_ratio
+    action_pg_2 = -adv_norm * jnp.clip(action_ratio, 1.0 - cfg.clip_eps, 1.0 + cfg.clip_eps)
+    action_pg_loss = (jnp.maximum(action_pg_1, action_pg_2) * has_action).sum() / jnp.maximum(has_action.sum(), 1.0)
+
+    # Combined PG loss: emit weighted 2x to amplify hold signal
+    pg_loss = 0.6 * emit_pg_loss + 0.4 * action_pg_loss
+
+    # Combined ratio for metrics (KL, clip_frac)
+    ratio = jnp.exp(new_turn_logp - old_turn_logp)
 
     value_pred = out.value
     value_old = rollout.value
@@ -475,33 +499,49 @@ def make_train_step(model: ActorCritic, cfg: PPOConfig, optimizer: optax.Gradien
         minibatch_size = max(1, n_samples // cfg.num_minibatches)
 
         def epoch_step(carry, epoch_rng):
-            params_e, opt_state_e, accum = carry
+            params_e, opt_state_e, accum, kl_exceeded = carry
             perm = jax.random.permutation(epoch_rng, n_samples)
 
             def mb_step(carry_mb, mb_idx):
-                params_m, opt_state_m, accum_m = carry_mb
+                params_m, opt_state_m, accum_m, skip = carry_mb
                 start = mb_idx * minibatch_size
                 idx = jax.lax.dynamic_slice_in_dim(perm, start, minibatch_size)
                 sub_rollout, sub_advs, sub_rets = _gather_minibatch(flat_rollout, advs_f, rets_f, idx)
                 (loss_val, metrics), grads = grad_fn(params_m, model, sub_rollout, sub_advs, sub_rets, cfg)
-                updates, opt_state_new = optimizer.update(grads, opt_state_m, params_m)
-                params_new = optax.apply_updates(params_m, updates)
+
+                def do_update(_):
+                    updates, os_new = optimizer.update(grads, opt_state_m, params_m)
+                    p_new = optax.apply_updates(params_m, updates)
+                    return p_new, os_new
+
+                def skip_update(_):
+                    return params_m, opt_state_m
+
+                params_new, opt_state_new = jax.lax.cond(
+                    skip, skip_update, do_update, None
+                )
                 metrics = dict(metrics, loss=loss_val,
                                grad_norm=optax.global_norm(grads))
                 summed = jax.tree_util.tree_map(lambda a, b: a + b, accum_m, metrics)
-                return (params_new, opt_state_new, summed), None
+                return (params_new, opt_state_new, summed, skip), None
 
-            (params_new, opt_state_new, summed), _ = jax.lax.scan(
+            (params_new, opt_state_new, summed, _), _ = jax.lax.scan(
                 mb_step,
-                (params_e, opt_state_e, _zero_metrics_dict()),
+                (params_e, opt_state_e, _zero_metrics_dict(), kl_exceeded),
                 jnp.arange(cfg.num_minibatches),
             )
             summed_combined = jax.tree_util.tree_map(lambda a, b: a + b, accum, summed)
-            return (params_new, opt_state_new, summed_combined), None
+            batch_kl = summed["approx_kl"] / jnp.float32(cfg.num_minibatches)
+            kl_over = jnp.where(
+                cfg.target_kl > 0,
+                batch_kl > cfg.target_kl,
+                jnp.bool_(False),
+            )
+            return (params_new, opt_state_new, summed_combined, kl_over), None
 
         rng_epochs = jax.random.split(rng, cfg.update_epochs)
-        (params_out, opt_state_out, accumulated), _ = jax.lax.scan(
-            epoch_step, (params, opt_state, _zero_metrics_dict()), rng_epochs
+        (params_out, opt_state_out, accumulated, _), _ = jax.lax.scan(
+            epoch_step, (params, opt_state, _zero_metrics_dict(), jnp.bool_(False)), rng_epochs
         )
 
         denom = jnp.float32(cfg.update_epochs * cfg.num_minibatches)

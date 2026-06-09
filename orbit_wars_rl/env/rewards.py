@@ -566,6 +566,38 @@ def multi_emit_gated_bonus_reward(
     )
 
 
+SHAPING_HOLD_BONUS: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_HOLD_BONUS", "0.0")
+)
+
+
+def hold_bonus_reward(
+    valid_mask: jnp.ndarray,
+    state: EnvState,
+    player: int,
+) -> jnp.ndarray:
+    """Small positive reward when the agent holds (zero valid launches).
+
+    Bridges the sparse reward gap by giving immediate credit for accumulating
+    garrison. Only fires when no fleets were launched this turn.
+    """
+    if SHAPING_HOLD_BONUS <= 0.0:
+        return jnp.float32(0.0)
+    valid_f = valid_mask.astype(jnp.float32)
+    n_valid = valid_f.sum()
+    is_hold = n_valid == jnp.float32(0.0)
+    my_mask = state.planet_owner == player
+    my_garr = jnp.where(
+        my_mask & state.planet_mask,
+        state.planet_ships.astype(jnp.float32),
+        jnp.float32(0.0),
+    ).sum()
+    has_garrison = my_garr > jnp.float32(20.0)
+    return jnp.float32(SHAPING_HOLD_BONUS) * jnp.where(
+        is_hold & has_garrison, jnp.float32(1.0), jnp.float32(0.0)
+    )
+
+
 def player_alive(state: EnvState, player: int) -> jnp.ndarray:
     """A player is alive iff they own >=1 planet OR >=1 in-flight fleet."""
     has_planet = ((state.planet_owner == player) & state.planet_mask).any()
