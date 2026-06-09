@@ -44,7 +44,10 @@ def _write_replay(env, out_dir: Path, tag: str) -> tuple[Path, Path]:
     else:
         json_path.write_text(json.dumps(episode_json, indent=2), encoding="utf-8")
 
-    html = env.render(mode="html")
+    try:
+        html = env.render(mode="html")
+    except TypeError:
+        html = env.html_renderer(env, mode="html")
     if not isinstance(html, str):
         raise RuntimeError(f"render(mode=html) returned {type(html)}, expected str")
     html_path.write_text(html, encoding="utf-8")

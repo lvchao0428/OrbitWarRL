@@ -1,0 +1,69 @@
+# v13_hold — 核心修复: allow_hold + 低 entropy + min_pct_bin
+#
+# 诊断 (v12_lux_b @ 7428):
+#   - 训练指标健康 (ev=0.95, clip=0.09, kl=0.012)
+#   - 但 vs v20 胜率 = 0 (73 次评估全输)
+#   - replay 分析: 每步发 1 ship 到随机方向 (spam fleet)
+#   - 根因: step 0 强制发射 + entropy 过高 → 永远乱射
+#
+# 修复:
+#   1. allow_hold=true: emit head 在 t=0 也可以选择不发射 (学会积累)
+#   2. entropy 降 10x: 0.01→0.001 (加速策略收敛,停止乱射)
+#   3. min_pct_bin=2: 最小发射比例 30% (禁止发 10%/20% 的微型舰队)
+#   4. emit_hard_stop=true: 如果没有值得攻击的目标就不发
+#   5. 从 v12_lux_b best ckpt 继续训练 (不从零开始)
+#
+# 参考: Frog Parade (Lux S3 #2, Orbit #1)
+#   - entropy=1e-4, 纯对称selfplay, sparse reward, gamma=0.9999
+#   - 模型有 NoOp action, 严格 action masking
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 10000
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v13_hold
+  ckpt_every: 200
+  log_every: 1
+  seed: 1301
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  min_pct_bin: 2
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ./ckpt_multi_action_v12_lux_b/ckpt_007399.pkl
+
+ppo:
+  lr_peak: 0.00005
+  lr_warmup_steps: 50
+  lr_decay_steps: 80000
+  lr_floor: 0.00001
+  clip_eps: 0.15
+  value_clip_eps: 0.15
+  value_coef: 0.5
+  ent_coef_src: 0.001
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.001
+  ent_coef_emit: 0.005
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 2
+  num_minibatches: 8
+
+selfplay:
+  enabled: false

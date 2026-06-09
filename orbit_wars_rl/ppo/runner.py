@@ -347,6 +347,8 @@ def train(
         emit_hard_stop_min_step=cfg.emit_hard_stop_min_step,
         flip_hard_mask=cfg.flip_hard_mask,
         zero_sum_value=cfg.zero_sum_value,
+        allow_hold=getattr(cfg, "allow_hold", False),
+        min_pct_bin=getattr(cfg, "min_pct_bin", 0),
     )
 
     env_rngs = jax.random.split(rng_envs, cfg.num_envs)

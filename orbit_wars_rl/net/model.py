@@ -195,6 +195,8 @@ class ActorCritic(nn.Module):
     emit_hard_stop_min_step: int = 1
     flip_hard_mask: bool = False
     zero_sum_value: bool = False
+    allow_hold: bool = False
+    min_pct_bin: int = 0
 
     def setup(self) -> None:
         self.encoder = EntityTransformer(
@@ -362,6 +364,7 @@ class ActorCritic(nn.Module):
             )[..., 0]
             pct_pair = pct_pair_features(garr_dst_chosen, rem_src_chosen)
             min_bin = pct_min_bin_index(garr_dst_chosen, rem_src_chosen)
+            min_bin = jnp.maximum(min_bin, jnp.int32(self.min_pct_bin))
             pct_mask = pct_low_bin_mask(min_bin, self.num_pct_bins)
             pct_logits_t = self.pct_head(
                 src_emb_t, dst_emb_t, global_emb, src_remaining_norm,
@@ -494,14 +497,15 @@ class ActorCritic(nn.Module):
                 emit_force_stop=emit_force_stop,
             )
 
-            # Sample emit (1 = continue, 0 = stop). At t==0 force-continue; if
-            # no_options force-stop. Once stopped, stay stopped.
+            # Sample emit (1 = continue, 0 = stop).
+            # allow_hold=True: t==0 is also a free choice (model can hold/skip turn).
+            # allow_hold=False (legacy): t==0 forced to emit if options exist.
             if deterministic:
                 emit_pred = jnp.argmax(emit_logits_t, axis=-1).astype(jnp.int32)
             else:
                 emit_pred = jax.random.categorical(r_emit, emit_logits_t).astype(jnp.int32)
             emit_pred_bool = emit_pred == 1
-            force_first = bool(t == 0)
+            force_first = bool(t == 0) and not self.allow_hold
             if force_first:
                 decision = jnp.logical_not(no_options)
             else:
@@ -563,6 +567,7 @@ class ActorCritic(nn.Module):
             )[..., 0]
             pct_pair = pct_pair_features(garr_dst_chosen, rem_src_chosen)
             min_bin = pct_min_bin_index(garr_dst_chosen, rem_src_chosen)
+            min_bin = jnp.maximum(min_bin, jnp.int32(self.min_pct_bin))
             pct_mask = pct_low_bin_mask(min_bin, self.num_pct_bins)
             pct_logits_t = self.pct_head(
                 src_emb_t, dst_emb_t, global_emb, src_remaining_norm,

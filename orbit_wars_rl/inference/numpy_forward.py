@@ -583,6 +583,7 @@ def greedy_multi_action(
     emit_hard_stop: bool = False,
     emit_hard_stop_min_step: int = 1,
     flip_hard_mask: bool = False,
+    allow_hold: bool = False,
 ) -> Tuple[list, list, list, list, float]:
     """Greedy multi-fleet action mirroring ActorCritic.__call__(deterministic=True).
 
@@ -648,7 +649,7 @@ def greedy_multi_action(
             pair_feats_g=emit_pair_g,
             emit_force_stop=emit_force_stop,
         )
-        if t == 0:
+        if t == 0 and not allow_hold:
             decision = (not no_options)
         else:
             emit_pred = int(np.argmax(e_logits))
