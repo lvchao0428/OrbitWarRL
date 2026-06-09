@@ -1,0 +1,162 @@
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: Successfully loaded OpenSpiel environments: 23.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_amazons
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_backgammon
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_checkers
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_chess
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_clobber
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_coin_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_connect_four
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_dark_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_gin_rummy
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_go
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_goofspiel
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hearts
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_lines_of_action
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_matching_pennies_3p
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_oshi_zumo
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_othello
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_tic_tac_toe
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_y
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_universal_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_python_repeated_pokerkit
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: OpenSpiel games skipped: 1.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    snake
+agent A (player 0): submission_rl_train_u4499.py
+agent B (player 1): submission_v20_0513.py
+running 3 games, seed_base=0...
+
+  [game 1/3] seed=0 steps=139 p0_outcome=loss elapsed=29.1s
+  [game 2/3] seed=1 steps=164 p0_outcome=loss elapsed=11.3s
+  [game 3/3] seed=2 steps=149 p0_outcome=loss elapsed=6.3s
+
+################ WINDOW = first_80turns ################
+=== A = submission_rl_train_u4499.py (player 0) (3 games, 452 turns) ===
+  outcome              W/L/D = 0/3/0
+  mean_emits_per_turn  = 1.29
+  zero_emit_rate       = 0.66%
+  mean_ships_per_fleet = 4.02
+  mean_garrison_my     = 31.57
+  p95_garrison_my      = 166
+  fleets_launched      = 358
+  fleet_flip_rate      = 3.35%   (fleets whose arrival flipped a planet)
+  fleet_nonflip_rate   = 93.85%   (crude proxy; see source for caveat)
+  captures             = 12
+  pct_bin_distribution (bin@val: pct):
+      bin0 @ 0.10: 6.8%
+      bin1 @ 0.20: 3.9%
+      bin2 @ 0.30: 4.2%
+      bin3 @ 0.40: 2.6%
+      bin4 @ 0.55: 6.8%
+      bin5 @ 0.70: 2.9%
+      bin6 @ 0.85: 1.9%
+      bin7 @ 1.00: 71.0%
+  emit_count_distribution (n_emits per turn: pct):
+      0: 1.2%
+      1: 90.8%
+      2: 2.5%
+      3: 1.2%
+      4: 0.0%
+      5: 0.8%
+      6: 0.4%
+      7: 0.4%
+      8: 2.5%
+
+=== B = submission_v20_0513.py (player 1) (3 games, 452 turns) ===
+  outcome              W/L/D = 3/0/0
+  mean_emits_per_turn  = 0.79
+  zero_emit_rate       = 33.63%
+  mean_ships_per_fleet = 16.09
+  mean_garrison_my     = 198.20
+  p95_garrison_my      = 885
+  fleets_launched      = 329
+  fleet_flip_rate      = 18.24%   (fleets whose arrival flipped a planet)
+  fleet_nonflip_rate   = 78.12%   (crude proxy; see source for caveat)
+  captures             = 60
+  pct_bin_distribution (bin@val: pct):
+      bin0 @ 0.10: 1.6%
+      bin1 @ 0.20: 3.7%
+      bin2 @ 0.30: 6.8%
+      bin3 @ 0.40: 16.8%
+      bin4 @ 0.55: 16.3%
+      bin5 @ 0.70: 16.8%
+      bin6 @ 0.85: 8.9%
+      bin7 @ 1.00: 28.9%
+  emit_count_distribution (n_emits per turn: pct):
+      0: 63.3%
+      1: 20.4%
+      2: 9.6%
+      3: 1.7%
+      4: 2.5%
+      5: 0.4%
+      6: 0.4%
+      7: 0.0%
+      8: 1.7%
+
+
+################ WINDOW = full_game ################
+=== A = submission_rl_train_u4499.py (player 0) (3 games, 452 turns) ===
+  outcome              W/L/D = 0/3/0
+  mean_emits_per_turn  = 0.79
+  zero_emit_rate       = 38.72%
+  mean_ships_per_fleet = 3.98
+  mean_garrison_my     = 17.69
+  p95_garrison_my      = 110
+  fleets_launched      = 358
+  fleet_flip_rate      = 3.35%   (fleets whose arrival flipped a planet)
+  fleet_nonflip_rate   = 93.85%   (crude proxy; see source for caveat)
+  captures             = 12
+  pct_bin_distribution (bin@val: pct):
+      bin0 @ 0.10: 8.4%
+      bin1 @ 0.20: 3.6%
+      bin2 @ 0.30: 3.6%
+      bin3 @ 0.40: 2.8%
+      bin4 @ 0.55: 6.1%
+      bin5 @ 0.70: 2.8%
+      bin6 @ 0.85: 2.2%
+      bin7 @ 1.00: 70.4%
+  emit_count_distribution (n_emits per turn: pct):
+      0: 38.7%
+      1: 56.6%
+      2: 1.5%
+      3: 0.7%
+      4: 0.0%
+      5: 0.4%
+      6: 0.2%
+      7: 0.2%
+      8: 1.5%
+
+=== B = submission_v20_0513.py (player 1) (3 games, 452 turns) ===
+  outcome              W/L/D = 3/0/0
+  mean_emits_per_turn  = 0.73
+  zero_emit_rate       = 70.58%
+  mean_ships_per_fleet = 19.09
+  mean_garrison_my     = 1128.04
+  p95_garrison_my      = 4522
+  fleets_launched      = 329
+  fleet_flip_rate      = 18.24%   (fleets whose arrival flipped a planet)
+  fleet_nonflip_rate   = 78.12%   (crude proxy; see source for caveat)
+  captures             = 60
+  pct_bin_distribution (bin@val: pct):
+      bin0 @ 0.10: 11.6%
+      bin1 @ 0.20: 10.0%
+      bin2 @ 0.30: 5.5%
+      bin3 @ 0.40: 12.5%
+      bin4 @ 0.55: 13.7%
+      bin5 @ 0.70: 12.8%
+      bin6 @ 0.85: 8.2%
+      bin7 @ 1.00: 25.8%
+  emit_count_distribution (n_emits per turn: pct):
+      0: 70.6%
+      1: 14.6%
+      2: 7.3%
+      3: 2.0%
+      4: 1.8%
+      5: 1.1%
+      6: 0.2%
+      7: 0.2%
+      8: 2.2%
+
+[saved] logs/replay_analyze/train_u4499_vs_v20.json

@@ -1,0 +1,80 @@
+[project]
+name = "rux-ai-s3"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "IsaiahPressman" }
+]
+dependencies = [
+    "ruff>=0.6.8",
+    "mypy>=1.11.2",
+    "pytest>=8.3.3",
+    "numpy>=2.1.1",
+    "pip>=24.2",
+    "luxai-s3 @ git+https://github.com/Lux-AI-Challenge/Lux-Design-S3#subdirectory=src",
+    "tqdm>=4.66.6",
+    "types-tqdm>=4.66.0.20240417",
+    "jax[cuda12]>=0.4.35",
+    "torch>=2.5.1",
+    "pydantic>=2.10.1",
+    "types-pyyaml>=6.0.12.20240917",
+    "wandb>=0.19.1",
+    "coloredlogs>=15.0.1",
+    "pandas>=2.2.3",
+    "einops>=0.8.1",
+]
+readme = "README.md"
+requires-python = ">= 3.8"
+
+[build-system]
+requires = ["maturin>=1.2,<2.0"]
+build-backend = "maturin"
+
+[tool.rye]
+managed = true
+dev-dependencies = []
+
+[tool.maturin]
+python-source = "python"
+module-name = "rux_ai_s3.lowlevel"
+features = ["pyo3/extension-module"]
+
+[tool.ruff.lint]
+select = [
+    "A",
+    "B",
+    "C",
+    "E",
+    "F",
+    "G",
+    "I",
+    "PT",
+    "UP",
+    "ARG",
+    "ERA",
+    "PIE",
+    "RET",
+    "RSE",
+    "RUF",
+    "SIM",
+]
+ignore = ["A005"]
+pylint.max-statements = 30
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_any_generics = true
+check_untyped_defs = true
+no_implicit_reexport = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "agent: tests for a new agent submission (deselect with '-m \"not agent\"')",
+]

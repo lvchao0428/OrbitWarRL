@@ -1,0 +1,11 @@
+# Temperature controls the action distribution:
+# - temp == 0.0 -> Argmax of action distribution
+# - temp < 1.0 -> Lower entropy distribution
+# - temp == 1.0 -> Use original action distribution
+# - temp > 1.0 -> Higher entropy distribution (currently forbidden)
+main_action_temperature: 1.0
+sap_action_temperature: 1.0
+data_augmentations:
+  - player_reflect
+  - rotate_180
+  - drift_reflect

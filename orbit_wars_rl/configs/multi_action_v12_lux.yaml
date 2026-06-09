@@ -1,0 +1,56 @@
+# v12_lux — Frog Parade reference architecture: bigger model + symmetric self-play
+#
+# Key changes from v11_f44:
+#   1. d_model 128 -> 256, n_layers 2 -> 4, ff_dim 512 -> 1024 (~3-5M params)
+#   2. Pure symmetric self-play (same params both players), no frozen/strong/buffer
+#   3. gamma 0.99 -> 0.9999 (Frog Parade used 0.9999-1.0 for long episodes)
+#   4. Sparse +1/-1 reward only (all shaping = 0)
+#   5. Long training: 10000 updates (~100M+ steps)
+#   6. No emit_hard_stop / flip_hard_mask (let model explore freely)
+
+train:
+  num_envs: 64
+  rollout_length: 64
+  num_updates: 10000
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v12_lux
+  ckpt_every: 200
+  log_every: 1
+  seed: 1200
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: false
+  flip_hard_mask: false
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+
+ppo:
+  lr_peak: 0.0003
+  lr_warmup_steps: 500
+  lr_decay_steps: 100000
+  lr_floor: 0.00003
+  clip_eps: 0.20
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.01
+  ent_coef_dst: 0.01
+  ent_coef_pct: 0.01
+  ent_coef_emit: 0.02
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 4
+  num_minibatches: 8
+
+selfplay:
+  enabled: false

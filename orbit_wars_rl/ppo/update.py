@@ -105,6 +105,22 @@ def _stack_obs_from_rollout(r: Rollout) -> EncodedObs:
     )
 
 
+def _stack_opp_obs_from_rollout(r: Rollout) -> EncodedObs | None:
+    """Build opponent EncodedObs for zero-sum value head, or None if not available."""
+    if r.opp_planet_feats is None:
+        return None
+    return EncodedObs(
+        planet_feats=r.opp_planet_feats,
+        planet_mask=r.opp_planet_mask,
+        fleet_feats=r.opp_fleet_feats,
+        fleet_mask=r.opp_fleet_mask,
+        global_feats=r.opp_global_feats,
+        my_planet_mask=r.opp_my_planet_mask,
+        enemy_planet_mask=jnp.zeros_like(r.opp_my_planet_mask),
+        neutral_planet_mask=jnp.zeros_like(r.opp_my_planet_mask),
+    )
+
+
 def _logp_entropy(logits: jnp.ndarray, idx: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     log_probs = jax.nn.log_softmax(logits, axis=-1)
     one_hot = jax.nn.one_hot(idx, logits.shape[-1], dtype=logits.dtype)
@@ -145,6 +161,7 @@ def ppo_loss(
 ) -> tuple[jnp.ndarray, dict]:
     """Single-minibatch PPO loss. Rollout fields are [N, ...] (flat over T*B)."""
     obs = _stack_obs_from_rollout(rollout)
+    opp_obs = _stack_opp_obs_from_rollout(rollout)
     out = model.apply(
         params,
         obs,
@@ -156,6 +173,7 @@ def ppo_loss(
         rollout.planet_x_raw,
         rollout.planet_y_raw,
         rollout.home_idx_raw,
+        opp_obs,
         method=ActorCritic.evaluate,
     )
 
@@ -333,6 +351,17 @@ def _flatten_rollout(rollout: Rollout, advantages: jnp.ndarray, returns: jnp.nda
     def f(x):
         return x.reshape((-1,) + x.shape[2:])
 
+    opp_kwargs = {}
+    if rollout.opp_planet_feats is not None:
+        opp_kwargs = dict(
+            opp_planet_feats=f(rollout.opp_planet_feats),
+            opp_planet_mask=f(rollout.opp_planet_mask),
+            opp_fleet_feats=f(rollout.opp_fleet_feats),
+            opp_fleet_mask=f(rollout.opp_fleet_mask),
+            opp_global_feats=f(rollout.opp_global_feats),
+            opp_my_planet_mask=f(rollout.opp_my_planet_mask),
+        )
+
     flat_rollout = Rollout(
         obs_planet_feats=f(rollout.obs_planet_feats),
         obs_planet_mask=f(rollout.obs_planet_mask),
@@ -359,12 +388,25 @@ def _flatten_rollout(rollout: Rollout, advantages: jnp.ndarray, returns: jnp.nda
         reward=f(rollout.reward),
         done=f(rollout.done),
         last_value=rollout.last_value,
+        **opp_kwargs,
     )
     return flat_rollout, f(advantages), f(returns)
 
 
 def _gather_minibatch(rollout: Rollout, advs: jnp.ndarray, rets: jnp.ndarray, idx: jnp.ndarray):
     take = lambda x: x[idx]
+
+    opp_kwargs = {}
+    if rollout.opp_planet_feats is not None:
+        opp_kwargs = dict(
+            opp_planet_feats=take(rollout.opp_planet_feats),
+            opp_planet_mask=take(rollout.opp_planet_mask),
+            opp_fleet_feats=take(rollout.opp_fleet_feats),
+            opp_fleet_mask=take(rollout.opp_fleet_mask),
+            opp_global_feats=take(rollout.opp_global_feats),
+            opp_my_planet_mask=take(rollout.opp_my_planet_mask),
+        )
+
     sub = Rollout(
         obs_planet_feats=take(rollout.obs_planet_feats),
         obs_planet_mask=take(rollout.obs_planet_mask),
@@ -391,6 +433,7 @@ def _gather_minibatch(rollout: Rollout, advs: jnp.ndarray, rets: jnp.ndarray, id
         reward=take(rollout.reward),
         done=take(rollout.done),
         last_value=rollout.last_value,
+        **opp_kwargs,
     )
     return sub, take(advs), take(rets)
 

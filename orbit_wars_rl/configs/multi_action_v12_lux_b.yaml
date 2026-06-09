@@ -1,0 +1,61 @@
+# v12_lux_b — 修正 clip_frac 过高问题
+#
+# v12_lux @ upd 429 诊断:
+#   clip_frac=0.47 (应 < 0.15), kl=0.10 (应 < 0.03)
+#   原因: update_epochs=4 + num_minibatches=8 = 32 次梯度更新/batch
+#         每个样本被复用太多次, PPO ratio 漂移过大
+#
+# 修正:
+#   1. lr_peak 3e-4 -> 1e-4 (降低步长)
+#   2. update_epochs 4 -> 2 (减少复用)
+#   3. num_minibatches 保持 8 (不改, 否则 OOM)
+#   = 16 次梯度更新/batch (原来 32 次, 减少 2x)
+#
+# 保持不变: 模型结构, gamma, reward, selfplay 模式
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 10000
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v12_lux_b
+  ckpt_every: 200
+  log_every: 1
+  seed: 1201
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: false
+  flip_hard_mask: false
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+
+ppo:
+  lr_peak: 0.0001
+  lr_warmup_steps: 100
+  lr_decay_steps: 100000
+  lr_floor: 0.00002
+  clip_eps: 0.20
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.01
+  ent_coef_dst: 0.01
+  ent_coef_pct: 0.01
+  ent_coef_emit: 0.02
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 2
+  num_minibatches: 8
+
+selfplay:
+  enabled: false

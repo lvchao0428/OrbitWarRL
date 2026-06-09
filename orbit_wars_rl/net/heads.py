@@ -330,7 +330,6 @@ class ValueHead(nn.Module):
             jnp.float32,
         )
         q = jnp.broadcast_to(queries[None, :, :], (B, self.n_queries, self.d_model))
-        # Condition queries on global state so they're not just static slots.
         g_proj = nn.Dense(self.d_model, name="q_cond")(global_emb)[:, None, :]
         q = q + g_proj
 
@@ -344,7 +343,6 @@ class ValueHead(nn.Module):
             name="value_attn",
         )(q, kv, mask=attn_mask)
 
-        # Concat all attended query outputs + global, then MLP to scalar.
         pooled = attended.reshape(B, self.n_queries * self.d_model)
         joined = jnp.concatenate([pooled, global_emb], axis=-1)
         x = nn.Dense(self.hidden, name="fc1")(joined)
@@ -354,3 +352,111 @@ class ValueHead(nn.Module):
         if not is_batched:
             value = jnp.squeeze(value, axis=0)
         return value
+
+
+class ZeroSumValueHead(nn.Module):
+    """Zero-sum value head that sees both players' perspectives.
+
+    Inspired by Frog Parade (Lux AI S3 #2): "this value formulation 'cheats'
+    in that it's able to see the perspective of both teams at once in order
+    to estimate either team's value. However, this helped to stabilize
+    training, and is okay to do because the value is not computed at test
+    time."
+
+    In a zero-sum game, V(p0) + V(p1) should equal 0. This head enforces
+    that constraint via softmax normalization: it computes a raw scalar for
+    each player, then applies softmax to get win probabilities, and maps
+    those to [-1, 1].
+
+    During training, both players' observations are available (symmetric
+    self-play). During inference, value is not needed so the "cheating"
+    is harmless.
+    """
+
+    d_model: int = 64
+    n_queries: int = 4
+    n_heads: int = 4
+    hidden: int = 64
+
+    @nn.compact
+    def _raw_value(
+        self,
+        global_emb: jnp.ndarray,
+        planet_emb: jnp.ndarray,
+        planet_mask: jnp.ndarray,
+        fleet_emb: jnp.ndarray,
+        fleet_mask: jnp.ndarray,
+    ) -> jnp.ndarray:
+        """Compute raw (un-normalized) value for one player's view."""
+        is_batched = planet_emb.ndim == 3
+        if not is_batched:
+            global_emb = global_emb[None, :]
+            planet_emb = planet_emb[None, ...]
+            planet_mask = planet_mask[None, ...]
+            fleet_emb = fleet_emb[None, ...]
+            fleet_mask = fleet_mask[None, ...]
+        B = planet_emb.shape[0]
+
+        queries = self.param(
+            "queries",
+            nn.initializers.normal(stddev=0.02),
+            (self.n_queries, self.d_model),
+            jnp.float32,
+        )
+        q = jnp.broadcast_to(queries[None, :, :], (B, self.n_queries, self.d_model))
+        g_proj = nn.Dense(self.d_model, name="q_cond")(global_emb)[:, None, :]
+        q = q + g_proj
+
+        kv = jnp.concatenate([planet_emb, fleet_emb], axis=1)
+        kv_mask = jnp.concatenate([planet_mask, fleet_mask], axis=1)
+        attn_mask = kv_mask[:, None, None, :]
+        attended = nn.MultiHeadDotProductAttention(
+            num_heads=self.n_heads,
+            qkv_features=self.d_model,
+            out_features=self.d_model,
+            name="value_attn",
+        )(q, kv, mask=attn_mask)
+
+        pooled = attended.reshape(B, self.n_queries * self.d_model)
+        joined = jnp.concatenate([pooled, global_emb], axis=-1)
+        x = nn.Dense(self.hidden, name="fc1")(joined)
+        x = nn.gelu(x)
+        raw = nn.Dense(1, name="value")(x)[..., 0]
+
+        if not is_batched:
+            raw = jnp.squeeze(raw, axis=0)
+        return raw
+
+    def __call__(
+        self,
+        global_emb: jnp.ndarray,
+        planet_emb: jnp.ndarray,
+        planet_mask: jnp.ndarray,
+        fleet_emb: jnp.ndarray,
+        fleet_mask: jnp.ndarray,
+        opp_global_emb: jnp.ndarray | None = None,
+        opp_planet_emb: jnp.ndarray | None = None,
+        opp_planet_mask: jnp.ndarray | None = None,
+        opp_fleet_emb: jnp.ndarray | None = None,
+        opp_fleet_mask: jnp.ndarray | None = None,
+    ) -> jnp.ndarray:
+        """Compute value with zero-sum normalization when opponent obs is available.
+
+        When opponent observations are None (inference), falls back to the raw
+        value without normalization.
+        """
+        raw_me = self._raw_value(
+            global_emb, planet_emb, planet_mask, fleet_emb, fleet_mask
+        )
+        if opp_global_emb is None:
+            return raw_me
+
+        raw_opp = self._raw_value(
+            opp_global_emb, opp_planet_emb, opp_planet_mask,
+            opp_fleet_emb, opp_fleet_mask,
+        )
+        # Stack [raw_me, raw_opp] and softmax to get win probabilities.
+        # Map prob in [0, 1] to value in [-1, 1].
+        stacked = jnp.stack([raw_me, raw_opp], axis=-1)
+        probs = jax.nn.softmax(stacked, axis=-1)
+        return 2.0 * probs[..., 0] - 1.0

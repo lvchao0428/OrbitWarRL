@@ -1,0 +1,5 @@
+services:
+  rux-ai-s3:
+    image: rux-ai-s3:latest
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t

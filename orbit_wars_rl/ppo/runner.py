@@ -40,6 +40,7 @@ from orbit_wars_rl.ppo.rollout import (
     make_rollout_fn_with_frozen_opp,
 )
 from orbit_wars_rl.ppo.rollout_4p import make_rollout_fn_4p, make_rollout_fn_with_frozen_opp_4p
+from orbit_wars_rl.ppo.rollout_symmetric import make_rollout_fn_symmetric
 from orbit_wars_rl.ppo.update import PPOConfig, make_optimizer, make_train_step
 from orbit_wars_rl.selfplay.eval import play_vs_random, play_vs_frozen
 from orbit_wars_rl.selfplay.pool import FrozenAgentPool
@@ -101,13 +102,21 @@ class TrainConfig:
     eval_vs_v20: bool = False
     eval_vs_v20_num_games: int = 3
 
+    # Symmetric self-play (Frog Parade style): same params for both players.
+    # When True, ignores all SelfPlayConfig settings (no frozen/strong/buffer).
+    # Uses random opponent during warmup, then pure symmetric self-play.
+    symmetric_selfplay: bool = False
+    symmetric_warmup: int = 100
+    # Zero-sum value head: value head sees both players' obs during training.
+    zero_sum_value: bool = False
+
     ppo: PPOConfig = field(default_factory=PPOConfig)
     selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)
 
 
 # Opponents whose rollout stats correlate better with replay vs v20.
 _ALIGN_OPPS = frozenset({"strn", "frzn"})
-_CKPT_PREFER_OPPS = frozenset({"strn", "frzn", "rand"})
+_CKPT_PREFER_OPPS = frozenset({"strn", "frzn", "rand", "symm"})
 
 
 def load_state_buffer(path: str) -> "EnvState":
@@ -337,6 +346,7 @@ def train(
         emit_hard_stop=cfg.emit_hard_stop,
         emit_hard_stop_min_step=cfg.emit_hard_stop_min_step,
         flip_hard_mask=cfg.flip_hard_mask,
+        zero_sum_value=cfg.zero_sum_value,
     )
 
     env_rngs = jax.random.split(rng_envs, cfg.num_envs)
@@ -369,6 +379,21 @@ def train(
         # opt_state stays freshly initialised: lr / momentum schedules are
         # re-baked from the new PPOConfig (which is the whole point of an
         # extension run with a tweaked schedule).
+
+    symmetric_rollout_fn = None
+    if cfg.symmetric_selfplay and constants.NUM_PLAYERS == 2:
+        print(
+            f"[symmetric] Frog Parade style: same params drive BOTH players, "
+            f"no frozen/strong/buffer opponents, "
+            f"zero_sum_value={cfg.zero_sum_value}",
+            flush=True,
+        )
+        symmetric_rollout_fn = make_rollout_fn_symmetric(
+            env, model,
+            rollout_length=cfg.rollout_length,
+            num_envs=cfg.num_envs,
+            episode_steps=cfg.episode_steps,
+        )
 
     if constants.NUM_PLAYERS == 4:
         rollout_fn = make_rollout_fn_4p(
@@ -491,7 +516,13 @@ def train(
         rng_iter, r_step, r_opp_pick, r_pool_sample = jax.random.split(rng_iter, 4)
 
         opp_tag = "rand"
-        if cfg.selfplay.enabled and update >= sp_warmup:
+
+        if cfg.symmetric_selfplay and symmetric_rollout_fn is not None:
+            states, env_rngs, rollout = symmetric_rollout_fn(
+                params, states, env_rngs,
+            )
+            opp_tag = "symm"
+        elif cfg.selfplay.enabled and update >= sp_warmup:
             roll = float(jax.random.uniform(r_opp_pick, ()))
             if (
                 strong_params is not None
@@ -517,8 +548,6 @@ def train(
                 and sp_buffer > 0.0
                 and roll < sp_strong + sp_frozen + sp_buffer
             ):
-                # Buffer-reset: use frozen params = current params (no frozen opp).
-                # The buffer state mixing happens inside the rollout fn itself.
                 states, env_rngs, rollout = buffer_rollout_fn(
                     params, params, states, env_rngs,
                 )

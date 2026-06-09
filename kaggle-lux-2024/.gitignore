@@ -1,0 +1,31 @@
+replay.json
+
+# Saved agents + wandb outputs
+hall_of_fame/
+wandb/
+
+# Most lock files
+*.lock
+!requirements.lock
+
+# Training log files
+*.log
+
+# Submission files
+*.tar.gz
+
+# python generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+# Rust
+target/
+
+# Rust link files
+python/rux_ai_s3/*.cpython*
+
+# venv
+.venv

@@ -89,6 +89,14 @@ class Rollout:
 
     last_value: chex.Array       # [B]
 
+    # Zero-sum value head: opponent obs (None / zeros when not using zero-sum).
+    opp_planet_feats: chex.Array | None = None   # [T, B, P, F]
+    opp_planet_mask: chex.Array | None = None    # [T, B, P]
+    opp_fleet_feats: chex.Array | None = None    # [T, B, F_max, F_dim]
+    opp_fleet_mask: chex.Array | None = None     # [T, B, F_max]
+    opp_global_feats: chex.Array | None = None   # [T, B, G]
+    opp_my_planet_mask: chex.Array | None = None # [T, B, P]
+
 
 OpponentFn = Callable[[jnp.ndarray, EncodedObs], PlayerAction]
 

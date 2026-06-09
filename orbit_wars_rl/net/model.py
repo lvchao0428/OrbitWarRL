@@ -44,7 +44,7 @@ from orbit_wars_rl.features.pair import (
     pct_low_bin_mask,
 )
 from orbit_wars_rl.net.transformer import EntityTransformer
-from orbit_wars_rl.net.heads import SrcHead, DstHead, PctHead, ValueHead, EmitHead
+from orbit_wars_rl.net.heads import SrcHead, DstHead, PctHead, ValueHead, ZeroSumValueHead, EmitHead
 
 
 _PCT_BIN_TABLE = jnp.array(constants.PCT_BIN_VALUES, dtype=jnp.float32)
@@ -194,6 +194,7 @@ class ActorCritic(nn.Module):
     emit_hard_stop: bool = False
     emit_hard_stop_min_step: int = 1
     flip_hard_mask: bool = False
+    zero_sum_value: bool = False
 
     def setup(self) -> None:
         self.encoder = EntityTransformer(
@@ -206,7 +207,12 @@ class ActorCritic(nn.Module):
         self.dst_head = DstHead(d_model=self.d_model, n_heads=self.n_heads)
         self.pct_head = PctHead(num_bins=self.num_pct_bins)
         self.emit_head = EmitHead(max_steps=self.max_fleets_per_turn)
-        self.value_head = ValueHead(d_model=self.d_model, n_heads=self.n_heads)
+        if self.zero_sum_value:
+            self.value_head = ZeroSumValueHead(
+                d_model=self.d_model, n_heads=self.n_heads
+            )
+        else:
+            self.value_head = ValueHead(d_model=self.d_model, n_heads=self.n_heads)
 
     def _encode(self, obs: EncodedObs) -> dict:
         return self.encoder(
@@ -230,6 +236,7 @@ class ActorCritic(nn.Module):
         planet_x: jnp.ndarray,           # (..., P) float -- f26 pair feats
         planet_y: jnp.ndarray,           # (..., P) float
         home_idx: jnp.ndarray,           # (...,) int32
+        opp_obs: EncodedObs | None = None,
     ) -> ActorCriticOutput:
         """Compute per-step logits + value given pre-chosen K-step actions.
 
@@ -262,9 +269,20 @@ class ActorCritic(nn.Module):
         ships_my_f = jnp.where(obs_my, ships_raw_b, jnp.int32(0)).astype(jnp.float32)
         total_init = ships_my_f.sum(axis=-1)  # (...,)
 
-        value = self.value_head(
-            global_emb, planet_emb, obs.planet_mask, fleet_emb, obs.fleet_mask
-        )
+        if self.zero_sum_value and opp_obs is not None:
+            opp_enc = self._encode(opp_obs)
+            value = self.value_head(
+                global_emb, planet_emb, obs.planet_mask, fleet_emb, obs.fleet_mask,
+                opp_global_emb=opp_enc["global_emb"],
+                opp_planet_emb=opp_enc["planet_emb"],
+                opp_planet_mask=opp_obs.planet_mask,
+                opp_fleet_emb=opp_enc["fleet_emb"],
+                opp_fleet_mask=opp_obs.fleet_mask,
+            )
+        else:
+            value = self.value_head(
+                global_emb, planet_emb, obs.planet_mask, fleet_emb, obs.fleet_mask
+            )
 
         # We pre-compute src/dst/pct/emit logits for all K steps via a python
         # for-loop so flax can build the heads exactly once. The running
@@ -386,6 +404,7 @@ class ActorCritic(nn.Module):
         home_idx: jnp.ndarray,
         *,
         deterministic: bool = False,
+        opp_obs: EncodedObs | None = None,
     ) -> SampledMultiAction:
         """Sample a K-step multi-fleet action.
 
@@ -414,9 +433,20 @@ class ActorCritic(nn.Module):
         ships_my_f = jnp.where(obs_my, ships_raw, jnp.int32(0)).astype(jnp.float32)
         total_init = ships_my_f.sum(axis=-1)
 
-        value = self.value_head(
-            global_emb, planet_emb, obs.planet_mask, fleet_emb, obs.fleet_mask
-        )
+        if self.zero_sum_value and opp_obs is not None:
+            opp_enc = self._encode(opp_obs)
+            value = self.value_head(
+                global_emb, planet_emb, obs.planet_mask, fleet_emb, obs.fleet_mask,
+                opp_global_emb=opp_enc["global_emb"],
+                opp_planet_emb=opp_enc["planet_emb"],
+                opp_planet_mask=opp_obs.planet_mask,
+                opp_fleet_emb=opp_enc["fleet_emb"],
+                opp_fleet_mask=opp_obs.fleet_mask,
+            )
+        else:
+            value = self.value_head(
+                global_emb, planet_emb, obs.planet_mask, fleet_emb, obs.fleet_mask
+            )
 
         reserved = jnp.zeros_like(ships_raw)  # (..., P) int32
         # still_emitting is a per-batch bool; if rank=0 keep scalar.

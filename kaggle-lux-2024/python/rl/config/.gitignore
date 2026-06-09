@@ -1,0 +1,6 @@
+# Ignore everything in this directory
+*
+# Except this .gitignore file
+!.gitignore
+# And default config files
+!*_default.yaml

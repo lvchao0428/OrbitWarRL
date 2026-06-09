@@ -1,0 +1,495 @@
+Skip to
+content
+Kaggle
+Frog Parade's Solution
+
+NeurIPS 2024 - Lux AI Season 3
+
+Solution Writeup · 2nd place · Mar 17, 2025
+
+Introduction
+First of all, I'd like to thank the competition organizers at Lux and Kaggle, particularly Stone and Bovard, for all the work they did before and during the competition to make this possible. I'd also like to thank my teammate Garrett, for his assistance in brainstorming, and willingness and enthusiasm to come along for the ride in learning Rust and deep reinforcement learning.
+
+My approach for this competition was motivated by a few key factors:
+
+I did not think that I could effectively write feature engineering code in Jax in a bug-free and efficient way.
+I wanted to get better at Rust, and learn how to run Rust code from Python.
+I had much less time to spend than in previous competitions, so I needed to be efficient in the code that I wrote.
+Considering the first two factors, the solution was obvious, if a bit daunting at first: I would rewrite the environment and perform all feature engineering in Rust. Additionally, to address the time constraints, I planned to write all the involved/difficult code using a rigorous test-driven approach, so that I would hopefully spend as little of my time as possible bug-hunting.
+
+The final system consisted of three main components: the rules engine rewritten in Rust, the feature engineering code also in Rust, and the model and reinforcement learning code, written in Python. I have published the full open source code on GitHub: https://github.com/IsaiahPressman/kaggle-lux-2024
+
+Rules engine
+For those who are unfamiliar, I recommend checking out the full rules, but I'll briefly summarize them here as well:
+
+Each player controls a fleet of (up to) 16 ships, piloting them around a 24x24 map in search of point-generating relic nodes.
+The goal of the game is to be the first to win 3 matches, with the winner of each match being the whoever scored the most points from relic nodes after 100 steps.
+Ships additionally have to collect energy by finding high-value energy tiles, avoid asteroids and dangerous nebulae, and engage in laser battles with opposing ships.
+There is fog of war, meaning that players cannot see beyond a small area around each of their ships, so you don't know what your opponent is doing, except for right near your ships.
+The map is procedurally generated, so the location of the points, obstacles, and energy field varies from game to game.
+Some of the rules themselves vary from game to game, though never within a given 5-match set. So, for example, the cost to move or the effectiveness of the lasers (known in-game as sap actions) may vary from one game to the next, but will be fixed for the matches within that game. It's up to the players to figure out exactly which parameters they're playing with over the course of the game.
+Most of the code to run the simulation in Rust is straightforward, but the interesting part was ensuring its correctness. This was made more difficult by the fact that the rules engine changed somewhat over the course of the competition, mainly due to a large mid-competition rules change. In order to make sure as best as I could that my simulation matched the real one, I wrote two types of tests: smaller unit tests to check that the individual components of the simulation worked as expected, and larger integration tests where I checked that my simulation matched the real one over a range of seeds. This way when the rules changed, if I missed any changes, the tests failed and alerted me to the issue.
+
+I figured that a test-driven approach would be helpful, but it greatly exceeded my expectations. Not only did I spend no time debugging the simulation once the tests were passing, but I also found and was able to quickly help fix a few bugs in the competition rules engine itself. Though writing code in such a methodical fashion slowed me down at first, the time spent absolutely paid for itself in the long run.
+
+Feature engineering and action masking
+I wrote all the feature engineering code in Rust as well, so that it would not be a bottleneck. I separated the features into four types along two lines: global vs. spatial, and temporal vs. nontemporal.
+
+Global features included features that were not associated with any particular location on the map, such as my and opponent's score, known rules, inferred rules, and the current step.
+Spatial features included features like my ships, opponent ships, relic nodes, known point tiles, and the value of the energy field.
+Temporal features were features that changed over time, such as my and opponent's ships, or my and my opponent's score.
+Nontemporal features were features that either didn't change over time, such as relic node locations and known rules, or features features that I felt it wasn't necessary to provide a history of, such as the energy field or asteroid and nebula movements. I'll note here that though I didn't provide a history of asteroid and nebula positions, I did provide the model with the predicted future locations, once they were known.
+For all temporal features, I tracked a history of the last 10 observations which I combined with their nontemporal counterparts. More details of how the features were fed to the model can be found in the model architecture section. In total, including the history of the temporal features, there were 80 global features and around 100 spatial features. For those who are curious to see the full list of features, they can be found in code in basic_obs_space.rs.
+
+Though some features, such as my unit's current positions, were readily available, the fog of war and hidden rules meant that most features had to be tracked independently of the observations provided each step. Additionally, there was a lot of information that was never explicitly provided in the observations, but could be inferred. Regarding feature inference, there was a lot to do, and this highlighted another benefit of having rewritten the simulation code - it made me intimately familiar with the quirks and edge-cases of the rules, which helped tremendously when it came time to handle those same edge cases while feature engineering.
+
+A few examples of inferred features include:
+
+Reflected features - the maps are always perfectly symmetric, so anything that a ship discovers on my side of the map such as relic nodes, asteroids, and nebulae can be provided to the model as if they were seen in their reflected location as well.
+Point tile locations - though you're never told where the point tiles are, you can discover the relic nodes that point tiles will be near, and you know your score, where your ships are, and where they've been. As a result, you can infer that anytime your score stays constant, none of the locations where your ships are contain points. Similarly, whenever your score goes up by some points, your ships must be on exactly that many point tiles. By combining these two inferences, you can quickly deduce precisely where the point tiles on both sides of the map are. (point tiles are symmetric too)
+Hidden rules and asteroid and nebula movements - all the hidden parameters, including the speed and direction of asteroid and nebula tile movements, are sampled from a known, discrete number of possibilities. As a result, all of this initially-hidden information can be deduced by carefully observing how the observations change from step to step and comparing this with an expectation of what the observation should look like given a specific combination of rules. For example, once you observe the nebulae not moving on step 7, you can safely deduce that the nebula_tile_drift_speed parameter must be at some other slower speed.
+Energy field caching - there are only two relevant hidden energy nodes that move around symmetrically to make up the energy field. I took advantage of this and precomputed all possible energy field configurations. After observing only a few energy field values, I could fill in the rest of the unobserved energy field since only one possible configuration remained given the observation. Often, I could deduce the entire energy field as soon as the first ship spawned.
+For all inferred features, I wrote unit tests to check individual components. Additionally, I wrote larger integration tests that asserted the following about the hidden feature inference:
+
+It should never provide false information. It either provided information that aligned with the unobserved reality or failed to provide any information beyond what was observed.
+It should never provide less information than what was observed. It would be a shame to work on a bunch of complicated feature inference only to forget to store the information that you can observe directly.
+It should always provide symmetrical information, when relevant.
+It should have solved most everything most of the time by the end of the game, though what qualified as "most" varied from feature to feature. For example, I asserted that in >99% of observations I could infer exactly the full energy field.
+Action masking was quite a bit simpler. I disallowed irrelevant actions such as moving off the map or into an asteroid. Similarly, I disallowed an action if the ship didn't have enough energy to pay for it. Finally, I also disallowed blind sapping unless it was targeting a square on or next to a known point tile. However, this may have been a mistake, as team Flat Neurons made excellent use of such blind saps on tiles that would otherwise seem irrelevant. For this reason, next time I would use less restrictive action masking, only banning actions that are certain to be useless or meaningless, such as moving off the map.
+
+Deep reinforcement learning
+The core decision-making component of my solution used deep reinforcement learning. While all the feature engineering above was useful for extracting information from the available observations, on its own it still fails to answer the most important question: given the available information, which actions should I take? Deep reinforcement learning aims to answer this question by parameterizing a policy using a deep neural network, taking actions in the environment using that policy, receiving a reward (or punishment), and then using gradient descent to gradually update the policy in order to maximize the expected cumulative reward. Given enough time to train in the simulation, the right hyperparameters, and an appropriate reward function, the model can learn a strong policy on its own. Furthermore, deep reinforcement learning agents often play in a surprisingly nuanced tactical and strategic fashion that would be difficult or impossible to emulate using traditional hand-coded heuristic-based approaches.
+
+Model architecture
+I experimented with two model architectures for this competition. Both used the same input and output structures, but had a different model core. The one I had the most success with was a residual convolutional neural network (CNN) with squeeze-excitation layers, so this is what I submitted for my final agents. I also tried using a vision transformer base using rotary positional embeddings, but I only started working on it in the final month and was struggling to stabilize training for a large enough model. Despite the fact that my final solution used a CNN, I was impressed by how quickly the transformer learned when imitating a teacher, and that it was able to reach a comparable performance with many fewer parameters. In the future, I may try a transformer architecture first, as it felt like it was one or two small tricks or hyperparameter adjustments away from outperforming the CNN.
+
+The model had two input layers, one each for the spatial and global features. For the spatial input, I concatenated the 10-frame stack of temporal spatial features with the nontemporal spatial features, which I then projected to the model's dimension using a 2-layer CNN. For the global input, I similarly concatenated the temporal and nontemporal features, and then used a 2-layer MLP to project it to the model's dimension. Finally, I broadcast the global features to match the shape of the spatial ones, and added the two information streams together. I fed this combined tensor into the core model - an 8-block 3x3 CNN with a hidden dimension of size 256 (d_model). After the core model, I fed the output tensor into a value and an actor head.
+
+The value head used a 2-layer 1x1 CNN to project the output to shape 1x24x24, which it then took the mean of to produce a single non-normalized value. This value was passed through a normalization layer depending on the reward space used. As soon as training was running stably, and for most of the competition I used the sparse win/loss (+1/-1) reward with early stopping once a team reached 3 match points. The value normalization function took the softmax of the two teams' values to estimate the win likelihood. Notably, this value formulation "cheats" in that it's able to see the perspective of both teams at once in order to estimate either team's value. However, this helped to stabilize training, and is okay to do because the value is not computed at test time.
+
+The actor head consisted of two parts: the main actor head and the sap actor head. The main actor head indexed the location of all alive units to product a matrix with shape n_units x d_model. I then appended each unit's normalized energy to this matrix, before passing it to a 2-layer MLP which projected it to shape n_units x n_actions. Note that the energies were provided at this step as well as to the main input so that units on the same square could learn independent policies conditioned on their energy levels. Finally, the main actions were sampled independently for each unit, with the action space containing 10 options: NoOp, 4 move actions, and 5 sap actions - one for each possible sap range. For units which selected a sap action, the sap actor head used a 2-layer CNN to project the core output to shape 1x24x24, representing the non-normalized probability of sapping that square, and shared among all units. Illegal sap actions were masked out on a per-unit basis, taking into account that unit's location and sap range.
+
+
+
+Reinforcement learning algorithm
+I used a relatively vanilla implementation of PPO with clipping, illegal action masking, and additional entropy and teacher-KL loss terms. I also used GAE-Lambda for estimating the value, with a high gamma. (0.9999-1.0) Since win/loss rewards were assigned at a player level, I summed the log-probabilities from all units across the main and sap action distributions to get the joint log-probabilities when computing the policy loss. I made some attempts early on to factorize the value function on a per-unit level, but was unable to figure out how to make it work successfully, so I gave up and focused on other things. I'd be very curious to know if anyone got a per-unit value factorization (and policy optimization) approach working!
+
+Test-time implementation
+Unlike in Lux Season 1, I used random action sampling at test time, as performance was better with a stochastic policy. I imagine this is because a mixed strategy helps the agent with blind sapping and dodging opposing blind saps. At test-time, I also used three data augmentations - both diagonal reflections and a 180-degree rotation - and took the average policy before sampling.
+
+Miscellaneous engineering notes
+Training system
+I ran all experiments on my local machine with a 16-core/32-thread AMD Ryzen 9950X CPU, 64GB RAM, and two GPUs: an RTX 3090 and RTX 2070 Super. Using the custom simulator with all-core multithreading, I was able to achieve speeds of 110,000 steps/second when ignoring the time to compute the actions taken. As a result, the simulation and feature-engineering was near-instantaneous compared to the time taken to move memory to and from the GPU and run inference and backpropagation for training the model. Since GPU-compute was the bottleneck, the training speed varied dramatically based on the model size and architecture.
+
+Model sizes
+Early on, I experimented with small 420,000 parameter models, which trained at 2800 steps/second. For the final model, I trained a convolutional network with 10,000,000 parameters, which trained at 430 steps/second. I could, and probably should, have scaled this up further, since I was still 62MB shy of the 100MB submission file size limit, but I wanted to experiment with the transformer architecture, so I did that instead in the final month. I'd estimate that the final model trained for around 300,000,000 game steps, totalling 600,000,000 per-player observations, and corresponding to about 8 days of continuous training. It had mostly plateaued by around step 200,000,000, but it continued to exhibit small gradual improvements after that. To monitor performance, I logged a bunch of metrics, including various loss terms, average points scored, action frequencies, and winrate against the previous best model.
+
+Tools used
+I logged all performance metrics and tracked experiments using Wandb. I used Rye for Python package management, and Maturin and PyO3 to add Python bindings to the Rust code. Compiling the code and configuring the bindings in a way that was cross-compatible with the competition runtime environment on Kaggle's servers was painful at first, but eventually I figured out that the problem was due to a GLIBC version mismatch. I was able to resolve this by compiling and building the submission in Docker using a Kaggle image, and after that building the submission presented no further difficulties.
+
+Some other tools that I used to help keep things organized and error-free included:
+
+Rustfmt and Ruff to automatically format the Rust and Python code, respectively
+Clippy and Ruff, again, to perform code linting
+Mypy to statically type check the Python code
+Conclusion
+In the end, the final codebase including tests consisted of ~10,800 lines of Rust and ~6,500 lines of Python. Though I wrote considerably more code and more complicated code for this season than season 1, I felt I was able to do so more efficiently. This is certainly in part due to experience, but I also credit the test-driven approach with saving me a considerable amount of time in fixing my mistakes. It was a humbling reminder that writing lots of code isn't hard, but writing correct code is.
+
+Feel free to reach out with any questions or post them in the comments below, and I'll do my best to answer them. This experience has been a ton of fun, and I want to again thank the organizers, my teammate Garrett, and the other competitors for a lively discussion and exciting competition. I look forward to reading through and learning from the other teams' solutions over the coming days, and I eagerly await Lux season 4!
+
+Authors
+IsaiahP
+pressman1
+
+Garrett M
+doublepress
+
+
+Share
+Citation
+IsaiahP, Garrett M. Frog Parade's Solution. https://www.kaggle.com/competitions/lux-ai-season-3/writeups/frog-parade-frog-parade-s-solution. 2025. Kaggle
+
+
+3
+
+5
+
+4
+26 Comments
+Hotness
+ 
+Comment here. Be patient, be friendly, and focus on ideas. We're all here to learn and improve!
+This comment will be made public once posted.
+
+
+Post Comment
+kuto
+Posted a year ago
+
+· 9th in this Competition
+
+Thank you for sharing this excellent solution! I also attempted deep reinforcement learning with IMPALA but couldn't get it to train effectively.
+
+I have one request—would it be possible for you to share the metrics logged in WandB? I'm particularly interested in the trends of key losses (policy gradient loss, KL divergence loss, entropy, etc.) when training is going well.
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Thank you! I wish you better luck next time getting the IMPALA agent to train properly. And congratulations on the top-10 finish!
+
+I've not organized the runs that I did, but here is an example of many of the metrics that I logged in an earlier run shortly after the mid-season rules change: https://api.wandb.ai/links/isaiahpressman/psohugu3
+
+If you have a machine with a GPU, you could also probably reproduce these results locally without too much trouble using the code in GitHub. (The package installation and compilation instructions are in the README)
+
+
+Reply
+
+React
+kuto
+Posted a year ago
+
+· 9th in this Competition
+
+Thank you for sharing! I see that policy_loss and value_loss hover around 0 and entropy decreases slowly.
+
+It is also a very good idea to monitor the learning situation by taking statistics on behaviour (ex; noop_frequency) as well as win rates and rewards.
+
+I will compare your published implementation with my own implementation and review my RL.
+
+
+Reply
+
+React
+kurupical
+Posted a year ago
+
+· 85th in this Competition
+
+Thank you for sharing this amazing solution! I truly respect your contributions, not only for solving the competition but also in fixing bugs in the game engine.
+I've learned a lot about reinforcement learning by studying your past solutions and code(Lux AI season 1). Although I ultimately failed with the RL approach but I will learn from this solution and code, and I’m determined to try again with reinforcement learning in the next season!
+
+I have a question regarding your self-play approach. Could you explain it in more detail? For example, what agents did you use for training matches? Did you simply use past versions of your agent, or did you employ any special techniques?
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Thank you for your kind words! I hope you're able to continue learning reinforcement learning and get a working agent going next time!
+
+For self-play, I used the most basic form where the same model plays for both players at once for N steps (I set N to 32) across many games simultaneously before pausing to update the weights, and then continuing where it left off with the updated model.
+
+Separately, I kept a record of the previous best version of the agent that I used to measure the winrate improvement over time, but these games were run in a separate process and were not used as training data.
+
+
+Reply
+
+React
+kurupical
+Posted a year ago
+
+· 85th in this Competition
+
+Thank you for your thorough response, I now understand it well. I had been overcomplicating things, but next time, I want to take on the competition with a simple and refined approach like yours!
+
+
+Reply
+
+React
+Fei Wang
+Posted a year ago
+
+· 6th in this Competition
+
+Hi, @pressman1 Great work as always! congratulations. It's one of your comments in the Discord channel that makes me believe RL will work. The design of the main action actor head and sap head is interesting. Just curious, why did you switch to PPO in the season instead of IMPALA? Is it related to the per-unit value factorization? is there any paper behind this idea? Thanks！
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Thank you! Great work to you as well on getting RL to work, and congratulations on the top-10 finish!
+
+I used PPO this season because it was my belief that it would be easier to get working than IMPALA had been, and I guessed that the rewritten environment wouldn't be as much of a bottleneck as it was in season 1. There, I was able to get a lot of value out of running the environment and preprocessing code in a separate process from the one responsible for training since the Python feature engineering was comparatively slow. This time though, environment simulation and feature engineering was parallelized in Rust, and so was almost instantaneous compared to the time spent on NN inference and training. That all being said, the main reason I used PPO was because I didn't want to spend the time re-implementing IMPALA, compared to the ease of implementing PPO!
+
+There are papers that have demonstrated per-unit value factorization. One example from DeepMind in 2017, which inspired my attempt, is titled Value-Decomposition Networks For Cooperative Multi-Agent Learning. However, they used Q-learning, and I was unsuccessful in transferring the approach to a policy gradient setting.
+
+
+Reply
+
+1
+
+1
+Stone Tao
+Competition Host
+Posted a year ago
+
+· 509th in this Competition
+
+as usual your team's work is impressive!
+
+reminds me of season 1 when someone rewrote the engine in C++ so they could bruteforce search for the best actions, leading to a mini meta change (everyone going for the destructive option in city building).
+
+seems like each season there is always something new to learn. Congratulations again on the efforts
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Thank you! And thank you again for organizing this competition as well!
+
+
+Reply
+
+React
+Lin Myat Ko
+Posted a year ago
+
+· 14th in this Competition
+
+For this reason, next time I would use less restrictive action masking, only banning actions that are certain to be useless or meaningless
+
+Would you concern that the agents will learn slowly in general? Even in this case, the agents waste energy by blind sapping a lot. If energy is depleted, they cannot learn anymore. How would you solve this? I know reward structure cannot help in this case since it kinda defeat the purpose if we punish certain behavior.
+
+I was impressed by how quickly the transformer learned when imitating a teacher
+
+I got the same findings. However, I am not confident that if the teacher is gone, the transformer will learn stably and improving by itself. In my case, feature engineering is bare minimum so transformer would not save me. But, in your case, are you confident that transformer model will continue to learn after the teacher loss is annealed to 0?
+
+I also used GAE-Lambda for estimating the value, with a high gamma. (0.9999-1.0)
+
+Today, I learned.
+
+I learn a lot from you. I will digest your repository. Thank you very much for sharing. I do admire you so much. I'm happy to see you rise to the top and I'm also sad because I cannot beat you. Not even one match. 😭 In the beginning of season, I am not even sure whether RL would perform well or not. Seeing you at the top gave me hope. You inspired me to try harder. I hope I will put up a good fight next time.
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+I was concerned that this would slow down training, and it might still, but I think the trade-off would be worth it in the end. I was able to get an agent learning quickly on the match win reward and then transitioned to the sparse win/loss reward after that. I think that, given how quickly it was able to learn a basic policy, it would not slow things down too much to allow more blind saps. (Since the unit's energy levels are visible to the value estimator, it could quickly learn that firing totally blind saps where enemy units aren't is a bad idea once it figures out that having energy is good)
+
+Interesting that you had the same results using a transformer! I am not confident of this, as the transformer training kept collapsing when the teacher loss got too low. Furthermore, I found that clip_fraction was unusually high for the transformer model, indicating to me that the policy was somehow updating more quickly and less stable than the CNN policy. However, I think there should be a way to stabilize training, so next time I may start there and try to figure out how to make a vision transformer work for RL once a basic agent is up and running.
+
+I'm glad you found this write-up useful! And thank you for all your kind words! Haha next time I'm sure you'll beat me in some matches - best of luck to you!
+
+
+Reply
+
+1
+
+1
+Sangram Patil
+Posted a year ago
+
+· 304th in this Competition
+
+absolute cinema! 
+
+
+Reply
+
+2
+KKY
+Posted a year ago
+
+· 118th in this Competition
+
+An absolutely great solution with a detailed, clear explanation. I will try to reproduce it and be waiting Lux seesion 4. would you please share your thoughts on factorizing the value function at the unit level?
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Thank you! Unfortunately, I don't have many thoughts except that I couldn't get it to work. It feels like it should be possible to break the value into per-unit components that you could then use to optimize each units' policy directly instead of optimizing the joint policy, but I wasn't able to find or figure out a good implementation.
+
+
+Reply
+
+React
+sytnocui
+Posted a year ago
+
+· 34th in this Competition
+
+I noticed that the leader teams almost all used rule-based bots in Lux S2. Why do you think the leader teams in Lux S3 switched to RL?
+
+Congratulate again!
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Thanks again! I think this environment was much easier to get RL working for than S2, since there was less emphasis on planning and more emphasis on tactical decision making under uncertainty. Additionally, I anecdotally found this environment to be much harder to reason about strategically than S1 or S2, beyond the basic inferences such as figuring out where the points are. As a result, I think it was difficult to outperform the RL/IL algorithms with hand-crafted heuristics.
+
+
+Reply
+
+1
+sytnocui
+Posted a year ago
+
+· 34th in this Competition
+
+Congratulations on your excellent performance!
+
+I’ve heard that in RL, agents sometimes achieve high win rates against opponents of similar skill levels but struggle against significantly weaker opponents. Did you encounter this issue in this competition?
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Thank you! I'm familiar with this problem, but did not encounter it in this competition. I found my agents' internal win-rates against previous versions of themselves to be consistently predictive of their leaderboard performance.
+
+
+Reply
+
+1
+sytnocui
+Posted a year ago
+
+· 34th in this Competition
+
+Based on my guess, is it because there are visual field limits in this competition that prevent low-level opponents' actions from being included in the observation space?
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Good point! Much of the game you can't even see the opponent, so what they do can't affect your behavior.
+
+
+Reply
+
+React
+Dhruv
+Posted a year ago
+
+Thank you for sharing tthe solution it helps a lot
+
+
+Reply
+
+React
+Shohinur Pervez Shohan
+Posted a year ago
+
+Impressive approach! Using Rust for feature engineering and reinforcement learning integration is a smart move. The test-driven development strategy clearly paid off!
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Thank you, I think it did too!
+
+
+Reply
+
+React
+Zacchaeus
+Posted a year ago
+
+Congrats! 10k lines of Rust is amazing!
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+Thank you!
+
+
+Reply
+
+React
+Pizzaboi
+Posted a year ago
+
+· 69th in this Competition
+
+Hi! Which DL framwork have you used?
+
+
+Reply
+
+React
+IsaiahP
+Topic Author
+Posted a year ago
+
+· 2nd in this Competition
+
+I used PyTorch.
+
+
+Reply
+
+React
+This comment has been deleted.
+
+This comment has been deleted.
+
+
+https://www.kaggle.com/competitions/lux-ai-season-3/writeups/frog-parade-frog-parade-s-solution#3151705#3158831
