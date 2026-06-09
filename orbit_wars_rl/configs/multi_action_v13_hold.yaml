@@ -45,7 +45,7 @@ train:
   symmetric_selfplay: true
   symmetric_warmup: 0
   zero_sum_value: true
-  resume_ckpt: ./ckpt_multi_action_v12_lux_b/ckpt_007399.pkl
+  resume_ckpt: ./ckpt_multi_action_v13_hold/ckpt_000399.pkl
 
 ppo:
   lr_peak: 0.00005
@@ -58,7 +58,7 @@ ppo:
   ent_coef_src: 0.001
   ent_coef_dst: 0.001
   ent_coef_pct: 0.001
-  ent_coef_emit: 0.005
+  ent_coef_emit: 0.002
   max_grad_norm: 0.5
   gamma: 0.9999
   gae_lambda: 0.95
