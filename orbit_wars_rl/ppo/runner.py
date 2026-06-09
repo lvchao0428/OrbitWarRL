@@ -109,6 +109,11 @@ class TrainConfig:
     symmetric_warmup: int = 100
     # Zero-sum value head: value head sees both players' obs during training.
     zero_sum_value: bool = False
+    # v13: allow model to hold (not emit) at step 0; min pct bin floor.
+    allow_hold: bool = False
+    min_pct_bin: int = 0
+    # Resume from a checkpoint (path to .pkl file).
+    resume_ckpt: str = ""
 
     ppo: PPOConfig = field(default_factory=PPOConfig)
     selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)

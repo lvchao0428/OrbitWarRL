@@ -61,7 +61,8 @@ def main() -> int:
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
 
-    result = train(train_cfg, log_dir=log_dir, resume_from=args.resume_from)
+    resume_from = args.resume_from or train_cfg.resume_ckpt or None
+    result = train(train_cfg, log_dir=log_dir, resume_from=resume_from)
     h = result["history"]
     if h:
         last = h[-1]
