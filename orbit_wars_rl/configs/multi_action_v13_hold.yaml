@@ -25,7 +25,7 @@ train:
   episode_steps: 500
   eval_every: 100
   eval_num_envs: 32
-  ckpt_dir: ./ckpt_multi_action_v13b_hold
+  ckpt_dir: ./ckpt_multi_action_v13c_hold
   ckpt_every: 200
   log_every: 1
   seed: 1301
@@ -58,7 +58,7 @@ ppo:
   ent_coef_src: 0.001
   ent_coef_dst: 0.001
   ent_coef_pct: 0.001
-  ent_coef_emit: 0.002
+  ent_coef_emit: 0.01
   max_grad_norm: 0.5
   gamma: 0.9999
   gae_lambda: 0.95

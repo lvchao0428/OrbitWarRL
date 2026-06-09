@@ -262,9 +262,9 @@ def emit_pair_globals(
         & planet_mask[..., :, None]
         & planet_mask[..., None, :]
     )
-    # Require 30% overkill margin for emit_worth_it (not just breakeven).
-    # This makes hold the default when no target is decisively vulnerable.
-    min_overkill = jnp.float32(0.3) * jnp.maximum(garr_dst[..., None, :], jnp.float32(1.0))
+    # Require 10% overkill margin for emit_worth_it.
+    # Not too high (causes turtle) nor zero (causes spam).
+    min_overkill = jnp.float32(0.1) * jnp.maximum(garr_dst[..., None, :], jnp.float32(1.0))
     feasible = pair_valid & (margin > min_overkill)
     emit_worth_it = feasible.any(axis=(-2, -1)).astype(jnp.float32)
 

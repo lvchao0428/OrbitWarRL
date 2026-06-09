@@ -23,8 +23,10 @@ mkdir -p logs
 PY="${PYTHON:-python3}"
 if [ -x /home/charlie/anaconda3/bin/python ]; then PY=/home/charlie/anaconda3/bin/python; fi
 
-# Hold-friendly reward shaping (small, won't dominate terminal ±1)
-export ORBITWARS_SHAPING_HOLD_BONUS="0.01"
+# Reward shaping: capture + release (NOT hold_bonus — causes turtle)
+export ORBITWARS_SHAPING_HOLD_BONUS="0.0"
+export ORBITWARS_SHAPING_CAPTURE="0.05"
+export ORBITWARS_SHAPING_PROD_SHARE_DELTA="0.02"
 export ORBITWARS_SHAPING_RELEASE="0.005"
 export ORBITWARS_SHAPING_RELEASE_K="15.0"
 
