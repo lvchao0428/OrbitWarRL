@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import pickle
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -633,6 +634,7 @@ def train(
                         tag,
                         project_root=os.getcwd(),
                         num_games=cfg.eval_vs_v20_num_games,
+                        python=sys.executable,
                     )
                     metrics_py["eval_vs_v20/spf"] = gate["spf"]
                     metrics_py["eval_vs_v20/garr"] = gate["garr"]
