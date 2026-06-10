@@ -70,13 +70,19 @@ def gate_a(log_path: Path) -> tuple[bool, str]:
     z0 = median(r["z0"] for r in rows)
     spf = median(r["spf"] for r in rows)
     emits = median(r["emits"] for r in rows)
+    ev = _read_last_eval(log_path)
     ok = (
-        garr >= 45.0
-        and 0.30 <= z0 <= 0.70
-        and 20.0 <= spf <= 90.0
-        and emits <= 0.85
+        35.0 <= garr <= 120.0
+        and 0.25 <= z0 <= 0.65
+        and 15.0 <= spf <= 80.0
+        and 0.35 <= emits <= 0.80
     )
-    msg = f"A: garr={garr:.1f} z0={z0:.2f} spf={spf:.1f} emits={emits:.2f}"
+    if ev is not None and ev["spf"] < 3.0:
+        ok = False
+    ev_s = ""
+    if ev is not None:
+        ev_s = f" v20_spf={ev['spf']:.1f} flip={ev['flip']:.1f}%"
+    msg = f"A: garr={garr:.1f} z0={z0:.2f} spf={spf:.1f} emits={emits:.2f}{ev_s}"
     return ok, msg
 
 

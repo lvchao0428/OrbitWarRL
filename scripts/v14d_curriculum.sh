@@ -23,7 +23,7 @@ if [ -x /home/charlie/anaconda3/bin/python ]; then
 fi
 
 STATE_FILE="logs/v14d_curriculum.state.json"
-mkdir -p logs ckpt_multi_action_v14d_a ckpt_multi_action_v14d_b ckpt_multi_action_v14d_c
+mkdir -p logs ckpt_multi_action_v14d_a2 ckpt_multi_action_v14d_b ckpt_multi_action_v14d_c
 
 log() { echo "[v14d $(date -u +%H:%M:%S)] $*"; }
 
@@ -100,22 +100,22 @@ Path("$STATE_FILE").write_text(json.dumps(state, indent=2))
 PY
 }
 
-# ── Phase A: hoard ─────────────────────────────────────────────────────────
+# ── Phase A: hoard (v2 — reduced HOLD, light capture) ───────────────────────
 write_state "a" "running"
-export ORBITWARS_SHAPING_HOLD_BONUS=0.04
-export ORBITWARS_SHAPING_CAPTURE=0.0
-export ORBITWARS_SHAPING_RELEASE=0.03
-export ORBITWARS_SHAPING_RELEASE_K=30
+export ORBITWARS_SHAPING_HOLD_BONUS=0.012
+export ORBITWARS_SHAPING_CAPTURE=0.02
+export ORBITWARS_SHAPING_RELEASE=0.015
+export ORBITWARS_SHAPING_RELEASE_K=22
 export ORBITWARS_SHAPING_EMIT_LOG=0.0
-export ORBITWARS_SHAPING_PROD_SHARE_DELTA=0.03
+export ORBITWARS_SHAPING_PROD_SHARE_DELTA=0.04
 export ORBITWARS_SHAPING_ONE_SHIP_PENALTY=0.02
 export ORBITWARS_SHAPING_ONE_SHIP_THRESH=3
 
 LOG_A="logs/v14d_phase_a.log"
 : > "$LOG_A"
 run_train "a" orbit_wars_rl/configs/multi_action_v14d_phase_a.yaml "$LOG_A"
-maybe_extend "a" orbit_wars_rl/configs/multi_action_v14d_phase_a.yaml "$LOG_A" ckpt_multi_action_v14d_a 500
-CKPT_A=$(latest_ckpt ckpt_multi_action_v14d_a)
+maybe_extend "a" orbit_wars_rl/configs/multi_action_v14d_phase_a.yaml "$LOG_A" ckpt_multi_action_v14d_a2 500
+CKPT_A=$(latest_ckpt ckpt_multi_action_v14d_a2)
 if [ -z "$CKPT_A" ]; then
   log "FATAL: no phase A checkpoint"
   write_state "a" "failed"

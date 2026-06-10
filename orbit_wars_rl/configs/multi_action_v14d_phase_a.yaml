@@ -1,7 +1,7 @@
-# v14d Phase A — 囤兵/耐心（从头，无 force_emit_worth_it）
+# v14d Phase A v2 — 囤兵/耐心（HOLD 减弱 + 轻 capture 引导）
 #
-# 目标: 学会开局积累，前 20–30 回合少射；自博弈 garr↑ z0 合理
-# 退出 gate: garr≥45, z0∈[0.30,0.70], spf∈[20,90]（见 scripts/v14d_gate_check.py）
+# v1 失败: HOLD=0.04 → z0≈100%, vs v20 零发射
+# v2: HOLD=0.012, CAPTURE=0.02, garr 上限 gate, eval spf>0 校验
 
 train:
   num_envs: 64
@@ -11,10 +11,10 @@ train:
   episode_steps: 500
   eval_every: 100
   eval_num_envs: 32
-  ckpt_dir: ./ckpt_multi_action_v14d_a
+  ckpt_dir: ./ckpt_multi_action_v14d_a2
   ckpt_every: 200
   log_every: 1
-  seed: 1500
+  seed: 1510
   d_model: 256
   n_layers: 4
   n_heads: 8
@@ -45,7 +45,7 @@ ppo:
   ent_coef_src: 0.002
   ent_coef_dst: 0.002
   ent_coef_pct: 0.004
-  ent_coef_emit: 0.008
+  ent_coef_emit: 0.005
   max_grad_norm: 0.5
   gamma: 0.9999
   gae_lambda: 0.95

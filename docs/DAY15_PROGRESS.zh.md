@@ -70,12 +70,10 @@ bash scripts/monitor_v14d.sh
 
 | 阶段 | 状态 | 开始 | Gate | 备注 |
 |------|------|------|------|------|
-| A 囤兵 | **运行中** | 2026-06-11 00:20 CST | — | seed=1500, u≤1200, HOLD=0.04 |
-| B 占点 | 待 A | — | — | resume best A |
-| C 微调 | 待 B | — | — | resume best B |
+| A 囤兵 v2 | **重跑中** | 2026-06-11 | — | HOLD 0.04→**0.012**, +CAPTURE 0.02, ckpt `a2` |
 
-5090 启动: `nohup bash scripts/v14d_curriculum.sh` (PID train ~1985061)  
-Git: `6eb27a4` pushed + rsync 已同步。
+**v1 失败（已停）**: HOLD=0.04 → z0≈100%, vs v20 **0 发射** / 0 capture。  
+**v2 改动**: HOLD=0.012, CAPTURE=0.02, gate 加 garr 上限 + v20 spf≥3。
 
 ---
 
