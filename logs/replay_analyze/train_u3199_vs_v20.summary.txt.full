@@ -1,4 +1,4 @@
-[92m17:41:44 - LiteLLM:WARNING[0m: get_model_cost_map.py:271 - LiteLLM: Failed to fetch remote model cost map from https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json: The read operation timed out. Falling back to local backup.
+[92m18:04:15 - LiteLLM:WARNING[0m: get_model_cost_map.py:271 - LiteLLM: Failed to fetch remote model cost map from https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json: The read operation timed out. Falling back to local backup.
 [kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: Successfully loaded OpenSpiel environments: 23.
 [kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_amazons
 [kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_backgammon
@@ -29,135 +29,135 @@ agent A (player 0): submission_rl_train_u3199.py
 agent B (player 1): submission_v20_0513.py
 running 3 games, seed_base=0...
 
-  [game 1/3] seed=0 steps=149 p0_outcome=loss elapsed=34.7s
-  [game 2/3] seed=1 steps=175 p0_outcome=loss elapsed=15.0s
-  [game 3/3] seed=2 steps=161 p0_outcome=loss elapsed=11.2s
+  [game 1/3] seed=0 steps=150 p0_outcome=loss elapsed=47.9s
+  [game 2/3] seed=1 steps=68 p0_outcome=loss elapsed=5.5s
+  [game 3/3] seed=2 steps=112 p0_outcome=loss elapsed=13.7s
 
 ################ WINDOW = first_80turns ################
-=== A = submission_rl_train_u3199.py (player 0) (3 games, 485 turns) ===
+=== A = submission_rl_train_u3199.py (player 0) (3 games, 330 turns) ===
   outcome              W/L/D = 0/3/0
-  mean_emits_per_turn  = 1.03
-  zero_emit_rate       = 0.62%
-  mean_ships_per_fleet = 4.29
-  mean_garrison_my     = 15.54
-  p95_garrison_my      = 91
-  fleets_launched      = 298
-  fleet_flip_rate      = 2.68%   (fleets whose arrival flipped a planet)
-  fleet_nonflip_rate   = 94.30%   (crude proxy; see source for caveat)
+  mean_emits_per_turn  = 0.04
+  zero_emit_rate       = 66.36%
+  mean_ships_per_fleet = 48.00
+  mean_garrison_my     = 85.82
+  p95_garrison_my      = 272
+  fleets_launched      = 17
+  fleet_flip_rate      = 47.06%   (fleets whose arrival flipped a planet)
+  fleet_nonflip_rate   = 52.94%   (crude proxy; see source for caveat)
   captures             = 8
   pct_bin_distribution (bin@val: pct):
-      bin0 @ 0.10: 0.4%
-      bin1 @ 0.20: 1.6%
-      bin2 @ 0.30: 1.6%
-      bin3 @ 0.40: 2.8%
-      bin4 @ 0.55: 6.5%
-      bin5 @ 0.70: 2.4%
-      bin6 @ 0.85: 7.3%
-      bin7 @ 1.00: 77.4%
+      bin0 @ 0.10: 0.0%
+      bin1 @ 0.20: 0.0%
+      bin2 @ 0.30: 33.3%
+      bin3 @ 0.40: 0.0%
+      bin4 @ 0.55: 0.0%
+      bin5 @ 0.70: 0.0%
+      bin6 @ 0.85: 0.0%
+      bin7 @ 1.00: 66.7%
   emit_count_distribution (n_emits per turn: pct):
-      0: 1.2%
-      1: 97.9%
+      0: 96.1%
+      1: 3.9%
       2: 0.0%
       3: 0.0%
       4: 0.0%
-      5: 0.4%
+      5: 0.0%
       6: 0.0%
       7: 0.0%
-      8: 0.4%
+      8: 0.0%
 
-=== B = submission_v20_0513.py (player 1) (3 games, 485 turns) ===
+=== B = submission_v20_0513.py (player 1) (3 games, 330 turns) ===
   outcome              W/L/D = 3/0/0
-  mean_emits_per_turn  = 0.62
-  zero_emit_rate       = 33.61%
-  mean_ships_per_fleet = 15.51
-  mean_garrison_my     = 219.24
-  p95_garrison_my      = 821
-  fleets_launched      = 296
-  fleet_flip_rate      = 20.61%   (fleets whose arrival flipped a planet)
-  fleet_nonflip_rate   = 75.00%   (crude proxy; see source for caveat)
-  captures             = 61
+  mean_emits_per_turn  = 0.83
+  zero_emit_rate       = 38.48%
+  mean_ships_per_fleet = 16.18
+  mean_garrison_my     = 128.92
+  p95_garrison_my      = 489
+  fleets_launched      = 309
+  fleet_flip_rate      = 14.89%   (fleets whose arrival flipped a planet)
+  fleet_nonflip_rate   = 77.35%   (crude proxy; see source for caveat)
+  captures             = 46
   pct_bin_distribution (bin@val: pct):
-      bin0 @ 0.10: 0.7%
-      bin1 @ 0.20: 4.7%
-      bin2 @ 0.30: 8.7%
-      bin3 @ 0.40: 16.8%
-      bin4 @ 0.55: 21.5%
-      bin5 @ 0.70: 18.1%
-      bin6 @ 0.85: 4.0%
-      bin7 @ 1.00: 25.5%
+      bin0 @ 0.10: 0.5%
+      bin1 @ 0.20: 6.3%
+      bin2 @ 0.30: 2.1%
+      bin3 @ 0.40: 15.9%
+      bin4 @ 0.55: 10.1%
+      bin5 @ 0.70: 17.5%
+      bin6 @ 0.85: 6.3%
+      bin7 @ 1.00: 41.3%
   emit_count_distribution (n_emits per turn: pct):
-      0: 67.9%
-      1: 20.0%
-      2: 4.2%
-      3: 4.2%
-      4: 1.7%
-      5: 0.8%
-      6: 0.4%
-      7: 0.4%
-      8: 0.4%
+      0: 55.7%
+      1: 26.8%
+      2: 7.0%
+      3: 3.9%
+      4: 3.9%
+      5: 1.3%
+      6: 1.3%
+      7: 0.0%
+      8: 0.0%
 
 
 ################ WINDOW = full_game ################
-=== A = submission_rl_train_u3199.py (player 0) (3 games, 485 turns) ===
+=== A = submission_rl_train_u3199.py (player 0) (3 games, 330 turns) ===
   outcome              W/L/D = 0/3/0
-  mean_emits_per_turn  = 0.61
-  zero_emit_rate       = 40.82%
-  mean_ships_per_fleet = 4.07
-  mean_garrison_my     = 8.04
-  p95_garrison_my      = 49
-  fleets_launched      = 298
-  fleet_flip_rate      = 2.68%   (fleets whose arrival flipped a planet)
-  fleet_nonflip_rate   = 94.30%   (crude proxy; see source for caveat)
+  mean_emits_per_turn  = 0.05
+  zero_emit_rate       = 94.85%
+  mean_ships_per_fleet = 47.82
+  mean_garrison_my     = 86.60
+  p95_garrison_my      = 259
+  fleets_launched      = 17
+  fleet_flip_rate      = 47.06%   (fleets whose arrival flipped a planet)
+  fleet_nonflip_rate   = 52.94%   (crude proxy; see source for caveat)
   captures             = 8
   pct_bin_distribution (bin@val: pct):
-      bin0 @ 0.10: 1.7%
-      bin1 @ 0.20: 1.7%
-      bin2 @ 0.30: 1.7%
-      bin3 @ 0.40: 2.7%
-      bin4 @ 0.55: 5.4%
-      bin5 @ 0.70: 2.0%
-      bin6 @ 0.85: 11.7%
-      bin7 @ 1.00: 73.2%
+      bin0 @ 0.10: 0.0%
+      bin1 @ 0.20: 0.0%
+      bin2 @ 0.30: 29.4%
+      bin3 @ 0.40: 5.9%
+      bin4 @ 0.55: 0.0%
+      bin5 @ 0.70: 0.0%
+      bin6 @ 0.85: 0.0%
+      bin7 @ 1.00: 64.7%
   emit_count_distribution (n_emits per turn: pct):
-      0: 40.8%
-      1: 58.8%
+      0: 94.8%
+      1: 5.2%
       2: 0.0%
       3: 0.0%
       4: 0.0%
-      5: 0.2%
+      5: 0.0%
       6: 0.0%
       7: 0.0%
-      8: 0.2%
+      8: 0.0%
 
-=== B = submission_v20_0513.py (player 1) (3 games, 485 turns) ===
+=== B = submission_v20_0513.py (player 1) (3 games, 330 turns) ===
   outcome              W/L/D = 3/0/0
-  mean_emits_per_turn  = 0.61
-  zero_emit_rate       = 67.63%
-  mean_ships_per_fleet = 19.08
-  mean_garrison_my     = 1416.94
-  p95_garrison_my      = 5398
-  fleets_launched      = 296
-  fleet_flip_rate      = 20.61%   (fleets whose arrival flipped a planet)
-  fleet_nonflip_rate   = 75.00%   (crude proxy; see source for caveat)
-  captures             = 61
+  mean_emits_per_turn  = 0.94
+  zero_emit_rate       = 50.61%
+  mean_ships_per_fleet = 20.25
+  mean_garrison_my     = 363.15
+  p95_garrison_my      = 1690
+  fleets_launched      = 309
+  fleet_flip_rate      = 14.89%   (fleets whose arrival flipped a planet)
+  fleet_nonflip_rate   = 77.35%   (crude proxy; see source for caveat)
+  captures             = 46
   pct_bin_distribution (bin@val: pct):
-      bin0 @ 0.10: 15.5%
-      bin1 @ 0.20: 13.2%
-      bin2 @ 0.30: 6.8%
-      bin3 @ 0.40: 13.2%
-      bin4 @ 0.55: 16.6%
-      bin5 @ 0.70: 11.5%
-      bin6 @ 0.85: 5.4%
-      bin7 @ 1.00: 17.9%
+      bin0 @ 0.10: 1.0%
+      bin1 @ 0.20: 5.8%
+      bin2 @ 0.30: 4.2%
+      bin3 @ 0.40: 16.8%
+      bin4 @ 0.55: 13.6%
+      bin5 @ 0.70: 14.6%
+      bin6 @ 0.85: 7.1%
+      bin7 @ 1.00: 36.9%
   emit_count_distribution (n_emits per turn: pct):
-      0: 67.6%
-      1: 20.8%
-      2: 4.3%
-      3: 3.7%
-      4: 1.2%
-      5: 1.2%
-      6: 0.2%
-      7: 0.2%
-      8: 0.6%
+      0: 50.6%
+      1: 28.8%
+      2: 8.5%
+      3: 5.2%
+      4: 3.6%
+      5: 2.1%
+      6: 1.2%
+      7: 0.0%
+      8: 0.0%
 
 [saved] logs/replay_analyze/train_u3199_vs_v20.json

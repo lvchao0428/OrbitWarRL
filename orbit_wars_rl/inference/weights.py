@@ -156,22 +156,33 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
 
     # pct_head/fc1 input layout:
     #   legacy: 3*d_model + 1
-    #   f26:    3*d_model + 1 + 2
+    #   f26:    3*d_model + 1 + 2  (pct_pair_dim=2)
+    #   v14:    3*d_model + 1 + 6  (pct_pair_dim=6, extended pair feats)
     has_pct_pair = False
+    pct_pair_dim = 0
     pct_key = "pct_head/fc1/kernel"
     if pct_key in flat:
         pct_in = int(flat[pct_key].shape[0])
-        if pct_in == 3 * d_model + 3:
+        if pct_in == 3 * d_model + 7:
             has_pct_pair = True
+            pct_pair_dim = 6
+        elif pct_in == 3 * d_model + 3:
+            has_pct_pair = True
+            pct_pair_dim = 2
         elif pct_in == 3 * d_model + 1:
             has_pct_pair = False
+            pct_pair_dim = 0
         else:
             raise ValueError(
                 f"unexpected pct_head/fc1 input dim={pct_in}; "
-                f"d_model={d_model}, expected 3*d_model+1 or 3*d_model+3"
+                f"d_model={d_model}, expected 3*d_model+1, +3, or +7"
             )
 
     has_pair = has_emit_pair and has_dst_pair and has_pct_pair
+
+    # Infer NUM_PCT_BINS from pct_head/logits output dim.
+    pct_logits_key = "pct_head/logits/kernel"
+    num_pct_bins = int(flat[pct_logits_key].shape[-1]) if pct_logits_key in flat else 8
 
     return {
         "d_model": d_model,
@@ -188,6 +199,8 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
         "dst_pair_dim": dst_pair_dim,
         "emit_pair_dim": emit_pair_dim,
         "has_pct_pair": has_pct_pair,
+        "pct_pair_dim": pct_pair_dim,
+        "num_pct_bins": num_pct_bins,
     }
 
 

@@ -79,7 +79,7 @@ N_LAYERS = 4
 MAX_FLEETS_PER_TURN = 8
 
 _LOG_1000 = float(np.log(1000.0))
-_PCT_BIN_TABLE_NP = np.array(PCT_BIN_VALUES, dtype=np.float32)
+_PCT_BIN_TABLE_NP = None
 
 
 # --- feature encoding (mirror features.encode) --------------------------------
@@ -617,9 +617,16 @@ def _emit_pair_globals(planet_x, planet_y, planet_ships, planet_mask, my_mask,
     )
 
 
+def _get_pct_bin_table():
+    global _PCT_BIN_TABLE_NP
+    if _PCT_BIN_TABLE_NP is None or len(_PCT_BIN_TABLE_NP) != NUM_PCT_BINS:
+        _PCT_BIN_TABLE_NP = np.array(PCT_BIN_VALUES, dtype=np.float32)
+    return _PCT_BIN_TABLE_NP
+
+
 def _pct_min_bin_index(garr_dst, remaining_src):
     rem = max(float(remaining_src), 1.0)
-    pct_bins = np.array(PCT_BIN_VALUES, dtype=np.float32)
+    pct_bins = _get_pct_bin_table()
     ships_at_bins = np.floor(rem * pct_bins)
     flip_at_bin = ships_at_bins > float(garr_dst)
     if bool(flip_at_bin.any()):
@@ -627,16 +634,27 @@ def _pct_min_bin_index(garr_dst, remaining_src):
     return len(pct_bins) - 1
 
 
-def _pct_low_bin_mask(min_bin, num_bins=NUM_PCT_BINS):
+def _pct_low_bin_mask(min_bin, num_bins=None):
+    if num_bins is None:
+        num_bins = NUM_PCT_BINS
     return np.arange(num_bins, dtype=np.int32) >= int(min_bin)
 
 
-def _pct_pair_features(garr_dst, remaining_src):
+def _pct_pair_features(garr_dst, remaining_src, *,
+                       enemy_inbound_norm=0.0,
+                       net_garrison_t15_dst=0.0,
+                       src_prod_ratio=0.0,
+                       fleet_count_norm=0.0,
+                       extended=False):
     min_bin = _pct_min_bin_index(garr_dst, remaining_src)
-    min_bin_norm = min_bin / (NUM_PCT_BINS - 1)
+    min_bin_norm = min_bin / max(NUM_PCT_BINS - 1, 1)
     rem = max(float(remaining_src), 1.0)
     ships_at_bin5 = float(np.floor(rem * 0.7))
     pair_flip_bin5 = 1.0 if ships_at_bin5 > float(garr_dst) else 0.0
+    if extended:
+        return np.array([min_bin_norm, pair_flip_bin5,
+                         enemy_inbound_norm, net_garrison_t15_dst,
+                         src_prod_ratio, fleet_count_norm], dtype=np.float32)
     return np.array([min_bin_norm, pair_flip_bin5], dtype=np.float32)
 
 
@@ -915,10 +933,23 @@ def greedy_multi_action(W, enc, home_idx: int = 0) -> Tuple[List[int], List[int]
         dst_t = int(np.argmax(d_logits))
         dst_emb = planet_emb[dst_t]
         src_remaining_norm = float(remaining_norm[src_t])
-        # f26: pct pair feats use chosen (src, dst).
         garr = float(ships[dst_t])
         rem = float(remaining[src_t])
-        pct_pair = _pct_pair_features(garr, rem)
+        ext_kw: dict = {}
+        if _PCT_PAIR_DIM >= 6:
+            pf = enc["planet_feats"]
+            _ein = float(pf[dst_t, 10])
+            _ngt = float(pf[dst_t, 38])
+            _sp_val = float(pf[src_t, 7])
+            _my_prod = float((pf[:, 7] * my_mask.astype(np.float32)).sum())
+            ext_kw = dict(
+                enemy_inbound_norm=_ein,
+                net_garrison_t15_dst=_ngt,
+                src_prod_ratio=_sp_val / max(_my_prod, 1e-6),
+                fleet_count_norm=float(t) / max(MAX_FLEETS_PER_TURN - 1, 1),
+                extended=True,
+            )
+        pct_pair = _pct_pair_features(garr, rem, **ext_kw)
         min_bin = _pct_min_bin_index(garr, rem)
         pct_mask = _pct_low_bin_mask(min_bin)
         p_logits = _pct_head(
@@ -932,7 +963,7 @@ def greedy_multi_action(W, enc, home_idx: int = 0) -> Tuple[List[int], List[int]
 
         if emit_t:
             avail_at_src = max(int(ships[src_t]) - int(reserved[src_t]), 0)
-            mult = np.float32(avail_at_src) * _PCT_BIN_TABLE_NP[pct_t]
+            mult = np.float32(avail_at_src) * _get_pct_bin_table()[pct_t]
             ships_t = max(1, int(np.floor(mult)))
             ships_t = min(ships_t, avail_at_src)
             reserved[src_t] += ships_t
@@ -981,10 +1012,11 @@ def decode_multi_to_kaggle_moves(
 
 WEIGHTS_B64 = "__WEIGHTS_B64__"
 _PARAMS_CACHE: Optional[Dict[str, np.ndarray]] = None
+_PCT_PAIR_DIM = 2
 
 
 def _load_weights() -> Dict[str, np.ndarray]:
-    global _PARAMS_CACHE
+    global _PARAMS_CACHE, _PCT_PAIR_DIM
     if _PARAMS_CACHE is not None:
         return _PARAMS_CACHE
     if WEIGHTS_B64 == "__WEIGHTS_B64__":
@@ -996,6 +1028,24 @@ def _load_weights() -> Dict[str, np.ndarray]:
     raw = zlib.decompress(base64.b64decode(WEIGHTS_B64))
     with np.load(io.BytesIO(raw)) as data:
         _PARAMS_CACHE = {k: np.asarray(data[k], dtype=np.float32) for k in data.files}
+    pct_k = "pct_head/fc1/kernel"
+    if pct_k in _PARAMS_CACHE:
+        pct_in = int(_PARAMS_CACHE[pct_k].shape[0])
+        d_model = int(_PARAMS_CACHE["encoder/planet_proj/kernel"].shape[-1])
+        extra = pct_in - 3 * d_model - 1
+        _PCT_PAIR_DIM = max(extra, 0)
+    pct_logits_k = "pct_head/logits/kernel"
+    if pct_logits_k in _PARAMS_CACHE:
+        global NUM_PCT_BINS, PCT_BIN_VALUES, MIN_PCT_BIN
+        detected_bins = int(_PARAMS_CACHE[pct_logits_k].shape[-1])
+        if detected_bins != NUM_PCT_BINS:
+            NUM_PCT_BINS = detected_bins
+            if detected_bins == 16:
+                PCT_BIN_VALUES = (
+                    0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40,
+                    0.45, 0.50, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00,
+                )
+                MIN_PCT_BIN = 0
     return _PARAMS_CACHE
 
 

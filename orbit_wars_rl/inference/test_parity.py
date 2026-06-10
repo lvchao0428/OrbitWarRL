@@ -165,6 +165,12 @@ def run_parity(
         jax_value = float(np.asarray(sa.value))
 
         # --- numpy multi-action ---
+        ext_kwargs: dict = {}
+        if arch.get("pct_pair_dim", 2) >= 6:
+            ext_kwargs["pct_pair_dim"] = 6
+            ext_kwargs["in_foe_norm"] = np.asarray(planet_feats[:, 10])
+            ext_kwargs["net_garrison_t15"] = np.asarray(planet_feats[:, 38])
+            ext_kwargs["planet_prod"] = np.asarray(planet_feats[:, 7])
         np_src, np_dst, np_pct, np_emit, np_value = nf.greedy_multi_action(
             flat, planet_feats, planet_mask, fleet_feats, fleet_mask,
             global_feats, my_planet_mask, planet_ships,
@@ -175,6 +181,7 @@ def run_parity(
             emit_hard_stop=emit_hard_stop,
             emit_hard_stop_min_step=emit_hard_stop_min_step,
             flip_hard_mask=flip_hard_mask,
+            **ext_kwargs,
         )
 
         # jax emit_mask is K-long; numpy returns only the emitted slice.

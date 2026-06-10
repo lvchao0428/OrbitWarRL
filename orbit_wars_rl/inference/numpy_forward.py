@@ -196,12 +196,27 @@ def _pct_low_bin_mask_np(min_bin: int, num_bins: int = len(_PCT_BIN_TABLE_NP)) -
     return np.arange(num_bins, dtype=np.int32) >= min_bin
 
 
-def _pct_pair_features_np(garr_dst: float, remaining_src: float) -> np.ndarray:
+def _pct_pair_features_np(
+    garr_dst: float,
+    remaining_src: float,
+    *,
+    enemy_inbound_norm: float = 0.0,
+    net_garrison_t15_dst: float = 0.0,
+    src_prod_ratio: float = 0.0,
+    fleet_count_norm: float = 0.0,
+    extended: bool = False,
+) -> np.ndarray:
     min_bin = _pct_min_bin_index_np(garr_dst, remaining_src)
     min_bin_norm = min_bin / (len(_PCT_BIN_TABLE_NP) - 1)
     rem = max(remaining_src, 1.0)
     ships_at_bin5 = float(np.floor(rem * 0.7))
     pair_flip_bin5 = 1.0 if ships_at_bin5 > garr_dst else 0.0
+    if extended:
+        return np.array([
+            min_bin_norm, pair_flip_bin5,
+            enemy_inbound_norm, net_garrison_t15_dst,
+            src_prod_ratio, fleet_count_norm,
+        ], dtype=np.float32)
     return np.array([min_bin_norm, pair_flip_bin5], dtype=np.float32)
 
 
@@ -584,6 +599,10 @@ def greedy_multi_action(
     emit_hard_stop_min_step: int = 1,
     flip_hard_mask: bool = False,
     allow_hold: bool = False,
+    pct_pair_dim: int = 2,
+    planet_prod: np.ndarray | None = None,   # (P,) float -- production rate
+    in_foe_norm: np.ndarray | None = None,   # (P,) float -- enemy inbound (log-normalised)
+    net_garrison_t15: np.ndarray | None = None,  # (P,) float -- predicted garrison balance t+15
 ) -> Tuple[list, list, list, list, float]:
     """Greedy multi-fleet action mirroring ActorCritic.__call__(deterministic=True).
 
@@ -688,7 +707,23 @@ def greedy_multi_action(
         if use_pair:
             garr = float(ships[dst_t])
             rem = float(remaining[src_t])
-            pct_pair = _pct_pair_features_np(garr, rem)
+            ext_kwargs: dict = {}
+            if pct_pair_dim >= 6:
+                _ein = float(in_foe_norm[dst_t]) if in_foe_norm is not None else 0.0
+                _ngt = float(net_garrison_t15[dst_t]) if net_garrison_t15 is not None else 0.0
+                _sp = 0.0
+                if planet_prod is not None:
+                    my_prod_total = float((planet_prod * my_mask_b.astype(np.float32)).sum())
+                    _sp = float(planet_prod[src_t]) / max(my_prod_total, 1e-6)
+                _fc = float(t) / max(max_fleets_per_turn - 1, 1)
+                ext_kwargs = dict(
+                    enemy_inbound_norm=_ein,
+                    net_garrison_t15_dst=_ngt,
+                    src_prod_ratio=_sp,
+                    fleet_count_norm=_fc,
+                    extended=True,
+                )
+            pct_pair = _pct_pair_features_np(garr, rem, **ext_kwargs)
             min_bin = _pct_min_bin_index_np(garr, rem)
             pct_mask = _pct_low_bin_mask_np(min_bin)
         p_logits = pct_head(
