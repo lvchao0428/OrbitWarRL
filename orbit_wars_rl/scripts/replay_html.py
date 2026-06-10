@@ -31,6 +31,41 @@ import sys
 from pathlib import Path
 
 from kaggle_environments import make
+from kaggle_environments.utils import get_player
+
+
+def _render_html(env) -> str:
+    """Build a self-contained HTML replay page.
+
+    kaggle_environments 1.19+ orbit_wars html_renderer(env, mode) needs an
+    explicit mode arg, so env.render(mode="html") can raise TypeError.  The
+    fallback must wrap the renderer JS with get_player(); writing the raw JS
+    alone produces a page that browsers show as unreadable source text.
+    """
+    try:
+        html = env.render(mode="html")
+        if isinstance(html, str) and ("<!doctype" in html.lower() or "<html" in html.lower()):
+            return html
+    except TypeError:
+        pass
+
+    renderer = env.html_renderer(env, mode="html")
+    if not isinstance(renderer, str):
+        raise RuntimeError(f"html_renderer returned {type(renderer)}, expected str")
+
+    # Full Vite visualizer bundle (when shipped with the env package).
+    if renderer.lstrip().startswith("<!") or renderer.lstrip().startswith("<html"):
+        return renderer
+
+    window_kaggle = {
+        "debug": env.debug,
+        "playing": False,
+        "step": len(env.steps) - 1,
+        "controls": True,
+        "environment": env.toJSON(),
+        "logs": env.logs,
+    }
+    return get_player(window_kaggle, renderer)
 
 
 def _write_replay(env, out_dir: Path, tag: str) -> tuple[Path, Path]:
@@ -44,12 +79,7 @@ def _write_replay(env, out_dir: Path, tag: str) -> tuple[Path, Path]:
     else:
         json_path.write_text(json.dumps(episode_json, indent=2), encoding="utf-8")
 
-    try:
-        html = env.render(mode="html")
-    except TypeError:
-        html = env.html_renderer(env, mode="html")
-    if not isinstance(html, str):
-        raise RuntimeError(f"render(mode=html) returned {type(html)}, expected str")
+    html = _render_html(env)
     html_path.write_text(html, encoding="utf-8")
 
     return json_path, html_path

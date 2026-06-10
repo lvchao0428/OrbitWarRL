@@ -599,6 +599,8 @@ def greedy_multi_action(
     emit_hard_stop_min_step: int = 1,
     flip_hard_mask: bool = False,
     allow_hold: bool = False,
+    force_emit_worth_it: bool = False,
+    min_pct_bin: int = 0,
     pct_pair_dim: int = 2,
     planet_prod: np.ndarray | None = None,   # (P,) float -- production rate
     in_foe_norm: np.ndarray | None = None,   # (P,) float -- enemy inbound (log-normalised)
@@ -668,8 +670,16 @@ def greedy_multi_action(
             pair_feats_g=emit_pair_g,
             emit_force_stop=emit_force_stop,
         )
-        if t == 0 and not allow_hold:
-            decision = (not no_options)
+        force_first = (
+            t == 0
+            and (not no_options)
+            and (
+                (not allow_hold)
+                or (force_emit_worth_it and emit_worth_it)
+            )
+        )
+        if force_first:
+            decision = True
         else:
             emit_pred = int(np.argmax(e_logits))
             decision = (emit_pred == 1) and (not no_options)
@@ -725,6 +735,8 @@ def greedy_multi_action(
                 )
             pct_pair = _pct_pair_features_np(garr, rem, **ext_kwargs)
             min_bin = _pct_min_bin_index_np(garr, rem)
+            if min_pct_bin > 0:
+                min_bin = max(min_bin, int(min_pct_bin))
             pct_mask = _pct_low_bin_mask_np(min_bin)
         p_logits = pct_head(
             W, src_emb, dst_emb, global_emb,

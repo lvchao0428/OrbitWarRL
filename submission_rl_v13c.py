@@ -54,6 +54,7 @@ DST_PAIR_DIM = 5
 EMIT_HARD_STOP = 1
 EMIT_HARD_STOP_MIN_STEP = 0
 ALLOW_HOLD = 1
+FORCE_EMIT_WORTH_IT = 0
 MIN_PCT_BIN = 2
 NUM_PCT_BINS = 8
 PCT_BIN_VALUES = (0.10, 0.20, 0.30, 0.40, 0.55, 0.70, 0.85, 1.00)
@@ -901,8 +902,15 @@ def greedy_multi_action(W, enc, home_idx: int = 0) -> Tuple[List[int], List[int]
             pair_feats_g=emit_pair_g,
             emit_force_stop=emit_force_stop,
         )
-        if t == 0 and not ALLOW_HOLD:
-            decision = (not no_options)
+        if (
+            t == 0
+            and (not no_options)
+            and (
+                (not ALLOW_HOLD)
+                or (FORCE_EMIT_WORTH_IT and emit_worth_it)
+            )
+        ):
+            decision = True
         else:
             emit_pred = int(np.argmax(e_logits))
             decision = (emit_pred == 1) and (not no_options)
@@ -1040,12 +1048,11 @@ def _load_weights() -> Dict[str, np.ndarray]:
         detected_bins = int(_PARAMS_CACHE[pct_logits_k].shape[-1])
         if detected_bins != NUM_PCT_BINS:
             NUM_PCT_BINS = detected_bins
-            if detected_bins == 16:
-                PCT_BIN_VALUES = (
-                    0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40,
-                    0.45, 0.50, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00,
-                )
-                MIN_PCT_BIN = 0
+        if detected_bins == 16:
+            PCT_BIN_VALUES = (
+                0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40,
+                0.45, 0.50, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00,
+            )
     return _PARAMS_CACHE
 
 

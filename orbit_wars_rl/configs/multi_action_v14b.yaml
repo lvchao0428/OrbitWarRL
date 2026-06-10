@@ -1,0 +1,93 @@
+# v14b — v14 架构 + 反乱射/反囤兵 + 强化 capture shaping（从头训练）
+#
+# v14 实验结论 (u8599–u12299):
+#   - u8599 乱射期: spf≈5, z0≈1%, 每回合 1 艘 spam, flip≈2%
+#   - u12199 囤兵期: spf≈128, z0≈67%, allow_hold 坍缩, vs v20 0 胜
+#
+# v14b 继承自 v14:
+#   ✓ NUM_PCT_BINS=16 (constants.py, 5%~100%)
+#   ✓ pct pair features 6-dim (enemy_inbound, net_garrison_t15, src_prod_ratio, fleet_count)
+#   ✓ PctHead hidden=128, d_model=256, n_layers=4
+#   ✓ 39-dim planet / 24-dim global features (同 v13c_final 编码)
+#   ✓ symmetric self-play + zero_sum_value + gamma=0.9999
+#   ✓ emit_hard_stop + flip_hard_mask (射太阳/无法 flip 硬 mask)
+#   ✓ eval_vs_v20 每 100 updates
+#
+# v14b 相对 v14 的改动:
+#   1. allow_hold: false — t=0 有兵必发，禁止整回合 skip（阻断囤兵局部最优）
+#   2. min_pct_bin: 5 — 16-bin 表 index5=30%，对齐 v13c 的 30% 下限，阻断 1 艘 spam
+#   3. CAPTURE shaping 0.02→0.08 — 翻转星球给更强中期信号（仍稀疏 terminal ±1 为主）
+#   4. ONE_SHIP_PENALTY=0.03 — 惩罚 ≤3 艘的无效发射（防 u8599 式乱射）
+#   5. 不奖 emit 频率 / 不奖 hold — 节奏由 capture+win 驱动，非 emit_log
+#   6. 从头训练 (action space 同 v14，不 resume v14 ckpt — 策略已坍缩)
+#
+# Launch (5090):
+#   bash scripts/v14b_train.sh
+#
+# 或:
+#   ORBITWARS_SHAPING_PROD_SHARE_DELTA=0.05 \
+#   ORBITWARS_SHAPING_CAPTURE=0.08 \
+#   ORBITWARS_SHAPING_RELEASE=0.01 \
+#   ORBITWARS_SHAPING_RELEASE_K=15 \
+#   ORBITWARS_SHAPING_ONE_SHIP_PENALTY=0.03 \
+#   ORBITWARS_SHAPING_ONE_SHIP_THRESH=3 \
+#   python -m orbit_wars_rl.scripts.train \
+#     --config orbit_wars_rl/configs/multi_action_v14b.yaml \
+#     --log-dir logs/v14b
+#
+# 观察指标 (前 3000 updates):
+#   - z0 应 < 0.15 (allow_hold=false → 训练 z0 接近 0)
+#   - spf 应在 10–40 区间 (非 1 也非 100+)
+#   - flip > 6%, vs v20 开始出现胜场
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 15000
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v14b
+  ckpt_every: 200
+  log_every: 1
+  seed: 1410
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: false
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00005
+  lr_warmup_steps: 50
+  lr_decay_steps: 120000
+  lr_floor: 0.00001
+  clip_eps: 0.10
+  value_clip_eps: 0.10
+  value_coef: 0.5
+  ent_coef_src: 0.002
+  ent_coef_dst: 0.002
+  ent_coef_pct: 0.005
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.03
+
+selfplay:
+  enabled: false

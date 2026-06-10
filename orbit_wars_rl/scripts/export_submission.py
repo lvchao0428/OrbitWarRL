@@ -126,7 +126,7 @@ def _read_template_dims(template_path: str) -> dict[str, int]:
 
 
 def _read_template_mask_flags(template_path: str) -> dict[str, bool]:
-    """Parse EMIT_HARD_STOP / F31_HARD_MASKS from submission template."""
+    """Parse EMIT_HARD_STOP / F31_HARD_MASKS / emit-hold flags from template."""
     import re
 
     txt = Path(template_path).read_text(encoding="utf-8")
@@ -137,10 +137,18 @@ def _read_template_mask_flags(template_path: str) -> dict[str, bool]:
     flip_m = re.search(
         r"^F(?:31|32)_HARD_MASKS\s*=\s*(\d+)", txt, flags=re.MULTILINE
     )
+    allow_hold_m = re.search(r"^ALLOW_HOLD\s*=\s*(\d+)", txt, flags=re.MULTILINE)
+    force_worth_m = re.search(
+        r"^FORCE_EMIT_WORTH_IT\s*=\s*(\d+)", txt, flags=re.MULTILINE
+    )
+    min_pct_m = re.search(r"^MIN_PCT_BIN\s*=\s*(\d+)", txt, flags=re.MULTILINE)
     return {
         "emit_hard_stop": bool(int(emit_m.group(1))) if emit_m else False,
         "emit_hard_stop_min_step": int(emit_min_step_m.group(1)) if emit_min_step_m else 1,
         "flip_hard_mask": bool(int(flip_m.group(1))) if flip_m else False,
+        "allow_hold": bool(int(allow_hold_m.group(1))) if allow_hold_m else False,
+        "force_emit_worth_it": bool(int(force_worth_m.group(1))) if force_worth_m else False,
+        "min_pct_bin": int(min_pct_m.group(1)) if min_pct_m else 0,
     }
 
 
@@ -286,6 +294,26 @@ def main() -> int:
         default=None,
         help="override F31_HARD_MASKS/F32_HARD_MASKS in parity and the output submission",
     )
+    ap.add_argument(
+        "--allow-hold",
+        type=int,
+        choices=(0, 1),
+        default=None,
+        help="override ALLOW_HOLD in parity and the output submission",
+    )
+    ap.add_argument(
+        "--force-emit-worth-it",
+        type=int,
+        choices=(0, 1),
+        default=None,
+        help="override FORCE_EMIT_WORTH_IT in parity and the output submission",
+    )
+    ap.add_argument(
+        "--min-pct-bin",
+        type=int,
+        default=None,
+        help="override MIN_PCT_BIN in parity and the output submission",
+    )
     args = ap.parse_args()
 
     if not os.path.exists(args.ckpt):
@@ -313,6 +341,12 @@ def main() -> int:
             mask_flags["emit_hard_stop"] = bool(args.emit_hard_stop)
         if args.flip_hard_mask is not None:
             mask_flags["flip_hard_mask"] = bool(args.flip_hard_mask)
+        if args.allow_hold is not None:
+            mask_flags["allow_hold"] = bool(args.allow_hold)
+        if args.force_emit_worth_it is not None:
+            mask_flags["force_emit_worth_it"] = bool(args.force_emit_worth_it)
+        if args.min_pct_bin is not None:
+            mask_flags["min_pct_bin"] = int(args.min_pct_bin)
         emit_hard_stop_min_step = (
             args.emit_hard_stop_min_step
             if args.emit_hard_stop_min_step is not None
@@ -320,6 +354,11 @@ def main() -> int:
         )
         print(f"[export] running parity test against {args.ckpt} "
               f"(tol={args.tol}, num_states={args.num_states})")
+        print(
+            f"[export] emit flags: allow_hold={mask_flags['allow_hold']} "
+            f"force_emit_worth_it={mask_flags['force_emit_worth_it']} "
+            f"min_pct_bin={mask_flags['min_pct_bin']}"
+        )
         status = run_parity(
             args.ckpt,
             tol=args.tol,
@@ -332,6 +371,9 @@ def main() -> int:
             emit_hard_stop=mask_flags["emit_hard_stop"],
             emit_hard_stop_min_step=emit_hard_stop_min_step,
             flip_hard_mask=mask_flags["flip_hard_mask"],
+            allow_hold=mask_flags["allow_hold"],
+            force_emit_worth_it=mask_flags["force_emit_worth_it"],
+            min_pct_bin=mask_flags["min_pct_bin"],
         )
         if status != 0:
             print("[export] parity FAILED (argmax disagreement); "
@@ -361,6 +403,27 @@ def main() -> int:
             "EMIT_HARD_STOP_MIN_STEP",
             args.emit_hard_stop_min_step,
         )
+    if not args.skip_parity:
+        _rewrite_top_level_int_assign(
+            out_path, "ALLOW_HOLD", int(mask_flags["allow_hold"])
+        )
+        try:
+            _rewrite_top_level_int_assign(
+                out_path, "FORCE_EMIT_WORTH_IT", int(mask_flags["force_emit_worth_it"])
+            )
+        except RuntimeError:
+            pass
+        _rewrite_top_level_int_assign(
+            out_path, "MIN_PCT_BIN", int(mask_flags["min_pct_bin"])
+        )
+    elif args.allow_hold is not None:
+        _rewrite_top_level_int_assign(out_path, "ALLOW_HOLD", args.allow_hold)
+        if args.force_emit_worth_it is not None:
+            _rewrite_top_level_int_assign(
+                out_path, "FORCE_EMIT_WORTH_IT", args.force_emit_worth_it
+            )
+        if args.min_pct_bin is not None:
+            _rewrite_top_level_int_assign(out_path, "MIN_PCT_BIN", args.min_pct_bin)
     print(f"[export] wrote {out_path}")
 
     # Smoke test: forward must not raise; empty moves only warn (v11 may z0 on calm obs).

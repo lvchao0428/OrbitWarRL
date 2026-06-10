@@ -104,6 +104,46 @@ if echo "$TAG" | grep -q 'f40_bc'; then
   EXPORT_ARGS+=(--emit-hard-stop 0 --flip-hard-mask 0)
 fi
 
+# Export flags from ckpt sidecar (.meta.json) or env overrides.
+META="${CKPT%.pkl}.meta.json"
+if [ -f "$META" ] || [ -n "${EXPORT_ALLOW_HOLD:-}" ]; then
+  EXPORT_FLAGS=$("$PY" - <<PY
+import json, os
+meta = {}
+mp = "$META"
+if os.path.isfile(mp):
+    with open(mp) as f:
+        meta = json.load(f)
+exp = meta.get("export") or {}
+def _flag(name, env_key, cast=int):
+    env = os.environ.get(env_key)
+    if env is not None and env != "":
+        return cast(env)
+    v = exp.get(name)
+    return cast(v) if v is not None else None
+allow = _flag("allow_hold", "EXPORT_ALLOW_HOLD", int)
+worth = _flag("force_emit_worth_it", "EXPORT_FORCE_EMIT_WORTH_IT", int)
+minb = _flag("min_pct_bin", "EXPORT_MIN_PCT_BIN", int)
+emit = _flag("emit_hard_stop", "EXPORT_EMIT_HARD_STOP", int)
+flip = _flag("flip_hard_mask", "EXPORT_FLIP_HARD_MASK", int)
+emit_min = _flag("emit_hard_stop_min_step", "EXPORT_EMIT_HARD_STOP_MIN_STEP", int)
+parts = []
+if allow is not None: parts.append(f"--allow-hold {allow}")
+if worth is not None: parts.append(f"--force-emit-worth-it {worth}")
+if minb is not None: parts.append(f"--min-pct-bin {minb}")
+if emit is not None: parts.append(f"--emit-hard-stop {emit}")
+if flip is not None: parts.append(f"--flip-hard-mask {flip}")
+if emit_min is not None: parts.append(f"--emit-hard-stop-min-step {emit_min}")
+print(" ".join(parts))
+PY
+)
+  if [ -n "$EXPORT_FLAGS" ]; then
+    # shellcheck disable=SC2206
+    EXPORT_ARGS+=($EXPORT_FLAGS)
+    echo "[quick_replay] export flags: $EXPORT_FLAGS"
+  fi
+fi
+
 JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES="" \
   "$PY" -m orbit_wars_rl.scripts.export_submission \
   --ckpt "$CKPT" \

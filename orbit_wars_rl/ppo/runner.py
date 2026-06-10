@@ -112,6 +112,7 @@ class TrainConfig:
     zero_sum_value: bool = False
     # v13: allow model to hold (not emit) at step 0; min pct bin floor.
     allow_hold: bool = False
+    force_emit_worth_it: bool = False
     min_pct_bin: int = 0
     # Resume from a checkpoint (path to .pkl file).
     resume_ckpt: str = ""
@@ -156,6 +157,17 @@ def load_state_buffer(path: str) -> "EnvState":
         planet_is_orbiting=jnp.asarray(data["planet_is_orbiting"]),
         home_planet_idx=jnp.asarray(data["home_planet_idx"]),
     )
+
+
+def _export_meta(cfg: TrainConfig) -> dict[str, Any]:
+    return {
+        "allow_hold": bool(getattr(cfg, "allow_hold", False)),
+        "force_emit_worth_it": bool(getattr(cfg, "force_emit_worth_it", False)),
+        "min_pct_bin": int(getattr(cfg, "min_pct_bin", 0)),
+        "emit_hard_stop": bool(cfg.emit_hard_stop),
+        "emit_hard_stop_min_step": int(cfg.emit_hard_stop_min_step),
+        "flip_hard_mask": bool(cfg.flip_hard_mask),
+    }
 
 
 def save_checkpoint(
@@ -354,6 +366,7 @@ def train(
         flip_hard_mask=cfg.flip_hard_mask,
         zero_sum_value=cfg.zero_sum_value,
         allow_hold=getattr(cfg, "allow_hold", False),
+        force_emit_worth_it=getattr(cfg, "force_emit_worth_it", False),
         min_pct_bin=getattr(cfg, "min_pct_bin", 0),
     )
 
@@ -624,7 +637,8 @@ def train(
 
             if cfg.eval_vs_v20:
                 eval_ckpt = os.path.join(cfg.ckpt_dir, f"_eval_u{update:06d}.pkl")
-                save_checkpoint(eval_ckpt, params, opt_state, update)
+                eval_meta = {"update": update, "export": _export_meta(cfg)}
+                save_checkpoint(eval_ckpt, params, opt_state, update, meta=eval_meta)
                 try:
                     from orbit_wars_rl.eval.v20_mini_gate import run_v20_mini_gate
 
@@ -715,6 +729,7 @@ def train(
             ckpt_meta = {
                 "update": update,
                 "opp_tag": opp_tag,
+                "export": _export_meta(cfg),
                 "spf": spf_step,
                 "z0": z0_step,
                 "garr": garr_step,

@@ -1,0 +1,72 @@
+# v14c — v14 架构 + worth_it-gated hold（v14b 失败后从头训练）
+#
+# v14b 结论 (u1199, 修正 export):
+#   - allow_hold=false 阻断囤兵 (z0≈2%) 但 forced t=0 微 spam (spf≈3–5, flip≈3%)
+#   - vs v20 0/4，garr 被压制至 6–13
+#
+# v14c 相对 v14b:
+#   1. allow_hold: true — 无好目标时可 skip 整回合 (worth_it=0)
+#   2. force_emit_worth_it: true — worth_it=1 时 t=0 强制发射 (防囤兵)
+#   3. min_pct_bin: 5 — 16-bin index5=30%，阻断 1 艘 spam
+#   4. 继承 v14b shaping (capture=0.08, one_ship_penalty=0.03)
+#
+# Launch (5090):
+#   bash scripts/v14c_train.sh
+#
+# 观察指标 (前 3000 updates):
+#   - z0 应在 10–40% (可 hold，但 worth_it 时必发)
+#   - spf 应在 15–50
+#   - flip > 6%, vs v20 开始出现胜场
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 15000
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v14c
+  ckpt_every: 200
+  log_every: 1
+  seed: 1420
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  force_emit_worth_it: true
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00005
+  lr_warmup_steps: 50
+  lr_decay_steps: 120000
+  lr_floor: 0.00001
+  clip_eps: 0.10
+  value_clip_eps: 0.10
+  value_coef: 0.5
+  ent_coef_src: 0.002
+  ent_coef_dst: 0.002
+  ent_coef_pct: 0.005
+  ent_coef_emit: 0.003
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.03
+
+selfplay:
+  enabled: false

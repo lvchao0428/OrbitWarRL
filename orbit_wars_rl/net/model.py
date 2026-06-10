@@ -196,6 +196,7 @@ class ActorCritic(nn.Module):
     flip_hard_mask: bool = False
     zero_sum_value: bool = False
     allow_hold: bool = False
+    force_emit_worth_it: bool = False
     min_pct_bin: int = 0
 
     def setup(self) -> None:
@@ -512,24 +513,31 @@ class ActorCritic(nn.Module):
             )
 
             # Sample emit (1 = continue, 0 = stop).
-            # allow_hold=True: t==0 is also a free choice (model can hold/skip turn).
-            # allow_hold=False (legacy): t==0 forced to emit if options exist.
+            # allow_hold=True: t==0 is a free choice (model can hold/skip turn).
+            # allow_hold=False: t==0 forced to emit if options exist.
+            # force_emit_worth_it: t==0 forced only when emit_worth_it (v14c gate).
             if deterministic:
                 emit_pred = jnp.argmax(emit_logits_t, axis=-1).astype(jnp.int32)
             else:
                 emit_pred = jax.random.categorical(r_emit, emit_logits_t).astype(jnp.int32)
             emit_pred_bool = emit_pred == 1
-            force_first = bool(t == 0) and not self.allow_hold
-            if force_first:
-                decision = jnp.logical_not(no_options)
-            else:
-                decision = emit_pred_bool & jnp.logical_not(no_options)
+            force_first = jnp.bool_(t == 0) & jnp.logical_not(no_options) & (
+                jnp.logical_not(jnp.bool_(self.allow_hold))
+                | (
+                    jnp.bool_(self.force_emit_worth_it)
+                    & emit_worth_it
+                )
+            )
+            decision = jnp.where(force_first, jnp.bool_(True), emit_pred_bool)
+            decision = decision & jnp.logical_not(no_options)
             emit_t = decision & still_emitting
 
             emit_idx = emit_t.astype(jnp.int32)
             emit_logp_full, emit_ent_full = _categorical_logp_entropy(emit_logits_t, emit_idx)
             already_stopped = jnp.logical_not(still_emitting)
-            free_choice = jnp.logical_not(already_stopped | jnp.bool_(force_first) | no_options)
+            free_choice = jnp.logical_not(
+                already_stopped | force_first | no_options
+            )
             emit_logp = jnp.where(free_choice, emit_logp_full, jnp.float32(0.0))
             emit_entropy = jnp.where(free_choice, emit_ent_full, jnp.float32(0.0))
 

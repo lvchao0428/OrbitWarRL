@@ -62,6 +62,9 @@ def run_parity(
     emit_hard_stop: bool = False,
     emit_hard_stop_min_step: int = 1,
     flip_hard_mask: bool = False,
+    allow_hold: bool = False,
+    force_emit_worth_it: bool = False,
+    min_pct_bin: int = 0,
 ) -> int:
     """Returns 0 on pass, non-zero on real disagreement.
 
@@ -74,6 +77,7 @@ def run_parity(
     """
     # Pre-load flat to infer arch from ckpt if not explicitly supplied.
     flat: dict | None = None
+    arch: dict = {"pct_pair_dim": 0}
     if ckpt_path is not None:
         flat = load_flat_params(ckpt_path)
         arch = infer_arch_from_flat(flat)
@@ -98,6 +102,9 @@ def run_parity(
         emit_hard_stop=emit_hard_stop,
         emit_hard_stop_min_step=emit_hard_stop_min_step,
         flip_hard_mask=flip_hard_mask,
+        allow_hold=allow_hold,
+        force_emit_worth_it=force_emit_worth_it,
+        min_pct_bin=min_pct_bin,
     )
     init_state, init_obs = _build_state_and_obs(seed=0)
     init_params = model.init(
@@ -119,6 +126,7 @@ def run_parity(
     else:
         flat = flatten_params(init_params)
         params = init_params
+        arch = infer_arch_from_flat(flat)
 
     assert_expected_keys(flat, n_layers=n_layers)
 
@@ -129,7 +137,9 @@ def run_parity(
     print(
         f"  masks: emit_hard_stop={emit_hard_stop} "
         f"emit_hard_stop_min_step={emit_hard_stop_min_step} "
-        f"flip_hard_mask={flip_hard_mask}"
+        f"flip_hard_mask={flip_hard_mask} "
+        f"allow_hold={allow_hold} force_emit_worth_it={force_emit_worth_it} "
+        f"min_pct_bin={min_pct_bin}"
     )
 
     full_match = 0
@@ -181,6 +191,9 @@ def run_parity(
             emit_hard_stop=emit_hard_stop,
             emit_hard_stop_min_step=emit_hard_stop_min_step,
             flip_hard_mask=flip_hard_mask,
+            allow_hold=allow_hold,
+            force_emit_worth_it=force_emit_worth_it,
+            min_pct_bin=min_pct_bin,
             **ext_kwargs,
         )
 
