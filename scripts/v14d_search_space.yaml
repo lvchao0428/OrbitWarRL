@@ -1,91 +1,85 @@
-# v14d binary coordinate search — 三阶段逐维二分 + 仅最优继承
+# v14d binary search v2 — Phase A/B 为 Phase C 长训备料
 #
-# 比全网格省 trial：每维 lo/mid/hi 探针 → 缩区间 → confirm 长跑
-# 目标：最终 vs v20 指标 ≥ v13c_final (WLD=1/4, flip≈11%, spf≈64)
+# 流程: 二分搜 A → confirm → 二分搜 B → confirm → Phase C 单独长跑 (见 phase_c_longtrain)
+# Phase A 区间对齐 v13c: HOLD≈0, CAPTURE≈0.05, 弱 PROD_DELTA, RELEASE_K≈15
 #
 # Usage:
-#   python scripts/v14d_curriculum_search.py --space scripts/v14d_search_space.yaml
-#   nohup python scripts/v14d_curriculum_search.py >> logs/v14d_search.log 2>&1 &
-#
-# 敏感性报告（跑完或中途）:
-#   python scripts/v14d_sensitivity_report.py
+#   bash scripts/v14d_binary_search.sh
+#   bash scripts/v14d_phase_c_longtrain.sh   # B confirm 通过后
 
-search_id: v14d_binary_v1
+search_id: v14d_binary_v2
 mode: binary
 poll_seconds: 90
-
-# 坐标下降轮数（每轮对所有 binary 维各做一次 lo/mid/hi）
 coordinate_passes: 2
+
+# 只搜 A/B；C 用长跑脚本
+search_phases: [a, b]
 
 phases:
   a:
     base_config: orbit_wars_rl/configs/multi_action_v14d_phase_a.yaml
-    probe_updates: 350
-    num_updates: 1000
-    extend_updates: 350
+    probe_updates: 400
+    num_updates: 1200
+    extend_updates: 400
     max_extends: 2
-    early_abort_min_updates: 70
+    early_abort_min_updates: 80
     seed_base: 2000
     inherit_from: null
     fixed:
       ORBITWARS_SHAPING_EMIT_LOG: 0.0
       ORBITWARS_SHAPING_ONE_SHIP_THRESH: 3
     binary:
-      ORBITWARS_SHAPING_HOLD_BONUS: {low: 0.004, high: 0.020}
-      ORBITWARS_SHAPING_CAPTURE: {low: 0.0, high: 0.04}
-      ORBITWARS_SHAPING_RELEASE: {low: 0.008, high: 0.022}
-      ORBITWARS_SHAPING_RELEASE_K: {low: 16, high: 32, integer: true}
-      ORBITWARS_SHAPING_PROD_SHARE_DELTA: {low: 0.02, high: 0.06}
+      # v13c: HOLD=0 — 上界压低，避免囤兵局部最优
+      ORBITWARS_SHAPING_HOLD_BONUS: {low: 0.0, high: 0.008}
+      ORBITWARS_SHAPING_CAPTURE: {low: 0.02, high: 0.06}
+      ORBITWARS_SHAPING_RELEASE: {low: 0.003, high: 0.012}
+      ORBITWARS_SHAPING_RELEASE_K: {low: 14, high: 20, integer: true}
+      ORBITWARS_SHAPING_PROD_SHARE_DELTA: {low: 0.01, high: 0.04}
       ORBITWARS_SHAPING_ONE_SHIP_PENALTY: {low: 0.01, high: 0.04}
     ppo_binary:
-      ent_coef_emit: {low: 0.003, high: 0.008}
-      lr_peak: {low: 0.00003, high: 0.00006}
+      ent_coef_emit: {low: 0.002, high: 0.006}
+      lr_peak: {low: 0.00003, high: 0.00005}
 
   b:
     base_config: orbit_wars_rl/configs/multi_action_v14d_phase_b.yaml
-    probe_updates: 450
-    num_updates: 1300
-    extend_updates: 450
+    probe_updates: 500
+    num_updates: 1500
+    extend_updates: 500
     max_extends: 2
-    early_abort_min_updates: 200
+    early_abort_min_updates: 250
     seed_base: 2100
     inherit_from: a
     fixed:
       ORBITWARS_SHAPING_EMIT_LOG: 0.0
       ORBITWARS_SHAPING_ONE_SHIP_THRESH: 3
     binary:
-      ORBITWARS_SHAPING_CAPTURE: {low: 0.06, high: 0.14}
-      ORBITWARS_SHAPING_HOLD_BONUS: {low: 0.0, high: 0.014}
-      ORBITWARS_SHAPING_RELEASE: {low: 0.005, high: 0.018}
-      ORBITWARS_SHAPING_RELEASE_K: {low: 12, high: 20, integer: true}
-      ORBITWARS_SHAPING_PROD_SHARE_DELTA: {low: 0.03, high: 0.07}
-      ORBITWARS_SHAPING_ONE_SHIP_PENALTY: {low: 0.02, high: 0.05}
-    ppo_binary:
-      ent_coef_emit: {low: 0.002, high: 0.006}
-      lr_peak: {low: 0.000025, high: 0.00005}
-      ent_coef_pct: {low: 0.003, high: 0.007}
-
-  c:
-    base_config: orbit_wars_rl/configs/multi_action_v14d_phase_c.yaml
-    probe_updates: 550
-    num_updates: 1800
-    extend_updates: 550
-    max_extends: 2
-    early_abort_min_updates: 300
-    seed_base: 2200
-    inherit_from: b
-    require_beats_v13c: true
-    fixed:
-      ORBITWARS_SHAPING_HOLD_BONUS: 0.0
-      ORBITWARS_SHAPING_EMIT_LOG: 0.0
-      ORBITWARS_SHAPING_ONE_SHIP_THRESH: 3
-    binary:
-      ORBITWARS_SHAPING_CAPTURE: {low: 0.03, high: 0.08}
-      ORBITWARS_SHAPING_RELEASE: {low: 0.005, high: 0.015}
+      ORBITWARS_SHAPING_CAPTURE: {low: 0.06, high: 0.12}
+      ORBITWARS_SHAPING_HOLD_BONUS: {low: 0.0, high: 0.008}
+      ORBITWARS_SHAPING_RELEASE: {low: 0.004, high: 0.015}
       ORBITWARS_SHAPING_RELEASE_K: {low: 12, high: 18, integer: true}
-      ORBITWARS_SHAPING_PROD_SHARE_DELTA: {low: 0.03, high: 0.07}
+      ORBITWARS_SHAPING_PROD_SHARE_DELTA: {low: 0.02, high: 0.06}
       ORBITWARS_SHAPING_ONE_SHIP_PENALTY: {low: 0.02, high: 0.05}
     ppo_binary:
-      lr_peak: {low: 0.000015, high: 0.000035}
-      ent_coef_emit: {low: 0.001, high: 0.004}
-      clip_eps: {low: 0.06, high: 0.10}
+      ent_coef_emit: {low: 0.002, high: 0.005}
+      lr_peak: {low: 0.000025, high: 0.000045}
+      ent_coef_pct: {low: 0.003, high: 0.006}
+
+# Phase C 长训 — 不在二分里搜，B 通过后手动/脚本启动
+phase_c_longtrain:
+  base_config: orbit_wars_rl/configs/multi_action_v14d_phase_c_long.yaml
+  num_updates: 10000
+  extend_updates: 2000
+  max_extends: 3
+  inherit_from: b
+  log: logs/v14d_phase_c_long.log
+  ckpt_dir: ckpt_multi_action_v14d_c_long
+  # 默认 shaping（可被 B confirm 的 env_params 覆盖 CAPTURE 等）
+  fixed:
+    ORBITWARS_SHAPING_HOLD_BONUS: 0.0
+    ORBITWARS_SHAPING_CAPTURE: 0.05
+    ORBITWARS_SHAPING_RELEASE: 0.005
+    ORBITWARS_SHAPING_RELEASE_K: 15
+    ORBITWARS_SHAPING_PROD_SHARE_DELTA: 0.04
+    ORBITWARS_SHAPING_EMIT_LOG: 0.0
+    ORBITWARS_SHAPING_ONE_SHIP_PENALTY: 0.03
+    ORBITWARS_SHAPING_ONE_SHIP_THRESH: 3

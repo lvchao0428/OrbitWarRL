@@ -12,7 +12,7 @@ fi
 mkdir -p logs ckpt_search logs/search
 
 echo "[v14d_binary] stopping any old v14d train..."
-pkill -f "multi_action_v14d|v14d_curriculum" 2>/dev/null || true
+pkill -f "v14d_curriculum_search|multi_action_v14d|v14d_curriculum" 2>/dev/null || true
 sleep 2
 
 echo "[v14d_binary] dry-run trial estimate..."

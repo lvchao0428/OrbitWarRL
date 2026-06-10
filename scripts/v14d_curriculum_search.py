@@ -332,6 +332,7 @@ class BinarySearchOrchestrator:
         self.poll = int(self.space.get("poll_seconds", 90))
         self.search_id = self.space.get("search_id", "v14d_binary")
         self.passes = int(self.space.get("coordinate_passes", 2))
+        self.search_phases = list(self.space.get("search_phases", ["a", "b", "c"]))
         self.state = self._load_state()
 
     def _load_state(self) -> dict:
@@ -340,7 +341,7 @@ class BinarySearchOrchestrator:
             if st.get("search_id") == self.search_id:
                 return st
         binary: dict = {}
-        for phase in ("a", "b", "c"):
+        for phase in self.search_phases:
             pcfg = self.space["phases"][phase]
             env_spec = pcfg.get("binary", {})
             ppo_spec = pcfg.get("ppo_binary", {})
@@ -411,8 +412,26 @@ class BinarySearchOrchestrator:
             "probe": True,
         }
 
+    def _write_c_longtrain_ready(self) -> None:
+        b = self.state.get("pipeline", {}).get("b")
+        if not b or not b.get("ckpt"):
+            return
+        ready = ROOT / "logs" / "v14d_c_longtrain.ready.json"
+        ready.write_text(
+            json.dumps(
+                {
+                    "status": "ready",
+                    "resume_ckpt": b["ckpt"],
+                    "b_trial": b.get("trial_id"),
+                    "message": "Run: bash scripts/v14d_phase_c_longtrain.sh",
+                },
+                indent=2,
+            )
+        )
+        print(f"[search] Phase B ready for C longtrain — {ready}")
+
     def _next_job(self) -> dict | None:
-        for phase in ("a", "b", "c"):
+        for phase in self.search_phases:
             bst = self.state["binary"][phase]
             pcfg = self.space["phases"][phase]
             if bst["done"]:
@@ -521,20 +540,25 @@ class BinarySearchOrchestrator:
 
     def estimate_trials(self) -> dict:
         est = {}
-        for phase in ("a", "b", "c"):
+        for phase in self.search_phases:
             pcfg = self.space["phases"][phase]
             n_params = len(pcfg.get("binary", {})) + len(pcfg.get("ppo_binary", {}))
             probes = n_params * self.passes * 3
             est[phase] = {"probes": probes, "confirm": 1}
         est["total"] = sum(v["probes"] + v["confirm"] for v in est.values())
+        if self.space.get("phase_c_longtrain"):
+            est["c_longtrain"] = "separate (see v14d_phase_c_longtrain.sh)"
         return est
 
     def run(self) -> None:
         est = self.estimate_trials()
         print(f"[search] {self.search_id} binary mode — ~{est['total']} trials (est.)")
         for ph, e in est.items():
-            if ph != "total":
-                print(f"  phase {ph}: {e['probes']} probes + {e['confirm']} confirm")
+            if ph in ("total", "c_longtrain"):
+                if ph == "c_longtrain":
+                    print(f"  phase c: {e}")
+                continue
+            print(f"  phase {ph}: {e['probes']} probes + {e['confirm']} confirm")
 
         if self.dry_run:
             print("[search] dry-run — no trials executed")
@@ -543,7 +567,7 @@ class BinarySearchOrchestrator:
         while True:
             job = self._next_job()
             if job is None:
-                if all(self.state["binary"][p]["done"] for p in ("a", "b", "c")):
+                if all(self.state["binary"][p]["done"] for p in self.search_phases):
                     break
                 print("[search] blocked — waiting for parent phase")
                 break
@@ -566,16 +590,21 @@ class BinarySearchOrchestrator:
                 probe=job.get("probe", False),
             )
             self.state["trials"][tid] = result
+            if result.get("status") == "passed" and not result.get("kind") == "probe":
+                ph = result["phase"]
+                self.state["pipeline"][ph] = result
+                if ph == "b":
+                    self._write_c_longtrain_ready()
             self._save_state()
 
-        best_c = self.state["pipeline"].get("c")
-        if best_c:
-            self.state["best_pipeline"] = best_c
+        best_b = self.state["pipeline"].get("b")
+        if best_b:
+            self.state["best_pipeline"] = best_b
             self._save_state()
-            print(f"[search] DONE best={best_c['trial_id']} ckpt={best_c.get('ckpt')}")
-            print(f"[search] beats_v13c={best_c.get('beats_v13c')}")
+            print(f"[search] A/B DONE — B ckpt={best_b.get('ckpt')}")
+            print("[search] Next: bash scripts/v14d_phase_c_longtrain.sh")
         else:
-            print("[search] DONE — no phase-C winner yet")
+            print("[search] DONE — no phase-B winner yet")
 
 
 def main() -> int:

@@ -1,141 +1,82 @@
-# DAY15 — v14d 三阶段 Curriculum 训练
+# DAY15 — v14d：A/B 备料 + Phase C 长训
 
-> **2026-06-11 Day15**  
-> **现状**：v14 系列（v14/v14b/v14c）在 5090 上已跑完一轮；v14c 聚合 flip≈11% 但 replay 显示开局乱射、0 capture，远不如 v13c（seed0 281 步胜）。根因是 self-play 开局乱射 → 走不到占点奖励链。  
-> **今日动作**：启动 **v14d 三阶段 curriculum**（囤兵 → 占点 → 微调），从头训练，5090 无人值守。
+> **策略**：Phase A/B 用二分搜参 + confirm **为 C 长训准备 ckpt**；Phase C **单独 10k updates 长跑**（不在二分里打断）。
 
 ---
 
-## 0. Day14 结论摘要
+## 流水线
 
-| 版本 | vs v20 | 战术观感 |
-|------|--------|---------|
-| v13c_final | 1/4 胜 | 开局囤 21 回合后齐射，能占点；有射太阳等 bug |
-| v14c u1599 | 0/4 负 | turn 4 乱射，15 次发射 0 capture，「没头苍蝇」 |
-| v14 架构 | 16-bin pct + 6-dim pair | **参数空间保留**，缺 curriculum |
+```
+Phase A 二分搜 (8维) → confirm (1200u) ──gate A──┐
+                                                  ▼
+Phase B 二分搜 (9维) → confirm (1500u) ──gate B──┘
+                                                  │
+                     logs/v14d_c_longtrain.ready.json
+                                                  ▼
+Phase C 长训: 10000u (+ extend×3) resume B ckpt
+  force_emit_worth_it + 低 lr/entropy
+  目标: Gate C + beats v13c_final
+```
 
-**核心洞察**：sparse reward 下，若开局策略不对，永远学不到 capture/胜利轨迹；但 self-play 里可以学到囤兵局部最优（v14c 末期 spf≈370），对 v20 无效。
+### Gate 继承
+
+| 阶段 | 作用 | 过 gate 才继承 |
+|------|------|----------------|
+| **A** | 自博弈节奏：z0∈25–65%, garr∈35–120, emits∈0.35–0.80, vs v20 spf≥3 | → B |
+| **B** | vs v20 flip≥8% & spf≥15 & garr≥18，或 ≥1 胜 | → C 长训 |
+| **C 长训** | WLD≥1/4 或 flip≥10%+spf≥18+z0∈20–45%；对标 v13c | 最终提交 |
+
+### v2 搜参区间（对齐 v13c）
+
+Phase A 关键改动 vs v1：
+- `HOLD`: **0.0–0.008**（v13c=0，禁止高 HOLD 囤兵）
+- `CAPTURE`: **0.02–0.06**（不再从 0 探）
+- `PROD_DELTA`: **0.01–0.04**（v13c=0.02）
+- `RELEASE_K`: **14–20**（v13c=15）
 
 ---
 
-## 1. v14d Curriculum 设计
-
-### 三阶段概览
-
-```
-Phase A — 囤兵/耐心 (u≤1200+ext)
-  allow_hold=true, force_emit_worth_it=false
-  HOLD_BONUS=0.04, RELEASE_K=30, CAPTURE=0
-  Gate: garr≥45, z0∈[0.30,0.70], spf∈[20,90]
-
-Phase B — 占点/进攻 (u≤1500+ext, resume A)
-  force_emit_worth_it=true, CAPTURE=0.10
-  Gate: vs v20 flip≥8%, spf≥15, garr≥18 或 有胜场
-
-Phase C — 战术微调 (u≤2000+ext, resume B)
-  CAPTURE=0.05, HOLD=0, lr↓, entropy↓
-  Gate: WLD≥1/4 或 flip≥10% + spf≥18 + z0∈[20%,45%]
-```
-
-### 文件
-
-| 文件 | 说明 |
-|------|------|
-| `orbit_wars_rl/configs/multi_action_v14d_phase_{a,b,c}.yaml` | 三阶段配置 |
-| `scripts/v14d_curriculum.sh` | 主控：顺序跑 A→B→C，gate 不通过则 extend |
-| `scripts/v14d_gate_check.py` | Gate 判定 |
-| `scripts/monitor_v14d.sh` | 远端状态轮询 |
-| `logs/v14d_curriculum.state.json` | 当前阶段 / 状态 |
-
-### 启动（5090）
+## 启动命令
 
 ```bash
-cd ~/project/OrbitWarRL
-nohup bash scripts/v14d_curriculum.sh > logs/v14d_curriculum.log 2>&1 &
-tail -f logs/v14d_curriculum.log
-bash scripts/monitor_v14d.sh
-```
-
-### 二分坐标搜索（当前主路径，已停单线 curriculum）
-
-单路径 v14d_a2 已停；改用 **逐维 lo/mid/hi 探针 → 缩区间 → confirm 长跑**，仅 confirm 过 gate 的 ckpt 继承下一阶段。Phase C 额外要求 **≥ v13c_final**（WLD=1/4 或同胜场更高 flip/spf）。
-
-```bash
-# 估算 trial 数（约 153：48+54+48 probes + 3 confirms）
-python scripts/v14d_curriculum_search.py --dry-run
-
-# 5090 无人值守
+# 1. A/B 二分（~106 trials，fresh search_id=v14d_binary_v2）
 bash scripts/v14d_binary_search.sh
-# 或
-nohup python scripts/v14d_curriculum_search.py >> logs/v14d_search.log 2>&1 &
 
-# 敏感性分析（中途/跑完）
+# 2. B confirm 通过后 — Phase C 长训
+bash scripts/v14d_phase_c_longtrain.sh
+# 或 nohup bash scripts/v14d_phase_c_longtrain.sh >> logs/v14d_c_long.log 2>&1 &
+
+# 监控
+bash scripts/monitor_v14d.sh
 python scripts/v14d_sensitivity_report.py
 ```
 
+---
+
+## 文件
+
 | 文件 | 说明 |
 |------|------|
-| `scripts/v14d_search_space.yaml` | 各 phase `binary` / `ppo_binary` 搜索区间 |
-| `scripts/v14d_curriculum_search.py` | 二分坐标主控 + gate 继承 |
-| `scripts/v14d_early_abort.py` | 囤兵/乱射/零发射早停 |
-| `scripts/v14d_scoring.py` | 打分 + v13c 对标 |
-| `scripts/v14d_sensitivity_report.py` | 参数敏感性 Markdown/JSON |
-| `logs/v14d_search.state.json` | 可 resume |
-
-**搜索维（示例）**：Phase A — HOLD/CAPTURE/RELEASE/K/PROD_DELTA/ONE_SHIP + ent/lr；B/C 类似并含 capture/lr/entropy。
-
-### Checkpoint 目录
-
-- `ckpt_multi_action_v14d_a/` — Phase A
-- `ckpt_multi_action_v14d_b/` — Phase B（从 A resume）
-- `ckpt_multi_action_v14d_c/` — Phase C（从 B resume）
+| `scripts/v14d_search_space.yaml` | v2: 只搜 A/B + `phase_c_longtrain` 块 |
+| `scripts/v14d_curriculum_search.py` | 二分主控 |
+| `scripts/v14d_phase_c_longtrain.sh` | C 长训（10k u） |
+| `orbit_wars_rl/configs/multi_action_v14d_phase_c_long.yaml` | C 长训 YAML |
+| `logs/v14d_search.state.json` | A/B 状态（search_id 变则 fresh） |
+| `logs/v14d_c_longtrain.ready.json` | B 通过后生成 |
 
 ---
 
-## 2. 执行进展
+## 执行进展
 
-> 以下由 curriculum / monitor 自动更新；Day15 启动后填写。
-
-| 阶段 | 状态 | 开始 | Gate | 备注 |
-|------|------|------|------|------|
-| 单线 A v2 | **已停** | 2026-06-11 | — | 改二分搜索 |
-| 二分搜索 | **待启动/运行中** | 2026-06-11 | — | ~153 trials, 目标 ≥v13c |
-
-**v1 失败（已停）**: HOLD=0.04 → z0≈100%, vs v20 **0 发射**。  
-**v2 单线（已停）**: HOLD=0.012 仍走二分搜。  
-**当前**: `v14d_binary_v1`，confirm 过 gate 才继承；C 阶段对标 v13c_final。
+| 阶段 | 状态 | 备注 |
+|------|------|------|
+| v1 二分 (binary_v1) | 已弃 | CAPTURE 0/0.02/0.04 全 abort，HOLD 中点 0.012 |
+| **v2 A/B 二分** | 待启动 | HOLD 0–0.008，CAPTURE≥0.02 |
+| **C 长训** | 待 B | 10k u，目标 ≥ v13c |
 
 ---
 
-## 3. 监控命令
+## 与 v13c 的关系
 
-```bash
-# 本地
-bash scripts/monitor_v14d.sh
-bash scripts/monitor_v14d.sh --watch
-
-# 远端
-ssh charlie@www.ultrapp.online "tail -5 ~/project/OrbitWarRL/logs/v14d_curriculum.log"
-ssh charlie@www.ultrapp.online "cat ~/project/OrbitWarRL/logs/v14d_curriculum.state.json"
-ssh charlie@www.ultrapp.online "grep eval_vs_v20 ~/project/OrbitWarRL/logs/v14d_phase_*.log | tail -5"
-```
-
----
-
-## 4. 预期与停训条件
-
-**符合预期（结束 curriculum）**：
-- Phase C gate PASS，或 final eval vs v20 出现 ≥1 胜
-- HTML replay seed0：首攻 turn≥15，captures>0，观感接近 v13c
-
-**需人工介入**：
-- Phase A 延长后仍 garr<30 → 加大 HOLD_BONUS
-- Phase B flip 长期 <5% → 检查 export / worth_it
-- 自博弈 spf>150 且 vs v20 恶化 → 提前进 Phase C 或加 RELEASE 惩罚
-
----
-
-## 5. 与 v13c 的关系
-
-v14d **从头训练**（不 resume v13c），但 **Phase A 模仿 v13c 开局节奏**（先囤后打）。  
-v13c_final 仍是战术参考上界；curriculum 完成后用同 seed replay 三角对比。
+- A/B：**从头训**，但 shaping 区间 **贴近 v13c_final**
+- C 长训：在 B 已能占点的基础上 **抛光**；v13c 仍是 replay / WLD 参考上界

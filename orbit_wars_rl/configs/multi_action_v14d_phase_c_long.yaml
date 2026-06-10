@@ -1,0 +1,57 @@
+# v14d Phase C — 长训（从 Phase B 最优 ckpt resume）
+#
+# A/B 二分搜参 + confirm 通过后启动；目标 ≥ v13c_final
+# Usage: bash scripts/v14d_phase_c_longtrain.sh
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 10000
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 100
+  eval_num_envs: 32
+  eval_vs_v20_num_games: 4
+  ckpt_dir: ./ckpt_multi_action_v14d_c_long
+  ckpt_every: 200
+  log_every: 1
+  seed: 1503
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  force_emit_worth_it: true
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00002
+  lr_warmup_steps: 20
+  lr_decay_steps: 200000
+  lr_floor: 0.000003
+  clip_eps: 0.08
+  value_clip_eps: 0.08
+  value_coef: 0.5
+  ent_coef_src: 0.001
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.002
+  ent_coef_emit: 0.0015
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.015
+
+selfplay:
+  enabled: false
