@@ -1,0 +1,27 @@
+[search] v14d_binary_v1 binary mode — ~153 trials (est.)
+  phase a: 48 probes + 1 confirm
+  phase b: 54 probes + 1 confirm
+  phase c: 48 probes + 1 confirm
+[search] START v14d_binary_v1_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.0_414c12934d
+[search] ABORT v14d_binary_v1_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.0_414c12934d
+[search] START v14d_binary_v1_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.02_0f667787a3
+[search] ABORT v14d_binary_v1_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.02_0f667787a3
+[search] START v14d_binary_v1_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.04_c89fb39b45
+[search] ABORT v14d_binary_v1_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.04_c89fb39b45
+[search] phase b: waiting for parent pipeline
+[search] blocked — waiting for parent phase
+[search] DONE — no phase-C winner yet
+[search] v14d_binary_v2 binary mode — ~104 trials (est.)
+  phase a: 48 probes + 1 confirm
+  phase b: 54 probes + 1 confirm
+  phase c: separate (see v14d_phase_c_longtrain.sh)
+[search] START v14d_binary_v2_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.02_7683c958e8
+[search] ABORT v14d_binary_v2_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.02_7683c958e8
+[search] START v14d_binary_v2_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.04_8eb6d1f0ee
+[search] ABORT v14d_binary_v2_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.04_8eb6d1f0ee
+[search] START v14d_binary_v2_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.06_14e6720f43
+[search] ABORT v14d_binary_v2_a_p0i0_ORBITWARS_SHAPING_CAPTURE_0.06_14e6720f43
+[search] phase b: waiting for parent pipeline
+[search] blocked — waiting for parent phase
+[search] DONE — no phase-B winner yet
+nohup: 无法运行命令 'python': 没有那个文件或目录
