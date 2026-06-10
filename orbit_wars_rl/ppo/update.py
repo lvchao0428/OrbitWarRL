@@ -287,7 +287,7 @@ def ppo_loss(
     emits_per_turn = emit_f.sum(axis=-1)                                # [N]
     zero_emit_rate = (emits_per_turn == jnp.float32(0.0)).mean()
 
-    # pct_bin distribution across actually-emitted fleets (8 bins).
+    # pct_bin distribution across actually-emitted fleets (NUM_PCT_BINS bins).
     # Shape: each scalar = fraction of emits whose pct_bin == b.
     pct_bin_one_hot = jax.nn.one_hot(
         rollout.pct_bin, env_constants.NUM_PCT_BINS, dtype=jnp.float32

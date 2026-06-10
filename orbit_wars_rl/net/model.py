@@ -355,14 +355,28 @@ class ActorCritic(nn.Module):
             src_remaining_norm = jnp.take_along_axis(
                 remaining_norm, src_t[..., None], axis=-1
             )[..., 0]
-            # pct pair features: (..., 2) [min_bin_norm, pair_flip_bin5]
             garr_dst_chosen = jnp.take_along_axis(
                 ships_raw_b.astype(jnp.float32), dst_t[..., None], axis=-1
             )[..., 0]
             rem_src_chosen = jnp.take_along_axis(
                 remaining.astype(jnp.float32), src_t[..., None], axis=-1
             )[..., 0]
-            pct_pair = pct_pair_features(garr_dst_chosen, rem_src_chosen)
+            # v14: gather extended pct pair features from planet obs
+            pf = obs.planet_feats
+            _ein_dst = jnp.take_along_axis(pf[..., 10], dst_t[..., None], axis=-1)[..., 0]
+            _ngt15_dst = jnp.take_along_axis(pf[..., 38], dst_t[..., None], axis=-1)[..., 0]
+            _src_prod = jnp.take_along_axis(pf[..., 7], src_t[..., None], axis=-1)[..., 0]
+            _my_prod_total = (pf[..., 7] * obs_my.astype(jnp.float32)).sum(axis=-1)
+            _src_prod_ratio = _src_prod / jnp.maximum(_my_prod_total, jnp.float32(1e-6))
+            _fleet_count_norm = jnp.float32(t) / jnp.float32(max(K - 1, 1))
+
+            pct_pair = pct_pair_features(
+                garr_dst_chosen, rem_src_chosen,
+                enemy_inbound_norm=_ein_dst,
+                net_garrison_t15_dst=_ngt15_dst,
+                src_prod_ratio=_src_prod_ratio,
+                fleet_count_norm=jnp.broadcast_to(jnp.float32(_fleet_count_norm), garr_dst_chosen.shape),
+            )
             min_bin = pct_min_bin_index(garr_dst_chosen, rem_src_chosen)
             min_bin = jnp.maximum(min_bin, jnp.int32(self.min_pct_bin))
             pct_mask = pct_low_bin_mask(min_bin, self.num_pct_bins)
@@ -558,14 +572,28 @@ class ActorCritic(nn.Module):
             src_remaining_norm = jnp.take_along_axis(
                 remaining_norm, src_t[..., None], axis=-1
             )[..., 0]
-            # f26: pct pair feats use the chosen (src, dst).
             garr_dst_chosen = jnp.take_along_axis(
                 ships_raw.astype(jnp.float32), dst_t[..., None], axis=-1
             )[..., 0]
             rem_src_chosen = jnp.take_along_axis(
                 remaining.astype(jnp.float32), src_t[..., None], axis=-1
             )[..., 0]
-            pct_pair = pct_pair_features(garr_dst_chosen, rem_src_chosen)
+            # v14: gather extended pct pair features from planet obs
+            pf = obs.planet_feats
+            _ein_dst = jnp.take_along_axis(pf[..., 10], dst_t[..., None], axis=-1)[..., 0]
+            _ngt15_dst = jnp.take_along_axis(pf[..., 38], dst_t[..., None], axis=-1)[..., 0]
+            _src_prod = jnp.take_along_axis(pf[..., 7], src_t[..., None], axis=-1)[..., 0]
+            _my_prod_total = (pf[..., 7] * obs_my.astype(jnp.float32)).sum(axis=-1)
+            _src_prod_ratio = _src_prod / jnp.maximum(_my_prod_total, jnp.float32(1e-6))
+            _fleet_count_norm = jnp.float32(t) / jnp.float32(max(K - 1, 1))
+
+            pct_pair = pct_pair_features(
+                garr_dst_chosen, rem_src_chosen,
+                enemy_inbound_norm=_ein_dst,
+                net_garrison_t15_dst=_ngt15_dst,
+                src_prod_ratio=_src_prod_ratio,
+                fleet_count_norm=jnp.broadcast_to(jnp.float32(_fleet_count_norm), garr_dst_chosen.shape),
+            )
             min_bin = pct_min_bin_index(garr_dst_chosen, rem_src_chosen)
             min_bin = jnp.maximum(min_bin, jnp.int32(self.min_pct_bin))
             pct_mask = pct_low_bin_mask(min_bin, self.num_pct_bins)

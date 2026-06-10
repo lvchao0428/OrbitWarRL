@@ -1,0 +1,73 @@
+# v14 — 精细化兵力分配 + 移除硬规则 + 训练调优
+#
+# 核心变化 (vs v13c_hold):
+#   1. NUM_PCT_BINS: 8 -> 16 (5%~100%, 低区间 5% 等距)
+#   2. min_pct_bin: 2 -> 0 (移除 30% 下限硬规则, 让网络自主学习)
+#   3. pct pair features: 2 -> 6 dims (enemy_inbound, net_garrison_t15, src_prod_ratio, fleet_count)
+#   4. PctHead hidden: 64 -> 128
+#   5. entropy 调高: pct 0.001->0.005 (16 bin max_ent=2.77 vs 8 bin 2.08)
+#   6. 轻量 reward shaping: PROD_SHARE_DELTA + CAPTURE + RELEASE
+#   7. 从头训练 (action space 不兼容 v13c checkpoint)
+#
+# 目标: 学会 v20 式多频次、多比例灵活发射, 全面超越 v20
+#
+# Launch:
+#   ORBITWARS_SHAPING_PROD_SHARE_DELTA=0.05 \
+#   ORBITWARS_SHAPING_CAPTURE=0.02 \
+#   ORBITWARS_SHAPING_RELEASE=0.01 \
+#   ORBITWARS_SHAPING_RELEASE_K=15 \
+#   python -m orbit_wars_rl.scripts.train \
+#     --config orbit_wars_rl/configs/multi_action_v14.yaml \
+#     --log-dir logs/v14
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 15000
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v14
+  ckpt_every: 200
+  log_every: 1
+  seed: 1400
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  min_pct_bin: 0
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00005
+  lr_warmup_steps: 50
+  lr_decay_steps: 120000
+  lr_floor: 0.00001
+  clip_eps: 0.10
+  value_clip_eps: 0.10
+  value_coef: 0.5
+  ent_coef_src: 0.002
+  ent_coef_dst: 0.002
+  ent_coef_pct: 0.005
+  ent_coef_emit: 0.005
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.03
+
+selfplay:
+  enabled: false

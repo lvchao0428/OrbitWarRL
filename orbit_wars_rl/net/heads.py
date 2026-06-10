@@ -172,7 +172,7 @@ class PctHead(nn.Module):
     """Bin head over (src_emb, dst_emb, global_emb) -> num_pct_bins logits."""
 
     num_bins: int
-    hidden: int = 64
+    hidden: int = 128
 
     @nn.compact
     def __call__(

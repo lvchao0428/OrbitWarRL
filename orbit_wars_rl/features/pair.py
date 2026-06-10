@@ -346,12 +346,23 @@ def pct_low_bin_mask(
 def pct_pair_features(
     garr_dst: jnp.ndarray,       # (...,) float -- garrison at chosen dst
     remaining_src: jnp.ndarray,  # (...,) float -- remaining at chosen src
+    *,
+    enemy_inbound_norm: jnp.ndarray | None = None,   # (...,) float -- in_foe_norm at dst
+    net_garrison_t15_dst: jnp.ndarray | None = None,  # (...,) float -- predicted garrison balance at dst
+    src_prod_ratio: jnp.ndarray | None = None,         # (...,) float -- src prod / total my prod
+    fleet_count_norm: jnp.ndarray | None = None,       # (...,) float -- t / MAX_FLEETS_PER_TURN
 ) -> jnp.ndarray:
-    """(...,2) [min_bin_norm, pair_flip_bin5].
+    """(..., PCT_PAIR_DIM) pct decision features given chosen (src, dst).
 
-    ``min_bin_norm`` = index of the smallest pct bin whose ship count exceeds
-    ``garr_dst``, normalised to [0, 1].  When no bin can flip, returns 1.0
-    (bin7 / 100%).
+    Base features (always present):
+      [0] min_bin_norm    -- smallest bin that flips garr_dst, / (NUM_PCT_BINS-1)
+      [1] pair_flip_bin5  -- 1 if floor(rem*0.7) > garr_dst
+
+    Extended features (v14, when provided):
+      [2] enemy_inbound_norm   -- foe ships heading to dst (log-normalised)
+      [3] net_garrison_t15_dst -- predicted garrison balance at dst 15 steps out
+      [4] src_prod_ratio       -- src production as fraction of total own production
+      [5] fleet_count_norm     -- which autoregressive step we're on (0..1)
     """
     min_bin = pct_min_bin_index(garr_dst, remaining_src)
     min_bin_norm = min_bin.astype(jnp.float32) / jnp.float32(_NUM_PCT_BINS - 1)
@@ -359,11 +370,21 @@ def pct_pair_features(
 
     ships_at_bin5 = jnp.floor(rem * jnp.float32(0.7))
     pair_flip_bin5 = (ships_at_bin5 > garr_dst).astype(jnp.float32)
-    return jnp.stack([min_bin_norm, pair_flip_bin5], axis=-1)
+
+    parts = [min_bin_norm, pair_flip_bin5]
+    if enemy_inbound_norm is not None:
+        parts.append(enemy_inbound_norm)
+    if net_garrison_t15_dst is not None:
+        parts.append(net_garrison_t15_dst)
+    if src_prod_ratio is not None:
+        parts.append(src_prod_ratio)
+    if fleet_count_norm is not None:
+        parts.append(fleet_count_norm)
+    return jnp.stack(parts, axis=-1)
 
 
 # --------------------- public constants for sanity checks ---------------------
 DST_PAIR_DIM = 5
 EMIT_PAIR_DIM = 6
-PCT_PAIR_DIM = 2
+PCT_PAIR_DIM = 6
 SUN_BLOCK_THRESH = float(_SUN_BLOCK_THRESH)
