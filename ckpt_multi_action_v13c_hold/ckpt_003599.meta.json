@@ -1,0 +1,14 @@
+{
+  "update": 3599,
+  "opp_tag": "symm",
+  "spf": 62.46391296386719,
+  "z0": 0.75341796875,
+  "garr": 226.4326629638672,
+  "emit2_rate": 0.09375,
+  "align_spf": null,
+  "align_e2": null,
+  "align_z0": null,
+  "eval_vs_v20_spf": null,
+  "eval_vs_v20_e2_plus_pct": null,
+  "eval_vs_v20_flip_pct": null
+}
