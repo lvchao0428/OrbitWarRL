@@ -56,6 +56,34 @@ tail -f logs/v14d_curriculum.log
 bash scripts/monitor_v14d.sh
 ```
 
+### 二分坐标搜索（当前主路径，已停单线 curriculum）
+
+单路径 v14d_a2 已停；改用 **逐维 lo/mid/hi 探针 → 缩区间 → confirm 长跑**，仅 confirm 过 gate 的 ckpt 继承下一阶段。Phase C 额外要求 **≥ v13c_final**（WLD=1/4 或同胜场更高 flip/spf）。
+
+```bash
+# 估算 trial 数（约 153：48+54+48 probes + 3 confirms）
+python scripts/v14d_curriculum_search.py --dry-run
+
+# 5090 无人值守
+bash scripts/v14d_binary_search.sh
+# 或
+nohup python scripts/v14d_curriculum_search.py >> logs/v14d_search.log 2>&1 &
+
+# 敏感性分析（中途/跑完）
+python scripts/v14d_sensitivity_report.py
+```
+
+| 文件 | 说明 |
+|------|------|
+| `scripts/v14d_search_space.yaml` | 各 phase `binary` / `ppo_binary` 搜索区间 |
+| `scripts/v14d_curriculum_search.py` | 二分坐标主控 + gate 继承 |
+| `scripts/v14d_early_abort.py` | 囤兵/乱射/零发射早停 |
+| `scripts/v14d_scoring.py` | 打分 + v13c 对标 |
+| `scripts/v14d_sensitivity_report.py` | 参数敏感性 Markdown/JSON |
+| `logs/v14d_search.state.json` | 可 resume |
+
+**搜索维（示例）**：Phase A — HOLD/CAPTURE/RELEASE/K/PROD_DELTA/ONE_SHIP + ent/lr；B/C 类似并含 capture/lr/entropy。
+
 ### Checkpoint 目录
 
 - `ckpt_multi_action_v14d_a/` — Phase A
@@ -70,10 +98,12 @@ bash scripts/monitor_v14d.sh
 
 | 阶段 | 状态 | 开始 | Gate | 备注 |
 |------|------|------|------|------|
-| A 囤兵 v2 | **重跑中** | 2026-06-11 | — | HOLD 0.04→**0.012**, +CAPTURE 0.02, ckpt `a2` |
+| 单线 A v2 | **已停** | 2026-06-11 | — | 改二分搜索 |
+| 二分搜索 | **待启动/运行中** | 2026-06-11 | — | ~153 trials, 目标 ≥v13c |
 
-**v1 失败（已停）**: HOLD=0.04 → z0≈100%, vs v20 **0 发射** / 0 capture。  
-**v2 改动**: HOLD=0.012, CAPTURE=0.02, gate 加 garr 上限 + v20 spf≥3。
+**v1 失败（已停）**: HOLD=0.04 → z0≈100%, vs v20 **0 发射**。  
+**v2 单线（已停）**: HOLD=0.012 仍走二分搜。  
+**当前**: `v14d_binary_v1`，confirm 过 gate 才继承；C 阶段对标 v13c_final。
 
 ---
 
