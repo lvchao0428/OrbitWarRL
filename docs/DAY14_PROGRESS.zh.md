@@ -1,8 +1,9 @@
 # DAY14 — 训练进展追踪 & 代码聚焦整理
 
-> **2026-06-10 Day14**  
-> 三条训练线并行推进，v14 新架构正式上线训练。  
-> 代码归档整理完毕，项目聚焦于 v12/v13/v14 三条活跃路线。
+> **2026-06-10 Day14（23:00 更新）**  
+> v14 系列经历 v14 → v14b → **v14c** 三轮迭代；export 链路已修复。  
+> **当前主线：v14c**（worth_it-gated hold），5090 训练中。  
+> **对比基线：v13c_final**（唯一曾赢 v20 的版本）+ v20。
 
 ---
 
@@ -70,34 +71,80 @@ Day13 完成了从 Frog Parade (Lux S3 #2) 参考架构的全面重构：
 - **结论**: hold action 导致策略坍缩为过度保守，不适合当前路线
 - **处置**: 保留 checkpoint 数据，不继续训练
 
-### 1.3 v14 — 精细化兵力分配 (新启动)
+### 1.3 v14 系列 — 精细化兵力分配（三轮迭代）
 
-| 指标 | 当前 (u1999) |
-|------|-------------|
-| 训练总量 | 4.1M steps |
-| sps | 2782 |
-| WR vs random | 91% |
-| spf (self) | 60~90 |
-| z0 (self) | 0.69~0.80 |
-| garr (self) | 138~210 |
-| emits | 0.45~0.56 |
-| entropy [s/d/p/e] | 0.98/0.74/1.71/0.51 |
-| clip | 0.14 (偏高) |
+#### 架构共性（v14 / v14b / v14c）
 
-**核心变化 (vs v12_lux_b)**:
-- NUM_PCT_BINS: 8 → 16 (5%~100%, 低区间 5% 等距)
-- min_pct_bin: 2 → 0 (移除 30% 下限硬规则)
-- pct pair features: 2 → 6 dims
-- PctHead hidden: 64 → 128
-- 轻量 reward shaping: PROD_SHARE_DELTA + CAPTURE + RELEASE
-- lr: 5e-5 (更保守), update_epochs: 1
+- NUM_PCT_BINS: 16 (5%~100%)
+- pct pair: 6-dim；PctHead hidden=128；d_model=256 / 4L
+- 39-dim planet / 24-dim global（同 v13c_final 编码）
+- symmetric self-play + zero_sum_value + emit_hard_stop + flip_hard_mask
+- shaping: CAPTURE=0.08, ONE_SHIP_PENALTY=0.03, min_pct_bin=5
 
-**已知问题**:
-- ⚠️ vs v20 评测全部失败: `pct_head/fc1 input dim=775` 不匹配
-  - 原因: v14 的 pct pair features 从 2→6 dims，export_submission 的 `infer_arch_from_flat` 未适配
-  - 需要修复 `orbit_wars_rl/inference/weights.py` 中的维度推断逻辑
-- z0=0.69~0.80 偏高 (类似 v13c 的保守倾向)，可能因为 hold=true + min_pct_bin=0 导致
-- clip=0.14 (略高于 0.10 目标), 训练还在早期阶段
+#### v14 — 已停（u~12299，策略坍缩）
+
+| 阶段 | 自博弈 spf | z0 | 行为 |
+|------|-------------|-----|------|
+| u8599 乱射期 | ~5 | ~1% | 每回合 1 艘 spam |
+| u12199 囤兵期 | ~128 | ~67% | allow_hold 坍缩，bin7=100% |
+
+vs v20（u10199，修正 export 前）: **0W/4L**，囤兵特征明显。
+
+#### v14b — 已停（u~1599，forced emit 失败）
+
+改动: `allow_hold=false`（有兵必发）+ min_pct_bin=5。
+
+| 指标 | 自博弈 (u1385) | vs v20 u1199（修正 export） |
+|------|---------------|---------------------------|
+| spf | ~55 | **4.65** |
+| z0 | ~0.02 | **0.6%** |
+| garr | ~50 | 12.6 |
+| flip | — | **3.67%** |
+| WLD | — | **0/4/0** |
+
+**结论**: 反囤兵成功，但 forced t=0 导致微 spam（spf≈3–5），对 v20 完全无效。
+
+#### v14c — 当前主线 🔄（worth_it-gated hold）
+
+改动: `allow_hold=true` + **`force_emit_worth_it=true`**（有好目标才强制 t=0 发射）。
+
+| 指标 | u86 (自博弈) | u99 vs v20 |
+|------|-------------|------------|
+| spf | 30~42 | **13.76** |
+| z0 | 0.27~0.38 | **28.4%** |
+| garr | 24~32 | **37.55** |
+| flip | — | **10.88%** |
+| emits | 0.63~0.75 | — |
+| WLD | — | **0/3/0** |
+
+启动: 2026-06-10 22:56，seed=1420，日志 `logs/v14c.log`，ckpt `ckpt_multi_action_v14c/`。
+
+**u99 初判（vs v20）**:
+- flip=10.88% 已接近 v13c（11%），远高于 v14b（3.7%）
+- spf=13.76 仍偏低（v13c=64），但比 v14b 的 4.65 好 3×
+- z0=28.4% 合理（可 hold，非 v14b 式强制 spam 也非 v13c 式 45% 囤兵）
+- 仍 0 胜，需继续观察到 u500~1000
+
+#### 三线对比 vs v20（first-80，修正 export 后）
+
+| 版本 | W/L/D | spf | garr | flip% | z0% | 备注 |
+|------|-------|-----|------|-------|-----|------|
+| **v13c_final** | **1/4/0** | 64.4 | 81.7 | 11.0 | 44.7 | 唯一胜场；战术有瑕疵（射太阳等） |
+| v14b u1199 | 0/4/0 | 4.7 | 12.6 | 3.7 | 0.6 | forced emit 微 spam |
+| **v14c u99** | 0/3/0 | 13.8 | 37.6 | **10.9** | 28.4 | 早期；flip 已对齐 v13c |
+| v20 (对手) | — | ~20 | ~1700+ | ~24 | ~70 | 参考 |
+
+**解读**: v13c 是「能赢但粗糙」的上界参考；v14c u99 在 flip 上已追上 v13c，但 spf/胜场仍差。目标是在 v14c 框架下学到 v13c 的进攻力度，同时避免 v13c 的战术 bug。
+
+#### Export 链路修复 ✅（Day14 下午）
+
+根因: `submission_rl_v13c.py` 模板默认 `ALLOW_HOLD=1`，与 v14b 训练配置不一致 → 训练内 `[eval_vs_v20]` 从 u299 起 spf=0 全假。
+
+修复:
+1. `export_submission.py` 支持 `--allow-hold` / `--force-emit-worth-it` / `--min-pct-bin`
+2. `quick_replay.sh` 从 ckpt `.meta.json` 的 `export` 块自动读取
+3. `runner.py` 保存 ckpt 时写入 export meta
+4. `submission_rl_v13c.py` 新增 `FORCE_EMIT_WORTH_IT`；16-bin 不再重置 MIN_PCT_BIN=0
 
 ---
 
@@ -126,31 +173,55 @@ bash scripts/v12_replay_html.sh ckpt_multi_action_v12_lux_b/ckpt_007399.pkl 0
 bash scripts/v12_replay_html.sh ckpt_multi_action_v12_lux_b/ckpt_007399.pkl 42
 ```
 
-### 2.2 v14 评测 (需先修复 export 适配)
+### 2.2 v14c 评测（当前主线）
 
 ```bash
-# v14 当前 eval_vs_v20 失败，需要先修复 weights.py
-# 修复后可用:
+# 远程监控训练 + 自动 eval
+ssh charlie@www.ultrapp.online "tail -3 ~/project/OrbitWarRL/logs/v14c.log"
+ssh charlie@www.ultrapp.online "grep eval_vs_v20 ~/project/OrbitWarRL/logs/v14c.log | tail -5"
+
+# 手动评测最新 ckpt vs v20（export flags 从 .meta.json 自动读取）
 ssh charlie@www.ultrapp.online
 cd ~/project/OrbitWarRL
-LATEST=$(ls -1 ckpt_multi_action_v14/ckpt_*.pkl | sort | tail -1)
-NUM_GAMES=5 bash scripts/v12_eval_gate.sh "$LATEST" v14_latest
+LATEST=$(ls -1 ckpt_multi_action_v14c/ckpt_*.pkl 2>/dev/null | sort | tail -1)
+NUM_GAMES=4 bash scripts/quick_replay.sh "$LATEST" v14c_latest
+
+# 与 v13c 基线对比（同脚本，换 agent-a）
+python3 -m orbit_wars_rl.scripts.replay_analyze \
+  --agent-a submission_rl_v13c_final.py \
+  --agent-b submission_v20_0513.py \
+  --num-games 4 --seed-base 0 \
+  --out logs/replay_analyze/v13c_final_vs_v20.json
 ```
 
-### 2.3 远程监控
+### 2.3 v13c 基线评测
+
+v13c_final 是目前**唯一对 v20 有胜场**的版本，作为 v14 系列的战术参考上界：
+
+| 指标 | v13c_final | 含义 |
+|------|-----------|------|
+| WLD | 1/4/0 | 25% 胜率 |
+| spf | 64.4 | 大舰队进攻 |
+| flip | 11.0% | 有效 flip |
+| z0 | 44.7% | 偏保守但非极端囤兵 |
+
+已知缺陷: 射太阳、离屏发射、节奏混乱 — v14c 目标是在 flip 接近的前提下修复这些。
+
+### 2.4 远程监控
 
 ```bash
-# 查看 v12_lux_b 最新训练行
-ssh charlie@www.ultrapp.online "tail -5 ~/project/OrbitWarRL/logs/v12_lux_b.log"
+# 查看 v14c 最新训练行
+ssh charlie@www.ultrapp.online "tail -5 ~/project/OrbitWarRL/logs/v14c.log"
 
-# 查看 v14 最新训练行
-ssh charlie@www.ultrapp.online "tail -5 ~/project/OrbitWarRL/logs/v14.log"
+# 查看 v14c eval 趋势
+ssh charlie@www.ultrapp.online "grep 'eval_vs_v20' ~/project/OrbitWarRL/logs/v14c.log"
 
-# 查看 v14 eval 报错
-ssh charlie@www.ultrapp.online "grep 'eval_vs_v20' ~/project/OrbitWarRL/logs/v14.log | tail -3"
+# 查看 v12_lux_b 最新训练行（已停或低速）
+ssh charlie@www.ultrapp.online "tail -5 ~/project/OrbitWarRL/logs/v12_lux_b.log 2>/dev/null"
 
-# 查看所有在跑的训练进程
-ssh charlie@www.ultrapp.online "ps aux | grep 'orbit_wars_rl.scripts.train' | grep -v grep"
+# 一键观测 v14c + v13c 基线 + 最新 eval
+bash scripts/monitor_v14c.sh
+bash scripts/monitor_v14c.sh --watch   # 每 10 分钟轮询
 
 # 同步所有日志到本地
 rsync -avz charlie@www.ultrapp.online:~/project/OrbitWarRL/logs/ logs/
@@ -187,7 +258,7 @@ OrbitWarRL/
 │   ├── eval/                # v20 mini gate
 │   ├── parity/              # 环境一致性检查
 │   ├── scripts/             # 核心工具脚本
-│   └── configs/             # 4 个活跃配置 (v12_lux, v12_lux_b, v13_hold, v14)
+│   └── configs/             # 活跃配置 (v12_lux_b, v13_hold, v14b, v14c)
 ├── scripts/                 # Shell 启动脚本 (11 个)
 ├── docs/                    # 活跃文档 (Day10+, OVERVIEW, 评测 runbook)
 ├── ckpt_multi_action_v12_*/ # v12 checkpoints
@@ -201,32 +272,32 @@ OrbitWarRL/
 
 ## 4. 下一步计划
 
-### 4.1 紧急: 修复 v14 的 eval_vs_v20
+### 4.1 v14c 观察窗口（当前优先）
 
-v14 的 pct_head 使用了 6 维 pair features (vs v12 的 2 维)，导致 `infer_arch_from_flat` 维度推断失败。需要:
-1. 在 `orbit_wars_rl/inference/weights.py` 的 `infer_arch_from_flat` 中增加 pct pair features=6 的分支
-2. 创建 v14 专用 submission template
-3. 验证 export → parity → eval 全链路
+每 100 updates 自动 `[eval_vs_v20]`，同时对照 v13c 基线：
 
-### 4.2 v12_lux_b 决策点
+| 里程碑 | 关注指标 | 决策 |
+|--------|---------|------|
+| u500 | spf>20, flip>8%, 出现胜场 | 继续 |
+| u1000 | spf>30, WLD≥1/4 | 可延长训练 |
+| u2000 | 仍 0 胜且 spf<15 | 考虑 resume + shaping 微调 |
 
-当前 u7428/10000, 已跑 74%。vs v20 始终 0 胜：
-- **选项 A**: 继续到 10000 看是否有突破
-- **选项 B**: 从当前 best ckpt resume, 引入微量 shaping (CAPTURE=0.02)
-- **选项 C**: 引入 v20 作为 opponent mixture (10% v20 + 90% symmetric)
+### 4.2 v12_lux_b
 
-### 4.3 v14 观察窗口
+已跑至 u~9200，vs v20 始终 0 胜。资源让给 v14c，暂不续训。
 
-u1999 仍处于早期，需要等到 u3000~5000 才能判断:
-- 关注 z0 是否从 0.75 下降 (否则重蹈 v13c 覆辙)
-- 关注 clip_frac 是否稳定到 < 0.10
-- 16 bin PCT 分布是否有意义分化 (不只聚集在 bin0)
+### 4.3 持续观测
+
+5090 上 v14c 训练进行中，eval 每 u100 自动写入 `logs/v14c.log` 的 `[eval_vs_v20]` 行。  
+观测命令见 §2.4；新 eval 出现后更新本文 §1.3 v14c 表格。
 
 ---
 
 ## 5. 关键发现
 
-1. **v13c_hold 已证明 hold action 有害**: z0=75%, spf=79, garr=197 → 极端保守策略坍缩
-2. **v12_lux_b 的 self-play 与 v20 策略鸿沟**: 模型在 self-play 中发展出独特策略 (spf~25, garr~40), 但面对 v20 的压制完全不适应 (spf 降到 3-4)
-3. **v14 是当前最有前景的方向**: 更精细的兵力分配 (16 bins) + 轻量 shaping, 有望弥合 self-play 与 v20 的差距
-4. **eval export 链路需要跟进架构变更**: 每次改动 action space / pair features 后都要同步更新 inference 和 submission template
+1. **v13c_final 是战术参考上界**: 1/4 胜 v20，flip=11%，但 spf=64/z0=45% 偏极端，且有射太阳等 bug
+2. **v14 坍缩路径**: 乱射 (u8599) → 囤兵 (u12199)；allow_hold 无约束时策略不稳定
+3. **v14b forced emit 走不通**: z0 修好但 spf≈4、flip≈3%，对 v20 0 胜
+4. **v14c worth_it-gated hold 早期信号积极**: u99 flip=10.9% 对齐 v13c，spf 仍低但方向正确
+5. **export 必须与训练配置一致**: ALLOW_HOLD / FORCE_EMIT_WORTH_IT / MIN_PCT_BIN 写入 ckpt meta，否则 eval 全假
+6. **对比评测应三角测量**: v14c vs v20（实战）+ v13c vs v20（上界）+ 自博弈指标（训练健康度）
