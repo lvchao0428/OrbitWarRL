@@ -430,6 +430,46 @@ class BinarySearchOrchestrator:
         )
         print(f"[search] Phase B ready for C longtrain — {ready}")
 
+    def _merge_finished_probes(self, bst: dict, step_key: str) -> None:
+        """Move completed trials from step_pending into step_results (deduped)."""
+        seen = {r["trial_id"] for r in bst["step_results"].get(step_key, [])}
+        still: list[dict] = []
+        for job in bst.get("step_pending", []):
+            tid = job["trial_id"]
+            if tid in self.state["trials"]:
+                if tid not in seen:
+                    rec = self.state["trials"][tid]
+                    bst["step_results"].setdefault(step_key, []).append(
+                        {
+                            "value": job["value"],
+                            "score": rec.get("score", -1e9),
+                            "trial_id": tid,
+                        }
+                    )
+                    seen.add(tid)
+            else:
+                still.append(job)
+        bst["step_pending"] = still
+
+    def _fill_probe_pending(self, phase: str, bst: dict, step_key: str, pname: str) -> None:
+        """Schedule lo/mid/hi probes that are not yet finished."""
+        results = bst["step_results"].get(step_key, [])
+        if len(results) >= 3:
+            return
+        spec = bst["env_ranges"].get(pname) or bst["ppo_ranges"].get(pname)
+        lo, hi = spec["lo"], spec["hi"]
+        integer = spec.get("integer", False)
+        mid = _fmt_val(_mid(lo, hi), integer)
+        done_vals = {r["value"] for r in results}
+
+        for v in (lo, mid, hi):
+            vv = _fmt_val(v, integer)
+            if any(abs(r["value"] - vv) < 1e-9 for r in results):
+                continue
+            job = self._schedule_probe(phase, pname, vv)
+            if job is not None:
+                bst["step_pending"].append(job)
+
     def _next_job(self) -> dict | None:
         for phase in self.search_phases:
             bst = self.state["binary"][phase]
@@ -438,8 +478,7 @@ class BinarySearchOrchestrator:
                 continue
             parent = self._parent_ckpt(phase)
             if phase != "a" and parent is None:
-                print(f"[search] phase {phase}: waiting for parent pipeline")
-                return None
+                continue
 
             if bst["ready_confirm"] and bst["confirmed"] is None:
                 best = bst["best"]
@@ -482,25 +521,16 @@ class BinarySearchOrchestrator:
                 bst["step_key"] = step_key
                 bst["step_pending"] = []
                 bst["step_results"][step_key] = []
-                spec = bst["env_ranges"].get(pname) or bst["ppo_ranges"].get(pname)
-                lo, hi = spec["lo"], spec["hi"]
-                integer = spec.get("integer", False)
-                mid = _fmt_val(_mid(lo, hi), integer)
-                for v in (lo, mid, hi):
-                    vv = _fmt_val(v, integer)
-                    job = self._schedule_probe(phase, pname, vv)
-                    if job is not None:
-                        bst["step_pending"].append(job)
+
+            self._merge_finished_probes(bst, step_key)
+            if not bst["step_pending"] and len(bst["step_results"].get(step_key, [])) < 3:
+                self._fill_probe_pending(phase, bst, step_key, pname)
 
             while bst["step_pending"]:
                 job = bst["step_pending"][0]
                 tid = job["trial_id"]
                 if tid in self.state["trials"]:
-                    rec = self.state["trials"][tid]
-                    bst["step_results"][step_key].append(
-                        {"value": job["value"], "score": rec.get("score", -1e9), "trial_id": tid}
-                    )
-                    bst["step_pending"].pop(0)
+                    self._merge_finished_probes(bst, step_key)
                     continue
                 return {
                     **job,
@@ -510,7 +540,6 @@ class BinarySearchOrchestrator:
 
             results = bst["step_results"].get(step_key, [])
             if len(results) < 3:
-                bst["param_idx"] += 1
                 continue
             winner = max(results, key=lambda r: r["score"])
             bst["current"][pname] = winner["value"]
@@ -536,6 +565,7 @@ class BinarySearchOrchestrator:
                 spec["hi"] = _fmt_val(_mid(mid, hi), spec.get("integer", False))
 
             bst["param_idx"] += 1
+            return self._next_job()
         return None
 
     def estimate_trials(self) -> dict:
@@ -567,9 +597,10 @@ class BinarySearchOrchestrator:
         while True:
             job = self._next_job()
             if job is None:
+                self._save_state()
                 if all(self.state["binary"][p]["done"] for p in self.search_phases):
                     break
-                print("[search] blocked — waiting for parent phase")
+                print("[search] blocked — no schedulable job")
                 break
 
             tid = job["trial_id"]

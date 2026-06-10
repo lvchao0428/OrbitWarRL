@@ -22,4 +22,4 @@ echo "[v14d_binary] starting search..."
 nohup "$PY" scripts/v14d_curriculum_search.py \
   --space scripts/v14d_search_space.yaml \
   >> logs/v14d_search.log 2>&1 &
-echo "pid=$! log=logs/v14d_search.log state=logs/v14d_search.state.json"
+echo "pid=$! py=$PY log=logs/v14d_search.log state=logs/v14d_search.state.json"
