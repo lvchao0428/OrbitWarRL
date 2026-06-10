@@ -1,0 +1,57 @@
+# v14d Phase C — 战术微调（从 Phase B resume）
+#
+# 目标: 降低囤兵极端值，保持 flip；vs v20 出现胜场或 spf/flip/z0 进入 v13c 区间
+# 退出 gate: WLD≥1/4 或 (flip≥10%, spf≥18, z0∈[0.20,0.45])
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 2000
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v14d_c
+  ckpt_every: 200
+  log_every: 1
+  seed: 1502
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  force_emit_worth_it: true
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 4
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.000025
+  lr_warmup_steps: 20
+  lr_decay_steps: 150000
+  lr_floor: 0.000005
+  clip_eps: 0.08
+  value_clip_eps: 0.08
+  value_coef: 0.5
+  ent_coef_src: 0.001
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.003
+  ent_coef_emit: 0.002
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.02
+
+selfplay:
+  enabled: false

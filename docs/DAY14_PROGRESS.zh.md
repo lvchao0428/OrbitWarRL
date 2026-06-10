@@ -104,26 +104,34 @@ vs v20（u10199，修正 export 前）: **0W/4L**，囤兵特征明显。
 
 **结论**: 反囤兵成功，但 forced t=0 导致微 spam（spf≈3–5），对 v20 完全无效。
 
-#### v14c — 当前主线 🔄（worth_it-gated hold）
+#### v14c — 已停训 ✅（u2255，best ckpt ≈ u1599/u1699）
 
 改动: `allow_hold=true` + **`force_emit_worth_it=true`**（有好目标才强制 t=0 发射）。
 
-| 指标 | u86 (自博弈) | u99 vs v20 |
-|------|-------------|------------|
-| spf | 30~42 | **13.76** |
-| z0 | 0.27~0.38 | **28.4%** |
-| garr | 24~32 | **37.55** |
-| flip | — | **10.88%** |
-| emits | 0.63~0.75 | — |
-| WLD | — | **0/3/0** |
+**停训决策 (u2099)**: vs v20 未超越 u1699 峰值，仍 0 胜，自博弈囤兵 spf≈370 → **已停训**。
 
-启动: 2026-06-10 22:56，seed=1420，日志 `logs/v14c.log`，ckpt `ckpt_multi_action_v14c/`。
+**Best ckpt**: `ckpt_001599.pkl`（u1599，距 u1699 eval 峰值最近的可恢复 ckpt）
 
-**u99 初判（vs v20）**:
-- flip=10.88% 已接近 v13c（11%），远高于 v14b（3.7%）
-- spf=13.76 仍偏低（v13c=64），但比 v14b 的 4.65 好 3×
-- z0=28.4% 合理（可 hold，非 v14b 式强制 spam 也非 v13c 式 45% 囤兵）
-- 仍 0 胜，需继续观察到 u500~1000
+**正式评测 vs v20（4 局，修正 export）**:
+
+| 版本 | W/L/D | spf | garr | flip% | z0% |
+|------|-------|-----|------|-------|-----|
+| v14c u1599 | 0/4/0 | 17.2 | 46.7 | 10.1 | 21.7 |
+| v13c_final | 1/4/0 | 64.4 | 81.7 | 11.0 | 44.7 |
+
+**HTML replay（seed=0 vs v20）**:
+
+| 版本 | 结果 | 步数 | 本地路径 |
+|------|------|------|---------|
+| v14c u1599 | **负** | 142 | `logs/replay_html/v14c_u1599_s0/replay.html` |
+| v13c_final | **胜** | 281 | `logs/replay_html/v13c_final_s0/replay.html` |
+
+同 seed 对比：v13c 能撑到 281 步并取胜；v14c 142 步被压制结束。v14c flip/spf 接近但进攻持久性不足。
+
+```bash
+open logs/replay_html/v14c_u1599_s0/replay.html
+open logs/replay_html/v13c_final_s0/replay.html
+```
 
 #### 三线对比 vs v20（first-80，修正 export 后）
 
@@ -131,7 +139,7 @@ vs v20（u10199，修正 export 前）: **0W/4L**，囤兵特征明显。
 |------|-------|-----|------|-------|-----|------|
 | **v13c_final** | **1/4/0** | 64.4 | 81.7 | 11.0 | 44.7 | 唯一胜场；战术有瑕疵（射太阳等） |
 | v14b u1199 | 0/4/0 | 4.7 | 12.6 | 3.7 | 0.6 | forced emit 微 spam |
-| **v14c u99** | 0/3/0 | 13.8 | 37.6 | **10.9** | 28.4 | 早期；flip 已对齐 v13c |
+| **v14c u1599** ⭐ | 0/4/0 | 17.2 | 46.7 | 10.1 | 21.7 | best ckpt；seed0 142步负 |
 | v20 (对手) | — | ~20 | ~1700+ | ~24 | ~70 | 参考 |
 
 **解读**: v13c 是「能赢但粗糙」的上界参考；v14c u99 在 flip 上已追上 v13c，但 spf/胜场仍差。目标是在 v14c 框架下学到 v13c 的进攻力度，同时避免 v13c 的战术 bug。
@@ -272,15 +280,14 @@ OrbitWarRL/
 
 ## 4. 下一步计划
 
-### 4.1 v14c 观察窗口（当前优先）
+### 4.1 v14c 已停训 — 下一步 v14d?
 
-每 100 updates 自动 `[eval_vs_v20]`，同时对照 v13c 基线：
+v14c 结论: worth_it-gated hold 让 flip 对齐 v13c，但 spf 不足、囤兵未解、0 胜。
+HTML replay 显示 v14c seed0 142步负 vs v13c seed0 281步胜。
 
-| 里程碑 | 关注指标 | 决策 |
-|--------|---------|------|
-| u500 | spf>20, flip>8%, 出现胜场 | 继续 |
-| u1000 | spf>30, WLD≥1/4 | 可延长训练 |
-| u2000 | 仍 0 胜且 spf<15 | 考虑 resume + shaping 微调 |
+可选方向:
+- v14d: 更强 anti-hoard shaping + 保留 worth_it gate
+- 或从 v13c_final resume 修 tactical bugs（射太阳 hard mask 已有）
 
 ### 4.2 v12_lux_b
 
