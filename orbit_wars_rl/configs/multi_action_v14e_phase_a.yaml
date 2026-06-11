@@ -1,0 +1,60 @@
+# v14e Phase A — anti-hoard fix + higher emit entropy
+#
+# v14d failure: all trials collapsed to z0>90% by update 16.
+# v14e fixes:
+#   1. ANTI_HOARD penalty (env var, set by search)
+#   2. Higher ent_coef_emit (0.01-0.025 range, was 0.002-0.006)
+#   3. Tighter early abort (min_updates=30, z0>=0.85 → abort)
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 1200
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v14e_a
+  ckpt_every: 200
+  log_every: 1
+  seed: 2100
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  force_emit_worth_it: false
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00005
+  lr_warmup_steps: 50
+  lr_decay_steps: 100000
+  lr_floor: 0.00001
+  clip_eps: 0.10
+  value_clip_eps: 0.10
+  value_coef: 0.5
+  ent_coef_src: 0.003
+  ent_coef_dst: 0.003
+  ent_coef_pct: 0.006
+  ent_coef_emit: 0.015
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.03
+
+selfplay:
+  enabled: false

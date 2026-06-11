@@ -570,6 +570,25 @@ SHAPING_HOLD_BONUS: float = float(
     _os.environ.get("ORBITWARS_SHAPING_HOLD_BONUS", "0.0")
 )
 
+# --- v14e: anti-hoard penalty ---
+#
+# Structural fix for hoarding collapse observed in v14d: agent discovers "never
+# emit = never lose garrison = high garr reward" and locks into z0>90%.
+# This penalty fires when the agent's garrison ratio (my_garr / total_garr) is
+# high AND it chose not to emit, creating a gradient against the hoarding
+# equilibrium. The penalty scales smoothly with how far above the threshold the
+# agent is, capped at 1.0.
+#
+# Formula: -coef * max(0, garr_ratio - thresh) / (1 - thresh) when not emitting.
+# With thresh=0.6, garr_ratio=0.8 → penalty = -coef * 0.5
+# With thresh=0.6, garr_ratio=1.0 → penalty = -coef * 1.0 (cap)
+SHAPING_ANTI_HOARD: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_ANTI_HOARD", "0.0")
+)
+SHAPING_ANTI_HOARD_THRESH: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_ANTI_HOARD_THRESH", "0.6")
+)
+
 
 def hold_bonus_reward(
     valid_mask: jnp.ndarray,
@@ -595,6 +614,39 @@ def hold_bonus_reward(
     has_garrison = my_garr > jnp.float32(20.0)
     return jnp.float32(SHAPING_HOLD_BONUS) * jnp.where(
         is_hold & has_garrison, jnp.float32(1.0), jnp.float32(0.0)
+    )
+
+
+def anti_hoard_penalty_reward(
+    valid_mask: jnp.ndarray,
+    state: EnvState,
+    player: int,
+) -> jnp.ndarray:
+    """Negative reward when hoarding: high garrison ratio + zero launches.
+
+    Fires when the agent's share of total garrison exceeds ANTI_HOARD_THRESH
+    and it chose not to emit this turn. The penalty scales linearly from 0 at
+    the threshold to -coef at ratio=1.0, preventing the "never emit" collapse.
+    """
+    if SHAPING_ANTI_HOARD <= 0.0:
+        return jnp.float32(0.0)
+    valid_f = valid_mask.astype(jnp.float32)
+    n_valid = valid_f.sum()
+    is_hold = n_valid == jnp.float32(0.0)
+
+    my_mask = (state.planet_owner == player) & state.planet_mask
+    my_garr = jnp.where(
+        my_mask, state.planet_ships.astype(jnp.float32), jnp.float32(0.0)
+    ).sum()
+    total_garr = jnp.where(
+        state.planet_mask, state.planet_ships.astype(jnp.float32), jnp.float32(0.0)
+    ).sum()
+    garr_ratio = my_garr / jnp.maximum(total_garr, jnp.float32(1.0))
+
+    thresh = jnp.float32(SHAPING_ANTI_HOARD_THRESH)
+    excess = jnp.clip((garr_ratio - thresh) / (1.0 - thresh), 0.0, 1.0)
+    return -jnp.float32(SHAPING_ANTI_HOARD) * jnp.where(
+        is_hold, excess, jnp.float32(0.0)
     )
 
 

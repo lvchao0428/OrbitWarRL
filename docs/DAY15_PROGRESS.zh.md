@@ -39,15 +39,14 @@ Phase A 关键改动 vs v1：
 ## 启动命令
 
 ```bash
-# 1. A/B 二分（~106 trials，fresh search_id=v14d_binary_v2）
-bash scripts/v14d_binary_search.sh
+# 1. v14e A/B 二分（anti-hoard 修复版）
+bash scripts/v14e_binary_search.sh
 
 # 2. B confirm 通过后 — Phase C 长训
-bash scripts/v14d_phase_c_longtrain.sh
-# 或 nohup bash scripts/v14d_phase_c_longtrain.sh >> logs/v14d_c_long.log 2>&1 &
+bash scripts/v14e_phase_c_longtrain.sh
 
 # 监控
-bash scripts/monitor_v14d.sh
+tail -f logs/v14e_search.log
 python scripts/v14d_sensitivity_report.py
 ```
 
@@ -57,12 +56,14 @@ python scripts/v14d_sensitivity_report.py
 
 | 文件 | 说明 |
 |------|------|
-| `scripts/v14d_search_space.yaml` | v2: 只搜 A/B + `phase_c_longtrain` 块 |
-| `scripts/v14d_curriculum_search.py` | 二分主控 |
-| `scripts/v14d_phase_c_longtrain.sh` | C 长训（10k u） |
-| `orbit_wars_rl/configs/multi_action_v14d_phase_c_long.yaml` | C 长训 YAML |
-| `logs/v14d_search.state.json` | A/B 状态（search_id 变则 fresh） |
-| `logs/v14d_c_longtrain.ready.json` | B 通过后生成 |
+| `scripts/v14e_search_space.yaml` | v14e: anti-hoard + 高 entropy 搜参 |
+| `scripts/v14e_binary_search.sh` | v14e 启动脚本 |
+| `scripts/v14e_phase_c_longtrain.sh` | v14e C 长训（10k u） |
+| `scripts/v14d_curriculum_search.py` | 二分主控（v14d/v14e 共用） |
+| `orbit_wars_rl/configs/multi_action_v14e_phase_*.yaml` | v14e A/B/C 配置 |
+| `orbit_wars_rl/env/rewards.py` | 新增 `anti_hoard_penalty_reward` |
+| `logs/v14e_search.state.json` | v14e A/B 搜索状态 |
+| `logs/v14e_c_longtrain.ready.json` | v14e B 通过后生成 |
 
 ---
 
@@ -71,8 +72,27 @@ python scripts/v14d_sensitivity_report.py
 | 阶段 | 状态 | 备注 |
 |------|------|------|
 | v1 二分 (binary_v1) | 已弃 | CAPTURE 0/0.02/0.04 全 abort，HOLD 中点 0.012 |
-| **v2 A/B 二分** | 待启动 | HOLD 0–0.008，CAPTURE≥0.02 |
+| v2 A/B 二分 | **已弃** | 6 trials 全部囤兵坍塌 z0>85% emits<0.15 |
+| **v14e A/B 二分** | **运行中** | 三修复: anti-hoard + 高 entropy + 早 abort |
 | **C 长训** | 待 B | 10k u，目标 ≥ v13c |
+
+### v14d → v14e 诊断与修复
+
+**v14d 失败根因**：6 个 trial 全部在 ~update 16 出现囤兵坍塌——agent 发现
+"不发射=不被抢=garr 高" 的局部最优，z0 从 0.7 暴涨到 0.93+，emits 从 0.45
+骤降到 0.10 以下，此后不再恢复。early abort 阈值太松 (min_updates=80, z0≥0.92)
+未能及时杀掉坏 trial。
+
+**v14e 三项修复**：
+
+1. **Anti-hoard 惩罚** (结构性修复)：新增 `SHAPING_ANTI_HOARD` env var，当
+   garrison 占比 > 0.6 且不发射时施加负 reward，`-coef * excess`。搜参范围
+   0.005–0.03。
+2. **提高 emit entropy**：`ent_coef_emit` 从 0.002–0.006 提升到 0.010–0.025，
+   防止 emit head 过早收敛到 "always hold"。同步提升 src/dst/pct entropy。
+3. **收紧 early abort**：`min_updates` 从 80 降到 30；hoard 检测阈值从
+   `z0≥0.92 & garr≥150 & emits≤0.08` 收紧到 `z0≥0.85 & emits≤0.12`；
+   garr 上限从 200 降到 150。
 
 ---
 

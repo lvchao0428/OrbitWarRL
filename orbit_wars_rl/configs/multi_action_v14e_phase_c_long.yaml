@@ -1,0 +1,56 @@
+# v14e Phase C — long train (10k updates, resume from B)
+#
+# Lower entropy + LR for polishing. Anti-hoard still active.
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 10000
+  num_groups: 5
+  episode_steps: 500
+  eval_every: 200
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v14e_c_long
+  ckpt_every: 500
+  log_every: 1
+  seed: 2300
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  force_emit_worth_it: true
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 6
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00002
+  lr_warmup_steps: 20
+  lr_decay_steps: 200000
+  lr_floor: 0.000005
+  clip_eps: 0.08
+  value_clip_eps: 0.08
+  value_coef: 0.5
+  ent_coef_src: 0.002
+  ent_coef_dst: 0.002
+  ent_coef_pct: 0.004
+  ent_coef_emit: 0.006
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.02
+
+selfplay:
+  enabled: false

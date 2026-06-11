@@ -329,6 +329,7 @@ def train(
         f"EMIT_GATED={env_rewards.SHAPING_EMIT_GATED} "
         f"RELEASE={env_rewards.SHAPING_RELEASE}/K{env_rewards.SHAPING_RELEASE_K} "
         f"CAPTURE={env_rewards.SHAPING_CAPTURE}; "
+        f"ANTI_HOARD={env_rewards.SHAPING_ANTI_HOARD}/thresh{env_rewards.SHAPING_ANTI_HOARD_THRESH}; "
         f"episode_steps={cfg.episode_steps} (kaggle={kaggle_ep}, mismatch={cfg.episode_steps != kaggle_ep})",
         flush=True,
     )

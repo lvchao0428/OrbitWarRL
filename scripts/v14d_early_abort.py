@@ -29,25 +29,28 @@ def _last_update(log_path: Path) -> int:
     return last
 
 
-def abort_a(log_path: Path, *, min_updates: int = 80) -> tuple[int, str]:
+def abort_a(log_path: Path, *, min_updates: int = 30) -> tuple[int, str]:
     u = _last_update(log_path)
     if u < min_updates:
         return 1, f"too early (upd={u}<{min_updates})"
-    rows = _read_train_metrics(log_path, 20)
-    if len(rows) < 10:
+    rows = _read_train_metrics(log_path, 15)
+    if len(rows) < 8:
         return 1, f"too few metric rows ({len(rows)})"
     garr = median(r["garr"] for r in rows)
     z0 = median(r["z0"] for r in rows)
     spf = median(r["spf"] for r in rows)
     emits = median(r["emits"] for r in rows)
-    if z0 >= 0.92 and garr >= 150 and emits <= 0.08:
+    # v14e: catch hoarding collapse much earlier (v14d collapsed at ~upd 16)
+    if z0 >= 0.85 and emits <= 0.12:
         return 2, f"hoard collapse z0={z0:.2f} garr={garr:.0f} emits={emits:.2f}"
+    if z0 >= 0.80 and garr >= 120 and emits <= 0.15:
+        return 2, f"hoard drift z0={z0:.2f} garr={garr:.0f} emits={emits:.2f}"
     if z0 <= 0.08 and spf <= 8 and emits >= 0.70:
         return 2, f"spam collapse z0={z0:.2f} spf={spf:.1f} emits={emits:.2f}"
-    if garr >= 200:
+    if garr >= 150:
         return 2, f"extreme garr={garr:.0f}"
     ev = _read_last_eval(log_path)
-    if ev is not None and u >= 200 and ev["spf"] < 0.5:
+    if ev is not None and u >= 100 and ev["spf"] < 0.5:
         return 2, f"vs v20 zero launch spf={ev['spf']:.1f}"
     return 0, f"ok z0={z0:.2f} garr={garr:.0f} spf={spf:.1f} emits={emits:.2f}"
 

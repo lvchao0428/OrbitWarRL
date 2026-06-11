@@ -416,7 +416,8 @@ class BinarySearchOrchestrator:
         b = self.state.get("pipeline", {}).get("b")
         if not b or not b.get("ckpt"):
             return
-        ready = ROOT / "logs" / "v14d_c_longtrain.ready.json"
+        sid = self.search_id.replace("_binary", "").replace("_v1", "").replace("_v2", "")
+        ready = ROOT / "logs" / f"{sid}_c_longtrain.ready.json"
         ready.write_text(
             json.dumps(
                 {
