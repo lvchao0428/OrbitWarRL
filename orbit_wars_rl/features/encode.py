@@ -105,7 +105,7 @@ from orbit_wars_rl.env.state import EnvState
 
 PLANET_FEAT_DIM = 39  # v13: +6 fleet arrival prediction dims (33..38)
 FLEET_FEAT_DIM = 10
-GLOBAL_FEAT_DIM = 24  # v13: +6 temporal proxy globals (18..23)
+GLOBAL_FEAT_DIM = 27  # v15: +3 multi-match series context (24..26)
 
 LEAD_TIMES = (15.0, 30.0)
 
@@ -673,6 +673,7 @@ def _encode_global(
     player: int,
     episode_steps: int,
     aux: dict | None = None,
+    wins_needed: int = 1,
 ) -> jnp.ndarray:
     def player_ships(p: int) -> jnp.ndarray:
         ps_planet = jnp.where(
@@ -782,6 +783,14 @@ def _encode_global(
         0.0, 2.0,
     ) / jnp.float32(2.0)
 
+    # v15 multi-match series context (dims 24-26)
+    opp = 1 - player
+    wn = jnp.float32(max(wins_needed, 1))
+    match_score_me = state.match_score[player].astype(jnp.float32) / wn
+    match_score_opp = state.match_score[opp].astype(jnp.float32) / wn
+    max_matches = 2.0 * wn - 1.0  # e.g. BO3 → 3, BO5 → 5
+    match_progress = state.match_idx.astype(jnp.float32) / jnp.maximum(max_matches, jnp.float32(1.0))
+
     return jnp.stack(
         [
             step_norm,
@@ -808,14 +817,22 @@ def _encode_global(
             garr_advantage,
             growth_potential,
             threat_pressure,
+            match_score_me,
+            match_score_opp,
+            match_progress,
         ],
     )
 
 
-def encode(state: EnvState, player: int, episode_steps: int = constants.DEFAULT_EPISODE_STEPS) -> EncodedObs:
+def encode(
+    state: EnvState,
+    player: int,
+    episode_steps: int = constants.DEFAULT_EPISODE_STEPS,
+    wins_needed: int = 1,
+) -> EncodedObs:
     planet_feats, is_mine, is_enemy, is_neutral, aux = _encode_planets(state, player, episode_steps)
     fleet_feats = _encode_fleets(state, player)
-    global_feats = _encode_global(state, player, episode_steps, aux=aux)
+    global_feats = _encode_global(state, player, episode_steps, aux=aux, wins_needed=wins_needed)
 
     return EncodedObs(
         planet_feats=planet_feats,

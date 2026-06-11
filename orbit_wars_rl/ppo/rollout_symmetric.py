@@ -120,13 +120,14 @@ def make_rollout_fn_symmetric(
     passed through to the value head so it can see both perspectives.
     """
     use_zero_sum = model.zero_sum_value
+    wins_needed = env.wins_needed
 
     def _one_env_step(carry, _):
         state, rng, params = carry
         rng, r_act0, r_act1, r_reset = jax.random.split(rng, 4)
 
-        obs0 = encode(state, 0, episode_steps)
-        obs1 = encode(state, 1, episode_steps)
+        obs0 = encode(state, 0, episode_steps, wins_needed=wins_needed)
+        obs1 = encode(state, 1, episode_steps, wins_needed=wins_needed)
 
         sampled0 = model.apply(
             params, obs0, r_act0, state.planet_ships,
@@ -153,8 +154,8 @@ def make_rollout_fn_symmetric(
         (final_state, rng_out, _), traj = jax.lax.scan(
             _one_env_step, (state, rng, params), xs=None, length=rollout_length
         )
-        final_obs0 = encode(final_state, 0, episode_steps)
-        final_obs1 = encode(final_state, 1, episode_steps) if use_zero_sum else None
+        final_obs0 = encode(final_state, 0, episode_steps, wins_needed=wins_needed)
+        final_obs1 = encode(final_state, 1, episode_steps, wins_needed=wins_needed) if use_zero_sum else None
         sampled_final = model.apply(
             params, final_obs0,
             jax.random.fold_in(rng_out, 1),

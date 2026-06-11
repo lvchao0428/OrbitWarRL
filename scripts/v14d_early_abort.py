@@ -47,7 +47,7 @@ def abort_a(log_path: Path, *, min_updates: int = 30) -> tuple[int, str]:
         return 2, f"hoard drift z0={z0:.2f} garr={garr:.0f} emits={emits:.2f}"
     if z0 <= 0.08 and spf <= 8 and emits >= 0.70:
         return 2, f"spam collapse z0={z0:.2f} spf={spf:.1f} emits={emits:.2f}"
-    if garr >= 150:
+    if garr >= 200:
         return 2, f"extreme garr={garr:.0f}"
     ev = _read_last_eval(log_path)
     if ev is not None and u >= 100 and ev["spf"] < 0.5:

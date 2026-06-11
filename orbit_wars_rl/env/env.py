@@ -30,15 +30,21 @@ class OrbitWarsEnv:
 
     The class is just a thin namespace -- nothing is stored on it; methods are
     pure functions of (state, rng, actions). This keeps everything jit-friendly.
+
+    ``wins_needed`` controls multi-match series (v15). Default 1 = legacy
+    single-match behaviour where every match end starts a fresh map. Set to 2
+    for Best-of-3 (same map rematches until one player reaches 2 wins).
     """
 
     def __init__(
         self,
         num_groups: int = 5,
         episode_steps: int = constants.DEFAULT_EPISODE_STEPS,
+        wins_needed: int = 1,
     ) -> None:
         self.num_groups = int(num_groups)
         self.episode_steps = int(episode_steps)
+        self.wins_needed = int(wins_needed)
 
     def reset(self, rng: jnp.ndarray) -> EnvState:
         return init.reset(rng, num_groups=self.num_groups)
@@ -72,34 +78,12 @@ class OrbitWarsEnv:
         next_step = s4.step + 1
         done_now = rewards.is_terminal(s4.replace(step=next_step), self.episode_steps)
         terminal_r = rewards.terminal_reward(s4, 0)
-        # Potential-based dense shaping computed on the *board state before
-        # the step counter advances*. Suppressed on the terminal step so the
-        # +/-1 isn't double-counted by the value head.
         shaping = rewards.shaping_delta(state, s4, 0)
-        # Day 4 Track 3 shaping family. Each term defaults off via env var
-        # so v8 ckpt resume is reward-bit-exact. All terms operate on player 0.
-        #
-        #   keep_home / fleet_size : v1 family (DAY4 §11.1-§11.2, kept for
-        #     parity / ablation; default off since v9, replaced below).
-        #   prod_share / planet_share / fleet_size_log : v2 family motivated
-        #     by 5-episode top10 expert analysis (DAY4 §12). prod_share has
-        #     PERFECT 5-of-5 separator between winners and losers in expert
-        #     replays.
         keep_r = rewards.keep_home_reward(s4, 0)
         fleet_r = rewards.fleet_size_reward(valid_p0, ships_p0)
         prod_r = rewards.prod_share_reward(s4, 0)
         planet_r = rewards.planet_share_reward(s4, 0)
         fleet_log_r = rewards.fleet_size_log_reward(valid_p0, ships_p0)
-        # Day 5 (post-top10 deep-analysis) shaping family. All default 0 so
-        # adding the call sites is reward-bit-exact for existing configs.
-        #
-        #   prod_share_DELTA : credit-assigning version of prod_share. Sum
-        #     over an episode telescopes to ``coef * (share_end - share_start)``.
-        #   emit_log         : log1p of valid launches this turn -- no
-        #     "multi-emit >=K" threshold, just monotone reward for emitting.
-        #   release_bonus    : log_size * tanh(src_garr/src_prod/K - 1).
-        #     Normalizes stockpile by each planet's own production; no
-        #     ship-count threshold and no stored EMA state.
         prod_d_r = rewards.prod_share_delta_reward(state, s4, 0)
         capture_r = rewards.capture_flip_reward(state, s4, 0)
         release_r = rewards.release_bonus_reward(
@@ -108,16 +92,11 @@ class OrbitWarsEnv:
         emit_log_r = rewards.emit_log_reward_gated(
             valid_p0, state, actions[0].src_idx
         )
-        # Day 8 / f35: sharp anti-1-ship + high-prod capture. Default 0.
         one_ship_r = rewards.one_ship_penalty_reward(valid_p0, ships_p0)
         high_prod_r = rewards.high_prod_capture_reward(state, s4, 0)
-        # Day 11 / f42: fleet-scaled capture bonus. Default 0.
         capture_fs_r = rewards.capture_fleet_scale_reward(state, s4, 0)
-        # Day 11 / f43: gated multi-emit bonus. Default 0.
         multi_emit_r = rewards.multi_emit_gated_bonus_reward(valid_p0, ships_p0)
-        # v13: hold bonus — reward for choosing not to emit when garrison > 20.
         hold_r = rewards.hold_bonus_reward(valid_p0, state, 0)
-        # v14e: anti-hoard penalty — punish holding when garrison ratio is high.
         anti_hoard_r = rewards.anti_hoard_penalty_reward(valid_p0, state, 0)
         non_terminal_r = (
             shaping
@@ -143,12 +122,47 @@ class OrbitWarsEnv:
         actions: tuple[MultiPlayerAction, MultiPlayerAction],
         reset_rng: jnp.ndarray,
     ) -> tuple[EnvState, EnvOutput]:
-        """Like ``step`` but resets when done. Used inside rollouts."""
+        """Like ``step`` but resets when done. Used inside rollouts.
+
+        With multi-match series (wins_needed > 1):
+        - On match end: determine match winner, update match_score.
+        - If a player reaches ``wins_needed``, series is over → full reset
+          with a new map.
+        - Otherwise, reset dynamics only (same map) for the next match.
+
+        With wins_needed=1 (default), every match end is a series end,
+        preserving legacy single-match behaviour.
+        """
         next_state, out = self.step(state, actions)
+
+        # Determine per-player match result for score tracking.
+        # terminal_reward is from player 0's perspective: +1 win, -1 loss, 0 tie.
+        # We need a bool winner mask for both players.
+        tr = rewards.terminal_reward(next_state.replace(step=next_state.step), 0)
+        p0_won = tr > 0
+        p0_lost = tr < 0
+        # Ties: both get a point (prevents infinite series).
+        is_tie = jnp.equal(tr, 0.0) & out.done
+        winner_mask = jnp.stack([
+            (p0_won | is_tie).astype(jnp.int32),
+            (p0_lost | is_tie).astype(jnp.int32),
+        ])
+
+        new_score = next_state.match_score + jnp.where(
+            out.done, winner_mask, jnp.zeros_like(winner_mask)
+        )
+        series_done = out.done & (new_score.max() >= self.wins_needed)
+        match_only = out.done & ~series_done
+
+        # Branch 1: series done → full reset with new map
         fresh = init.reset(reset_rng, num_groups=self.num_groups)
+        # Branch 2: match done but series continues → same-map reset
+        match_reset = init.reset_match_same_map(next_state, winner_mask)
+
+        # Pick: series_done → fresh, match_only → match_reset, else → next_state
         chosen = jax.tree_util.tree_map(
-            lambda a, b: jnp.where(out.done, a, b),
-            fresh, next_state,
+            lambda f, m, n: jnp.where(series_done, f, jnp.where(match_only, m, n)),
+            fresh, match_reset, next_state,
         )
         return chosen, out
 

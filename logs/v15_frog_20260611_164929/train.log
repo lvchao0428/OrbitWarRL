@@ -1,0 +1,60 @@
+E0611 16:49:30.633720 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 23.52GiB (25251643392 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.633960 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 21.17GiB (22726477824 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.634153 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 19.05GiB (20453828608 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.634339 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 17.14GiB (18408445952 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.634528 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 15.43GiB (16567601152 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.634705 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 13.89GiB (14910840832 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.634881 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 12.50GiB (13419756544 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.635058 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 11.25GiB (12077780992 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.635244 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 10.12GiB (10870002688 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.635424 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 9.11GiB (9783002112 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.635603 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 8.20GiB (8804701184 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.635771 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 7.38GiB (7924230656 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:49:30.635954 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 6.64GiB (7131807232 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+[reward] kaggle-aligned: terminal +1 win/+1 tie>0/-1 loss/-1 double-wipeout; is_terminal at step >= episode_steps-2; SHAPING_SCALE=0.0; v1: KEEP_HOME=0.0 FLEET_SIZE=0.0/norm20.0; v2 (expert-replay calibrated): PROD_SHARE=0.0 PLANET_SHARE=0.0 FLEET_LOG=0.0/ref500.0/floor0.3; v3 (top10-2630ep calibrated): PROD_SHARE_DELTA=0.0 EMIT_LOG=0.0 EMIT_GATED=0.0 RELEASE=0.0/K20.0 CAPTURE=0.0; ANTI_HOARD=0.03/thresh0.6; episode_steps=500 (kaggle=500, mismatch=False); wins_needed=2 (multi-match=BO3)
+[symmetric] Frog Parade style: same params drive BOTH players, no frozen/strong/buffer opponents, zero_sum_value=True
+E0611 16:51:13.470047 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 17.54GiB (18833016832 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:13.470159 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 15.79GiB (16949714944 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:13.470197 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 14.21GiB (15254743040 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:13.470236 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 12.79GiB (13729268736 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:13.470279 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 11.51GiB (12356341760 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:13.470321 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 17.54GiB (18833016832 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:13.470357 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 15.79GiB (16949714944 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:13.470393 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 14.21GiB (15254743040 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:13.470432 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 12.79GiB (13729268736 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:13.470466 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 11.51GiB (12356341760 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.470703 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 17.54GiB (18833016832 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.470786 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 15.79GiB (16949714944 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.470846 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 14.21GiB (15254743040 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.470901 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 12.79GiB (13729268736 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.470951 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 11.51GiB (12356341760 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.471009 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 17.54GiB (18833016832 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.471064 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 15.79GiB (16949714944 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.471116 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 14.21GiB (15254743040 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.471171 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 12.79GiB (13729268736 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+E0611 16:51:23.471226 3144868 cuda_executor.cc:1273] [0] Failed to allocate device memory: INTERNAL: [0] Failed to allocate 11.51GiB (12356341760 bytes) of device memory: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+W0611 16:51:23.471228 3144868 bfc_allocator.cc:514] Allocator (GPU_0_bfc) ran out of memory trying to allocate 10.95GiB (rounded to 11759462912)requested by op 
+If the cause is memory fragmentation maybe the environment variable 'TF_GPU_ALLOCATOR=cuda_malloc_async' will improve the situation. 
+Current allocation summary follows.
+Current allocation summary follows.
+W0611 16:51:23.471530 3144868 bfc_allocator.cc:525] ***_________________________________________________________________________________________________
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 75, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 65, in main
+    result = train(train_cfg, log_dir=log_dir, resume_from=resume_from)
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/runner.py", line 589, in train
+    metrics_py = {k: float(v) for k, v in metrics.items()}
+                     ~~~~~^^^
+  File "/home/charlie/anaconda3/lib/python3.13/site-packages/jax/_src/array.py", line 300, in __float__
+    return self._value.__float__()
+           ^^^^^^^^^^^
+  File "/home/charlie/anaconda3/lib/python3.13/site-packages/jax/_src/profiler.py", line 427, in wrapper
+    return func(*args, **kwargs)
+  File "/home/charlie/anaconda3/lib/python3.13/site-packages/jax/_src/array.py", line 614, in _value
+    npy_value, did_copy = self._single_device_array_to_np_array_did_copy()
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 10.95GiB. [tf-allocator-allocation-error=''] [executable_name='jit_train_step']

@@ -25,3 +25,51 @@
 [search] blocked — waiting for parent phase
 [search] DONE — no phase-B winner yet
 nohup: 无法运行命令 'python': 没有那个文件或目录
+[search] v14d_binary_v2 binary mode — ~104 trials (est.)
+  phase a: 48 probes + 1 confirm
+  phase b: 54 probes + 1 confirm
+  phase c: separate (see v14d_phase_c_longtrain.sh)
+[search] START v14d_binary_v2_a_p0i1_ORBITWARS_SHAPING_HOLD_BONUS_0.0_e25ce703c7
+[search] ABORT v14d_binary_v2_a_p0i1_ORBITWARS_SHAPING_HOLD_BONUS_0.0_e25ce703c7
+[search] START v14d_binary_v2_a_p0i1_ORBITWARS_SHAPING_HOLD_BONUS_0.004_8eb6d1f0ee
+[search] ABORT v14d_binary_v2_a_p0i1_ORBITWARS_SHAPING_HOLD_BONUS_0.004_8eb6d1f0ee
+[search] START v14d_binary_v2_a_p0i1_ORBITWARS_SHAPING_HOLD_BONUS_0.008_52a811dae0
+[search] ABORT v14d_binary_v2_a_p0i1_ORBITWARS_SHAPING_HOLD_BONUS_0.008_52a811dae0
+[search] START v14d_binary_v2_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.01_4fa13ba611
+[search] ABORT v14d_binary_v2_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.01_4fa13ba611
+[search] START v14d_binary_v2_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.025_8eb6d1f0ee
+[search] ABORT v14d_binary_v2_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.025_8eb6d1f0ee
+[search] START v14d_binary_v2_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.04_7b50688ef3
+[search] ABORT v14d_binary_v2_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.04_7b50688ef3
+[search] START v14d_binary_v2_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.01_77d5af9a26
+[search] ABORT v14d_binary_v2_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.01_77d5af9a26
+[search] START v14d_binary_v2_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.025_7b50688ef3
+[search] ABORT v14d_binary_v2_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.025_7b50688ef3
+[search] START v14d_binary_v2_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.04_d1d6c4e127
+[search] ABORT v14d_binary_v2_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.04_d1d6c4e127
+[search] START v14d_binary_v2_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.003_c8ea4205c1
+[search] ABORT v14d_binary_v2_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.003_c8ea4205c1
+[search] START v14d_binary_v2_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.0075_7b50688ef3
+[search] ABORT v14d_binary_v2_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.0075_7b50688ef3
+[search] START v14d_binary_v2_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.012_5ec44792b5
+[search] ABORT v14d_binary_v2_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.012_5ec44792b5
+[search] START v14d_binary_v2_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_14.0_f210889184
+[search] ABORT v14d_binary_v2_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_14.0_f210889184
+[search] START v14d_binary_v2_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_17.0_5ec44792b5
+[search] ABORT v14d_binary_v2_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_17.0_5ec44792b5
+[search] START v14d_binary_v2_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_20.0_b34113b93d
+[search] ABORT v14d_binary_v2_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_20.0_b34113b93d
+[search] START v14d_binary_v2_a_p0i6_ent_coef_emit_0.002_5510dfc5b3
+[search] ABORT v14d_binary_v2_a_p0i6_ent_coef_emit_0.002_5510dfc5b3
+[search] START v14d_binary_v2_a_p0i6_ent_coef_emit_0.004_5ec44792b5
+[search] ABORT v14d_binary_v2_a_p0i6_ent_coef_emit_0.004_5ec44792b5
+[search] START v14d_binary_v2_a_p0i6_ent_coef_emit_0.006_4ecaf5402d
+[search] ABORT v14d_binary_v2_a_p0i6_ent_coef_emit_0.006_4ecaf5402d
+[search] START v14d_binary_v2_a_p0i7_lr_peak_3e-05_bef73f7d43
+[search] ABORT v14d_binary_v2_a_p0i7_lr_peak_3e-05_bef73f7d43
+[search] START v14d_binary_v2_a_p0i7_lr_peak_4e-05_4ecaf5402d
+[search] ABORT v14d_binary_v2_a_p0i7_lr_peak_4e-05_4ecaf5402d
+[search] START v14d_binary_v2_a_p0i7_lr_peak_5e-05_16eb713b77
+[search] ABORT v14d_binary_v2_a_p0i7_lr_peak_5e-05_16eb713b77
+[search] blocked — no schedulable job
+[search] DONE — no phase-B winner yet

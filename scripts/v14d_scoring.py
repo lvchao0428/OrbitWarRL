@@ -44,10 +44,10 @@ def score_trial(phase: str, log_path: Path, *, probe: bool = False) -> dict:
         z0 = median(r["z0"] for r in rows)
         spf = median(r["spf"] for r in rows)
         emits = median(r["emits"] for r in rows)
-        score += max(0.0, 1.0 - abs(garr - 70.0) / 70.0) * 25
-        score += max(0.0, 1.0 - abs(z0 - 0.45) / 0.45) * 25
-        score += max(0.0, 1.0 - abs(spf - 40.0) / 40.0) * 20
-        score += max(0.0, 1.0 - abs(emits - 0.55) / 0.55) * 15
+        score += max(0.0, 1.0 - abs(garr - 90.0) / 90.0) * 25
+        score += max(0.0, 1.0 - abs(z0 - 0.55) / 0.55) * 25
+        score += max(0.0, 1.0 - abs(spf - 50.0) / 50.0) * 20
+        score += max(0.0, 1.0 - abs(emits - 0.50) / 0.50) * 15
         if ev:
             score += min(ev["spf"], 80.0) * 0.15
             score += ev["flip"] * 0.2

@@ -61,6 +61,16 @@ class EnvState:
     # Shape: [NUM_PLAYERS] int32. Filled by init.reset(); zeroed elsewhere.
     home_planet_idx: chex.Array
 
+    # v15 multi-match series fields. A series is Best-of-N on the same map.
+    # Each match is one RL episode (done=True on match end).
+    # When wins_needed=1 (default), the env behaves exactly as before (single match).
+    match_score: chex.Array       # [NUM_PLAYERS] int32 — wins accumulated in current series
+    match_idx: chex.Array         # scalar int32 — which match in the series (0-based)
+    # Initial ship counts per planet, stored at series start so match resets
+    # can restore them without re-running the RNG-based init.
+    init_planet_ships: chex.Array   # [MAX_PLANETS] int32
+    init_planet_owner: chex.Array   # [MAX_PLANETS] int8
+
 
 def empty_state(max_planets: int, max_fleets: int) -> EnvState:
     """All-zero placeholder; useful for shape probing or unit tests."""
@@ -86,4 +96,8 @@ def empty_state(max_planets: int, max_fleets: int) -> EnvState:
         planet_orbit_phase=jnp.zeros((max_planets,), dtype=jnp.float32),
         planet_is_orbiting=jnp.zeros((max_planets,), dtype=jnp.bool_),
         home_planet_idx=jnp.zeros((constants.NUM_PLAYERS,), dtype=jnp.int32),
+        match_score=jnp.zeros((constants.NUM_PLAYERS,), dtype=jnp.int32),
+        match_idx=jnp.int32(0),
+        init_planet_ships=jnp.zeros((max_planets,), dtype=jnp.int32),
+        init_planet_owner=jnp.full((max_planets,), -2, dtype=jnp.int8),
     )

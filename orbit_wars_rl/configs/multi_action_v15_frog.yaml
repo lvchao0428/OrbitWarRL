@@ -1,0 +1,66 @@
+# v15: Frog Parade style — multi-match BO3 + pure terminal ±1 per match
+#
+# Based on v13c (proven 10k updates) + Frog Parade insights:
+#   - wins_needed=2: Best-of-3 series (same map, 2-3 matches per series)
+#   - Pure terminal ±1 reward per match (no shaping except anti-hoard)
+#   - Low entropy (closer to Frog Parade's 1e-4)
+#   - gamma=0.9999 (long horizon, match Frog Parade)
+#   - Single long run: 10000 updates, no hyperparameter search
+#
+# The multi-match structure provides 2-3x denser terminal signal than
+# single-episode, which should mitigate early hoarding collapse.
+# Anti-hoard penalty (ORBITWARS_SHAPING_ANTI_HOARD) is the only structural
+# collapse prevention; all other shaping disabled via env vars = 0.
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 10000
+  num_groups: 5
+  episode_steps: 500
+  wins_needed: 2
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v15_frog
+  ckpt_every: 200
+  log_every: 1
+  seed: 1500
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00005
+  lr_warmup_steps: 50
+  lr_decay_steps: 80000
+  lr_floor: 0.00001
+  clip_eps: 0.10
+  value_clip_eps: 0.10
+  value_coef: 0.5
+  ent_coef_src: 0.001
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.001
+  ent_coef_emit: 0.005
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.02
+
+selfplay:
+  enabled: false

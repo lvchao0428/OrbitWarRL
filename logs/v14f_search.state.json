@@ -1,0 +1,868 @@
+{
+  "search_id": "v14f_binary_v1",
+  "mode": "binary",
+  "started_at": "2026-06-11T06:25:59Z",
+  "trials": {
+    "v14f_binary_v1_a_p0i0_ORBITWARS_SHAPING_ANTI_HOARD_0.02_3a0935cdc5": {
+      "trial_id": "v14f_binary_v1_a_p0i0_ORBITWARS_SHAPING_ANTI_HOARD_0.02_3a0935cdc5",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.02,
+        "ORBITWARS_SHAPING_CAPTURE": 0.06,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.015
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=91.2 z0=0.72 spf=63.7 emits=0.48 v20_spf=0.0 flip=0.0%",
+      "score": 60.21867929292928,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T06:25:59Z",
+      "finished_at": "2026-06-11T06:31:00Z"
+    },
+    "v14f_binary_v1_a_p0i0_ORBITWARS_SHAPING_ANTI_HOARD_0.035_e2928f3258": {
+      "trial_id": "v14f_binary_v1_a_p0i0_ORBITWARS_SHAPING_ANTI_HOARD_0.035_e2928f3258",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.06,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.015
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=102.4 z0=0.74 spf=51.2 emits=0.46 v20_spf=0.0 flip=0.0%",
+      "score": 60.44281313131314,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T06:31:00Z",
+      "finished_at": "2026-06-11T06:36:00Z"
+    },
+    "v14f_binary_v1_a_p0i0_ORBITWARS_SHAPING_ANTI_HOARD_0.05_516860bc66": {
+      "trial_id": "v14f_binary_v1_a_p0i0_ORBITWARS_SHAPING_ANTI_HOARD_0.05_516860bc66",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.05,
+        "ORBITWARS_SHAPING_CAPTURE": 0.06,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.015
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=152.3 z0=0.78 spf=48.1 emits=0.40 v20_spf=0.0 flip=0.0%",
+      "score": 45.44610858585859,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T06:36:00Z",
+      "finished_at": "2026-06-11T06:50:00Z"
+    },
+    "v14f_binary_v1_a_p0i1_ORBITWARS_SHAPING_CAPTURE_0.04_6d2caaf22a": {
+      "trial_id": "v14f_binary_v1_a_p0i1_ORBITWARS_SHAPING_CAPTURE_0.04_6d2caaf22a",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.015
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=215.1 z0=0.79 spf=50.8 emits=0.40 v20_spf=83.1 flip=35.3%",
+      "score": 63.81475454545455,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T06:50:00Z",
+      "finished_at": "2026-06-11T07:05:01Z"
+    },
+    "v14f_binary_v1_a_p0i1_ORBITWARS_SHAPING_CAPTURE_0.06_e2928f3258": {
+      "trial_id": "v14f_binary_v1_a_p0i1_ORBITWARS_SHAPING_CAPTURE_0.06_e2928f3258",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.06,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.015
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=171.3 z0=0.78 spf=48.5 emits=0.40 v20_spf=0.0 flip=44.4%",
+      "score": 48.662603030303025,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T07:05:01Z",
+      "finished_at": "2026-06-11T07:12:01Z"
+    },
+    "v14f_binary_v1_a_p0i1_ORBITWARS_SHAPING_CAPTURE_0.08_88a1cf8d02": {
+      "trial_id": "v14f_binary_v1_a_p0i1_ORBITWARS_SHAPING_CAPTURE_0.08_88a1cf8d02",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.08,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.015
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=95.7 z0=0.74 spf=71.7 emits=0.45 v20_spf=0.0 flip=0.0%",
+      "score": 54.81156313131313,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T07:12:01Z",
+      "finished_at": "2026-06-11T07:17:01Z"
+    },
+    "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.005_9ef26e47b5": {
+      "trial_id": "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.005_9ef26e47b5",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.005
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=88.2 z0=0.71 spf=50.8 emits=0.54 v20_spf=0.0 flip=0.0%",
+      "score": 64.49048737373738,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T07:17:01Z",
+      "finished_at": "2026-06-11T07:22:02Z"
+    },
+    "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.015_6d2caaf22a": {
+      "trial_id": "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.015_6d2caaf22a",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.015
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=54.5 z0=0.68 spf=55.8 emits=0.55 v20_spf=0.0 flip=0.0%",
+      "score": 55.74282828282828,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T07:22:02Z",
+      "finished_at": "2026-06-11T07:27:02Z"
+    },
+    "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.025_7564eb045c": {
+      "trial_id": "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.025_7564eb045c",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=192.6 z0=0.78 spf=55.0 emits=0.40 v20_spf=18.5 flip=9.3%",
+      "score": 1059.409227272727,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T07:27:02Z",
+      "finished_at": "2026-06-11T07:38:03Z"
+    },
+    "v14f_binary_v1_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.005_0a0888b4df": {
+      "trial_id": "v14f_binary_v1_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.005_0a0888b4df",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.005,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=115.3 z0=0.72 spf=63.8 emits=0.52 v20_spf=0.0 flip=0.0%",
+      "score": 54.63370707070707,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T07:38:03Z",
+      "finished_at": "2026-06-11T07:50:03Z"
+    },
+    "v14f_binary_v1_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.015_7564eb045c": {
+      "trial_id": "v14f_binary_v1_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.015_7564eb045c",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=103.0 z0=0.73 spf=61.0 emits=0.45 v20_spf=0.0 flip=0.0%",
+      "score": 57.066510101010095,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T07:50:03Z",
+      "finished_at": "2026-06-11T07:55:04Z"
+    },
+    "v14f_binary_v1_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.025_d4329c6247": {
+      "trial_id": "v14f_binary_v1_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.025_d4329c6247",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=74.4 z0=0.69 spf=58.5 emits=0.55 v20_spf=0.0 flip=0.0%",
+      "score": 58.654893939393936,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T07:55:04Z",
+      "finished_at": "2026-06-11T08:00:04Z"
+    },
+    "v14f_binary_v1_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.003_9bd17803b1": {
+      "trial_id": "v14f_binary_v1_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.003_9bd17803b1",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.003,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=75.7 z0=0.70 spf=56.1 emits=0.52 v20_spf=0.0 flip=0.0%",
+      "score": 60.477156565656564,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T08:00:04Z",
+      "finished_at": "2026-06-11T08:05:04Z"
+    },
+    "v14f_binary_v1_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.0075_d4329c6247": {
+      "trial_id": "v14f_binary_v1_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.0075_d4329c6247",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.0075,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=90.5 z0=0.77 spf=75.7 emits=0.37 v20_spf=0.0 flip=0.0%",
+      "score": 51.59594444444444,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T08:05:04Z",
+      "finished_at": "2026-06-11T08:10:05Z"
+    },
+    "v14f_binary_v1_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.012_69a78a36ce": {
+      "trial_id": "v14f_binary_v1_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.012_69a78a36ce",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.012,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=180.8 z0=0.78 spf=68.6 emits=0.36 v20_spf=0.0 flip=0.0%",
+      "score": 32.21963636363636,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T08:10:05Z",
+      "finished_at": "2026-06-11T08:22:05Z"
+    },
+    "v14f_binary_v1_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_12.0_029ca212a4": {
+      "trial_id": "v14f_binary_v1_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_12.0_029ca212a4",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.003,
+        "ORBITWARS_SHAPING_RELEASE_K": 12.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=67.2 z0=0.69 spf=48.8 emits=0.54 v20_spf=0.0 flip=0.0%",
+      "score": 60.15188131313132,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T08:22:05Z",
+      "finished_at": "2026-06-11T08:27:06Z"
+    },
+    "v14f_binary_v1_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_15.0_9bd17803b1": {
+      "trial_id": "v14f_binary_v1_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_15.0_9bd17803b1",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.003,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=96.2 z0=0.77 spf=69.5 emits=0.34 v20_spf=0.0 flip=0.0%",
+      "score": 51.46041666666666,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T08:27:06Z",
+      "finished_at": "2026-06-11T08:32:06Z"
+    },
+    "v14f_binary_v1_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_18.0_60ac90fba3": {
+      "trial_id": "v14f_binary_v1_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_18.0_60ac90fba3",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.003,
+        "ORBITWARS_SHAPING_RELEASE_K": 18.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=86.7 z0=0.73 spf=49.9 emits=0.49 v20_spf=0.0 flip=0.0%",
+      "score": 64.21548232323232,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T08:32:06Z",
+      "finished_at": "2026-06-11T08:37:07Z"
+    },
+    "v14f_binary_v1_a_p0i6_ent_coef_emit_0.015_a9b7415809": {
+      "trial_id": "v14f_binary_v1_a_p0i6_ent_coef_emit_0.015_a9b7415809",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.003,
+        "ORBITWARS_SHAPING_RELEASE_K": 18.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.015,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=105.8 z0=0.73 spf=57.4 emits=0.48 v20_spf=0.0 flip=0.0%",
+      "score": 58.35752272727272,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T08:37:07Z",
+      "finished_at": "2026-06-11T08:42:07Z"
+    },
+    "v14f_binary_v1_a_p0i6_ent_coef_emit_0.0225_60ac90fba3": {
+      "trial_id": "v14f_binary_v1_a_p0i6_ent_coef_emit_0.0225_60ac90fba3",
+      "phase": "a",
+      "kind": "probe",
+      "env_params": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.003,
+        "ORBITWARS_SHAPING_RELEASE_K": 18.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+      },
+      "ppo_params": {
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "parent_ckpt": null,
+      "status": "aborted",
+      "ckpt": null,
+      "gate": "A: garr=79.8 z0=0.70 spf=49.6 emits=0.53 v20_spf=0.0 flip=0.0%",
+      "score": 63.30151767676768,
+      "beats_v13c": false,
+      "started_at": "2026-06-11T08:42:07Z",
+      "finished_at": "2026-06-11T08:47:07Z"
+    }
+  },
+  "binary": {
+    "a": {
+      "env_ranges": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": {
+          "lo": 0.0275,
+          "hi": 0.0425,
+          "integer": false,
+          "mid": 0.035
+        },
+        "ORBITWARS_SHAPING_CAPTURE": {
+          "lo": 0.04,
+          "hi": 0.06,
+          "integer": false,
+          "mid": 0.06
+        },
+        "ORBITWARS_SHAPING_RELEASE": {
+          "lo": 0.003,
+          "hi": 0.0075,
+          "integer": false,
+          "mid": 0.0075
+        },
+        "ORBITWARS_SHAPING_RELEASE_K": {
+          "lo": 15.0,
+          "hi": 18.0,
+          "integer": true,
+          "mid": 15.0
+        },
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": {
+          "lo": 0.015,
+          "hi": 0.025,
+          "integer": false,
+          "mid": 0.015
+        },
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": {
+          "lo": 0.015,
+          "hi": 0.025,
+          "integer": false,
+          "mid": 0.015
+        }
+      },
+      "ppo_ranges": {
+        "ent_coef_emit": {
+          "lo": 0.015,
+          "hi": 0.03,
+          "integer": false,
+          "mid": 0.0225
+        },
+        "lr_peak": {
+          "lo": 3e-05,
+          "hi": 6e-05,
+          "integer": false,
+          "mid": 4.5e-05
+        }
+      },
+      "current": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+        "ORBITWARS_SHAPING_CAPTURE": 0.04,
+        "ORBITWARS_SHAPING_RELEASE": 0.003,
+        "ORBITWARS_SHAPING_RELEASE_K": 18.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025,
+        "ent_coef_emit": 0.0225,
+        "lr_peak": 4.5e-05
+      },
+      "pass_idx": 0,
+      "param_idx": 6,
+      "param_order": [
+        "ORBITWARS_SHAPING_ANTI_HOARD",
+        "ORBITWARS_SHAPING_CAPTURE",
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY",
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA",
+        "ORBITWARS_SHAPING_RELEASE",
+        "ORBITWARS_SHAPING_RELEASE_K",
+        "ent_coef_emit",
+        "lr_peak"
+      ],
+      "step_key": "p0_i6_ent_coef_emit",
+      "step_pending": [
+        {
+          "trial_id": "v14f_binary_v1_a_p0i6_ent_coef_emit_0.0225_60ac90fba3",
+          "phase": "a",
+          "params": {
+            "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+            "ORBITWARS_SHAPING_CAPTURE": 0.04,
+            "ORBITWARS_SHAPING_RELEASE": 0.003,
+            "ORBITWARS_SHAPING_RELEASE_K": 18.0,
+            "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+            "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025,
+            "ent_coef_emit": 0.0225,
+            "lr_peak": 4.5e-05
+          },
+          "env_params": {
+            "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+            "ORBITWARS_SHAPING_CAPTURE": 0.04,
+            "ORBITWARS_SHAPING_RELEASE": 0.003,
+            "ORBITWARS_SHAPING_RELEASE_K": 18.0,
+            "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+            "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+          },
+          "ppo_params": {
+            "ent_coef_emit": 0.0225,
+            "lr_peak": 4.5e-05
+          },
+          "pname": "ent_coef_emit",
+          "value": 0.0225,
+          "probe": true
+        },
+        {
+          "trial_id": "v14f_binary_v1_a_p0i6_ent_coef_emit_0.03_9691c37c02",
+          "phase": "a",
+          "params": {
+            "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+            "ORBITWARS_SHAPING_CAPTURE": 0.04,
+            "ORBITWARS_SHAPING_RELEASE": 0.003,
+            "ORBITWARS_SHAPING_RELEASE_K": 18.0,
+            "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+            "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025,
+            "ent_coef_emit": 0.03,
+            "lr_peak": 4.5e-05
+          },
+          "env_params": {
+            "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+            "ORBITWARS_SHAPING_CAPTURE": 0.04,
+            "ORBITWARS_SHAPING_RELEASE": 0.003,
+            "ORBITWARS_SHAPING_RELEASE_K": 18.0,
+            "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+            "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025
+          },
+          "ppo_params": {
+            "ent_coef_emit": 0.03,
+            "lr_peak": 4.5e-05
+          },
+          "pname": "ent_coef_emit",
+          "value": 0.03,
+          "probe": true
+        }
+      ],
+      "step_results": {
+        "p0_i0_ORBITWARS_SHAPING_ANTI_HOARD": [
+          {
+            "value": 0.02,
+            "score": 60.21867929292928,
+            "trial_id": "v14f_binary_v1_a_p0i0_ORBITWARS_SHAPING_ANTI_HOARD_0.02_3a0935cdc5"
+          },
+          {
+            "value": 0.035,
+            "score": 60.44281313131314,
+            "trial_id": "v14f_binary_v1_a_p0i0_ORBITWARS_SHAPING_ANTI_HOARD_0.035_e2928f3258"
+          },
+          {
+            "value": 0.05,
+            "score": 45.44610858585859,
+            "trial_id": "v14f_binary_v1_a_p0i0_ORBITWARS_SHAPING_ANTI_HOARD_0.05_516860bc66"
+          }
+        ],
+        "p0_i1_ORBITWARS_SHAPING_CAPTURE": [
+          {
+            "value": 0.04,
+            "score": 63.81475454545455,
+            "trial_id": "v14f_binary_v1_a_p0i1_ORBITWARS_SHAPING_CAPTURE_0.04_6d2caaf22a"
+          },
+          {
+            "value": 0.06,
+            "score": 48.662603030303025,
+            "trial_id": "v14f_binary_v1_a_p0i1_ORBITWARS_SHAPING_CAPTURE_0.06_e2928f3258"
+          },
+          {
+            "value": 0.08,
+            "score": 54.81156313131313,
+            "trial_id": "v14f_binary_v1_a_p0i1_ORBITWARS_SHAPING_CAPTURE_0.08_88a1cf8d02"
+          }
+        ],
+        "p0_i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY": [
+          {
+            "value": 0.005,
+            "score": 64.49048737373738,
+            "trial_id": "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.005_9ef26e47b5"
+          },
+          {
+            "value": 0.015,
+            "score": 55.74282828282828,
+            "trial_id": "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.015_6d2caaf22a"
+          },
+          {
+            "value": 0.025,
+            "score": 1059.409227272727,
+            "trial_id": "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.025_7564eb045c"
+          }
+        ],
+        "p0_i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA": [
+          {
+            "value": 0.005,
+            "score": 54.63370707070707,
+            "trial_id": "v14f_binary_v1_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.005_0a0888b4df"
+          },
+          {
+            "value": 0.015,
+            "score": 57.066510101010095,
+            "trial_id": "v14f_binary_v1_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.015_7564eb045c"
+          },
+          {
+            "value": 0.025,
+            "score": 58.654893939393936,
+            "trial_id": "v14f_binary_v1_a_p0i3_ORBITWARS_SHAPING_PROD_SHARE_DELTA_0.025_d4329c6247"
+          }
+        ],
+        "p0_i4_ORBITWARS_SHAPING_RELEASE": [
+          {
+            "value": 0.003,
+            "score": 60.477156565656564,
+            "trial_id": "v14f_binary_v1_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.003_9bd17803b1"
+          },
+          {
+            "value": 0.0075,
+            "score": 51.59594444444444,
+            "trial_id": "v14f_binary_v1_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.0075_d4329c6247"
+          },
+          {
+            "value": 0.012,
+            "score": 32.21963636363636,
+            "trial_id": "v14f_binary_v1_a_p0i4_ORBITWARS_SHAPING_RELEASE_0.012_69a78a36ce"
+          }
+        ],
+        "p0_i5_ORBITWARS_SHAPING_RELEASE_K": [
+          {
+            "value": 12.0,
+            "score": 60.15188131313132,
+            "trial_id": "v14f_binary_v1_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_12.0_029ca212a4"
+          },
+          {
+            "value": 15.0,
+            "score": 51.46041666666666,
+            "trial_id": "v14f_binary_v1_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_15.0_9bd17803b1"
+          },
+          {
+            "value": 18.0,
+            "score": 64.21548232323232,
+            "trial_id": "v14f_binary_v1_a_p0i5_ORBITWARS_SHAPING_RELEASE_K_18.0_60ac90fba3"
+          }
+        ],
+        "p0_i6_ent_coef_emit": [
+          {
+            "value": 0.015,
+            "score": 58.35752272727272,
+            "trial_id": "v14f_binary_v1_a_p0i6_ent_coef_emit_0.015_a9b7415809"
+          }
+        ]
+      },
+      "best": {
+        "params": {
+          "ORBITWARS_SHAPING_ANTI_HOARD": 0.035,
+          "ORBITWARS_SHAPING_CAPTURE": 0.04,
+          "ORBITWARS_SHAPING_RELEASE": 0.0075,
+          "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+          "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.015,
+          "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025,
+          "ent_coef_emit": 0.0225,
+          "lr_peak": 4.5e-05
+        },
+        "score": 1059.409227272727,
+        "trial_id": "v14f_binary_v1_a_p0i2_ORBITWARS_SHAPING_ONE_SHIP_PENALTY_0.025_7564eb045c",
+        "ckpt": null
+      },
+      "ready_confirm": false,
+      "confirmed": null,
+      "done": false
+    },
+    "b": {
+      "env_ranges": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": {
+          "lo": 0.01,
+          "hi": 0.04,
+          "integer": false,
+          "mid": 0.025
+        },
+        "ORBITWARS_SHAPING_CAPTURE": {
+          "lo": 0.04,
+          "hi": 0.1,
+          "integer": false,
+          "mid": 0.07
+        },
+        "ORBITWARS_SHAPING_RELEASE": {
+          "lo": 0.003,
+          "hi": 0.015,
+          "integer": false,
+          "mid": 0.009
+        },
+        "ORBITWARS_SHAPING_RELEASE_K": {
+          "lo": 12.0,
+          "hi": 18.0,
+          "integer": true,
+          "mid": 15.0
+        },
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": {
+          "lo": 0.01,
+          "hi": 0.04,
+          "integer": false,
+          "mid": 0.025
+        },
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": {
+          "lo": 0.01,
+          "hi": 0.04,
+          "integer": false,
+          "mid": 0.025
+        }
+      },
+      "ppo_ranges": {
+        "ent_coef_emit": {
+          "lo": 0.008,
+          "hi": 0.02,
+          "integer": false,
+          "mid": 0.014
+        },
+        "lr_peak": {
+          "lo": 2.5e-05,
+          "hi": 5e-05,
+          "integer": false,
+          "mid": 3.8e-05
+        },
+        "ent_coef_pct": {
+          "lo": 0.003,
+          "hi": 0.008,
+          "integer": false,
+          "mid": 0.0055
+        }
+      },
+      "current": {
+        "ORBITWARS_SHAPING_ANTI_HOARD": 0.025,
+        "ORBITWARS_SHAPING_CAPTURE": 0.07,
+        "ORBITWARS_SHAPING_RELEASE": 0.009,
+        "ORBITWARS_SHAPING_RELEASE_K": 15.0,
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA": 0.025,
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY": 0.025,
+        "ent_coef_emit": 0.014,
+        "lr_peak": 3.8e-05,
+        "ent_coef_pct": 0.0055
+      },
+      "pass_idx": 0,
+      "param_idx": 0,
+      "param_order": [
+        "ORBITWARS_SHAPING_ANTI_HOARD",
+        "ORBITWARS_SHAPING_CAPTURE",
+        "ORBITWARS_SHAPING_ONE_SHIP_PENALTY",
+        "ORBITWARS_SHAPING_PROD_SHARE_DELTA",
+        "ORBITWARS_SHAPING_RELEASE",
+        "ORBITWARS_SHAPING_RELEASE_K",
+        "ent_coef_emit",
+        "ent_coef_pct",
+        "lr_peak"
+      ],
+      "step_key": null,
+      "step_pending": [],
+      "step_results": {},
+      "best": null,
+      "ready_confirm": false,
+      "confirmed": null,
+      "done": false
+    }
+  },
+  "pipeline": {},
+  "updated_at": "2026-06-11T08:47:07Z"
+}

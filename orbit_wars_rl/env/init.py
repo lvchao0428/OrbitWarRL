@@ -212,4 +212,36 @@ def reset(rng: jnp.ndarray, num_groups: int = 5, shuffle_slots: bool | None = No
         planet_orbit_phase=planet_orbit_phase,
         planet_is_orbiting=planet_is_orbiting,
         home_planet_idx=home_idx_pre,
+        match_score=jnp.zeros((constants.NUM_PLAYERS,), dtype=jnp.int32),
+        match_idx=jnp.int32(0),
+        init_planet_ships=planet_ships,
+        init_planet_owner=planet_owner,
+    )
+
+
+def reset_match_same_map(state: EnvState, winner: jnp.ndarray) -> EnvState:
+    """Reset for a new match within the same series, keeping map geometry.
+
+    Resets garrisons, owners, fleets, step counter. Keeps planet positions,
+    prod, orbit params, angular_velocity, home_planet_idx, and the stored
+    initial template. Increments match_idx and updates match_score.
+
+    ``winner`` is a [NUM_PLAYERS] bool array — True for each player that won
+    the just-finished match (both True on a tie).
+    """
+    new_score = state.match_score + winner.astype(jnp.int32)
+    return state.replace(
+        planet_owner=state.init_planet_owner,
+        planet_ships=state.init_planet_ships,
+        fleet_owner=jnp.full((constants.MAX_FLEETS,), -2, dtype=jnp.int8),
+        fleet_x=jnp.zeros((constants.MAX_FLEETS,), dtype=jnp.float32),
+        fleet_y=jnp.zeros((constants.MAX_FLEETS,), dtype=jnp.float32),
+        fleet_angle=jnp.zeros((constants.MAX_FLEETS,), dtype=jnp.float32),
+        fleet_ships=jnp.zeros((constants.MAX_FLEETS,), dtype=jnp.int32),
+        fleet_mask=jnp.zeros((constants.MAX_FLEETS,), dtype=jnp.bool_),
+        planet_orbit_phase=state.planet_orbit_phase,
+        step=jnp.int32(0),
+        done=jnp.bool_(False),
+        match_score=new_score,
+        match_idx=state.match_idx + 1,
     )

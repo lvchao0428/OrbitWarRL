@@ -116,6 +116,10 @@ class TrainConfig:
     min_pct_bin: int = 0
     # Resume from a checkpoint (path to .pkl file).
     resume_ckpt: str = ""
+    # v15 multi-match series: number of match wins needed to win a series.
+    # 1 = legacy single-match (every match end resets to new map).
+    # 2 = Best-of-3 (same map, match-level terminal ±1).
+    wins_needed: int = 1
 
     ppo: PPOConfig = field(default_factory=PPOConfig)
     selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)
@@ -330,7 +334,8 @@ def train(
         f"RELEASE={env_rewards.SHAPING_RELEASE}/K{env_rewards.SHAPING_RELEASE_K} "
         f"CAPTURE={env_rewards.SHAPING_CAPTURE}; "
         f"ANTI_HOARD={env_rewards.SHAPING_ANTI_HOARD}/thresh{env_rewards.SHAPING_ANTI_HOARD_THRESH}; "
-        f"episode_steps={cfg.episode_steps} (kaggle={kaggle_ep}, mismatch={cfg.episode_steps != kaggle_ep})",
+        f"episode_steps={cfg.episode_steps} (kaggle={kaggle_ep}, mismatch={cfg.episode_steps != kaggle_ep}); "
+        f"wins_needed={cfg.wins_needed} (multi-match={'BO'+str(2*cfg.wins_needed-1) if cfg.wins_needed>1 else 'off'})",
         flush=True,
     )
     if cfg.selfplay.enabled and cfg.selfplay.strong_ckpt_path:
@@ -355,7 +360,7 @@ def train(
             flush=True,
         )
 
-    env = OrbitWarsEnv(num_groups=cfg.num_groups, episode_steps=cfg.episode_steps)
+    env = OrbitWarsEnv(num_groups=cfg.num_groups, episode_steps=cfg.episode_steps, wins_needed=cfg.wins_needed)
     model = ActorCritic(
         d_model=cfg.d_model,
         n_layers=cfg.n_layers,
@@ -374,7 +379,7 @@ def train(
     env_rngs = jax.random.split(rng_envs, cfg.num_envs)
     states = jax.vmap(env.reset)(env_rngs)
     dummy_state = jax.tree_util.tree_map(lambda x: x[0], states)
-    dummy_obs = encode(dummy_state, 0, cfg.episode_steps)
+    dummy_obs = encode(dummy_state, 0, cfg.episode_steps, wins_needed=cfg.wins_needed)
     params = model.init(
         rng_init,
         dummy_obs,

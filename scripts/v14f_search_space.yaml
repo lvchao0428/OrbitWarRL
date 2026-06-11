@@ -1,0 +1,93 @@
+# v14f binary search — relaxed Gate A + longer probes
+#
+# Key changes vs v14e:
+#   1. Gate A relaxed: z0<=0.78 (was 0.65), garr<=200 (was 120), emits>=0.25 (was 0.35)
+#   2. Early abort garr>=200 (was 150) — v13c hits garr=270 at upd 200
+#   3. probe_updates=500 (was 300) — more time for agent to stabilize
+#   4. Parameter ranges tightened around v14e best values
+#
+# v14e best params: ANTI_HOARD=0.03, CAPTURE=0.06, ONE_SHIP=0.01,
+#   PROD_DELTA=0.01, RELEASE=0.003, RELEASE_K=14, ent_coef_emit=0.025, lr=4.5e-5
+#
+# Usage:
+#   bash scripts/v14f_binary_search.sh
+#   bash scripts/v14f_phase_c_longtrain.sh   # after B confirm passes
+
+search_id: v14f_binary_v1
+mode: binary
+poll_seconds: 60
+coordinate_passes: 2
+
+search_phases: [a, b]
+
+phases:
+  a:
+    base_config: orbit_wars_rl/configs/multi_action_v14e_phase_a.yaml
+    probe_updates: 500
+    num_updates: 1200
+    extend_updates: 400
+    max_extends: 2
+    early_abort_min_updates: 40
+    seed_base: 2300
+    inherit_from: null
+    fixed:
+      ORBITWARS_SHAPING_EMIT_LOG: 0.0
+      ORBITWARS_SHAPING_ONE_SHIP_THRESH: 3
+      ORBITWARS_SHAPING_HOLD_BONUS: 0.0
+      ORBITWARS_SHAPING_ANTI_HOARD_THRESH: 0.6
+    binary:
+      ORBITWARS_SHAPING_ANTI_HOARD: {low: 0.02, high: 0.05}
+      ORBITWARS_SHAPING_CAPTURE: {low: 0.04, high: 0.08}
+      ORBITWARS_SHAPING_RELEASE: {low: 0.003, high: 0.012}
+      ORBITWARS_SHAPING_RELEASE_K: {low: 12, high: 18, integer: true}
+      ORBITWARS_SHAPING_PROD_SHARE_DELTA: {low: 0.005, high: 0.025}
+      ORBITWARS_SHAPING_ONE_SHIP_PENALTY: {low: 0.005, high: 0.025}
+    ppo_binary:
+      ent_coef_emit: {low: 0.015, high: 0.030}
+      lr_peak: {low: 0.00003, high: 0.00006}
+
+  b:
+    base_config: orbit_wars_rl/configs/multi_action_v14e_phase_b.yaml
+    probe_updates: 500
+    num_updates: 1500
+    extend_updates: 500
+    max_extends: 2
+    early_abort_min_updates: 50
+    seed_base: 2400
+    inherit_from: a
+    fixed:
+      ORBITWARS_SHAPING_EMIT_LOG: 0.0
+      ORBITWARS_SHAPING_ONE_SHIP_THRESH: 3
+      ORBITWARS_SHAPING_HOLD_BONUS: 0.0
+      ORBITWARS_SHAPING_ANTI_HOARD_THRESH: 0.6
+    binary:
+      ORBITWARS_SHAPING_ANTI_HOARD: {low: 0.01, high: 0.04}
+      ORBITWARS_SHAPING_CAPTURE: {low: 0.04, high: 0.10}
+      ORBITWARS_SHAPING_RELEASE: {low: 0.003, high: 0.015}
+      ORBITWARS_SHAPING_RELEASE_K: {low: 12, high: 18, integer: true}
+      ORBITWARS_SHAPING_PROD_SHARE_DELTA: {low: 0.01, high: 0.04}
+      ORBITWARS_SHAPING_ONE_SHIP_PENALTY: {low: 0.01, high: 0.04}
+    ppo_binary:
+      ent_coef_emit: {low: 0.008, high: 0.020}
+      lr_peak: {low: 0.000025, high: 0.000050}
+      ent_coef_pct: {low: 0.003, high: 0.008}
+
+phase_c_longtrain:
+  base_config: orbit_wars_rl/configs/multi_action_v14e_phase_c_long.yaml
+  num_updates: 10000
+  extend_updates: 2000
+  max_extends: 3
+  inherit_from: b
+  log: logs/v14f_phase_c_long.log
+  ckpt_dir: ckpt_multi_action_v14f_c_long
+  fixed:
+    ORBITWARS_SHAPING_HOLD_BONUS: 0.0
+    ORBITWARS_SHAPING_ANTI_HOARD: 0.03
+    ORBITWARS_SHAPING_ANTI_HOARD_THRESH: 0.6
+    ORBITWARS_SHAPING_CAPTURE: 0.06
+    ORBITWARS_SHAPING_RELEASE: 0.005
+    ORBITWARS_SHAPING_RELEASE_K: 15
+    ORBITWARS_SHAPING_PROD_SHARE_DELTA: 0.02
+    ORBITWARS_SHAPING_EMIT_LOG: 0.0
+    ORBITWARS_SHAPING_ONE_SHIP_PENALTY: 0.02
+    ORBITWARS_SHAPING_ONE_SHIP_THRESH: 3

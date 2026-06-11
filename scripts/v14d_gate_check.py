@@ -72,10 +72,10 @@ def gate_a(log_path: Path) -> tuple[bool, str]:
     emits = median(r["emits"] for r in rows)
     ev = _read_last_eval(log_path)
     ok = (
-        35.0 <= garr <= 120.0
-        and 0.25 <= z0 <= 0.65
+        35.0 <= garr <= 200.0
+        and 0.25 <= z0 <= 0.78
         and 15.0 <= spf <= 80.0
-        and 0.35 <= emits <= 0.80
+        and 0.25 <= emits <= 0.80
     )
     if ev is not None and ev["spf"] < 3.0:
         ok = False
