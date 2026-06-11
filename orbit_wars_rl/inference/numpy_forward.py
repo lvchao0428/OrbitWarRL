@@ -43,7 +43,25 @@ _SUN_GUARD = _SUN_R * float(_const.SUN_PATH_MARGIN)
 _SUN_BLOCK_THRESH = 0.9
 _BOARD_F = float(_const.BOARD)
 _MAX_PLANETS = int(_const.MAX_PLANETS)
+_DEFAULT_FLEET_SPEED = float(_const.DEFAULT_MAX_SHIP_SPEED)
 _PCT_BIN_TABLE_NP = np.array(_const.PCT_BIN_VALUES, dtype=np.float32)
+
+
+def _predict_planet_pos_np(
+    orbit_phase: np.ndarray,
+    orbit_radius: np.ndarray,
+    omega: float,
+    lead_time: np.ndarray,
+    cur_x: np.ndarray,
+    cur_y: np.ndarray,
+    rotate_mask_f: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    new_phase = orbit_phase + np.float32(omega) * lead_time
+    rot_x = _SUN_X + orbit_radius * np.cos(new_phase)
+    rot_y = _SUN_Y + orbit_radius * np.sin(new_phase)
+    out_x = rotate_mask_f * rot_x + (1.0 - rotate_mask_f) * cur_x
+    out_y = rotate_mask_f * rot_y + (1.0 - rotate_mask_f) * cur_y
+    return out_x.astype(np.float32), out_y.astype(np.float32)
 
 
 # --------- f26 pair feature helpers (numpy mirror of features/pair.py) -------
@@ -77,6 +95,12 @@ def _dst_pair_features_np(
     is_target_mask: np.ndarray,  # (P,) bool
     remaining: np.ndarray,       # (P,) int
     src_idx: int,
+    *,
+    planet_orbit_phase: np.ndarray | None = None,
+    planet_orbit_radius: np.ndarray | None = None,
+    planet_is_orbiting: np.ndarray | None = None,
+    angular_velocity: float | None = None,
+    fleet_speed: float = _DEFAULT_FLEET_SPEED,
 ) -> Tuple[np.ndarray, np.ndarray]:
     P = planet_x.shape[0]
     src_x = float(planet_x[src_idx])
@@ -86,10 +110,40 @@ def _dst_pair_features_np(
     dx = planet_x - src_x
     dy = planet_y - src_y
     dist = np.sqrt(dx * dx + dy * dy + 1e-6)
+
+    if (
+        planet_orbit_phase is not None
+        and planet_orbit_radius is not None
+        and planet_is_orbiting is not None
+        and angular_velocity is not None
+    ):
+        spd = np.float32(max(float(fleet_speed), 0.5))
+        eta = dist / spd
+        rotate_mask_f = planet_is_orbiting.astype(np.float32)
+        lead_x, lead_y = _predict_planet_pos_np(
+            planet_orbit_phase.astype(np.float32),
+            planet_orbit_radius.astype(np.float32),
+            float(angular_velocity),
+            eta.astype(np.float32),
+            planet_x.astype(np.float32),
+            planet_y.astype(np.float32),
+            rotate_mask_f,
+        )
+        dx_lead = lead_x - src_x
+        dy_lead = lead_y - src_y
+        dist_lead = np.sqrt(dx_lead * dx_lead + dy_lead * dy_lead + 1e-6)
+        use_lead = rotate_mask_f > np.float32(0.0)
+        dist = np.where(use_lead, dist_lead, dist)
+        planet_x_eff = np.where(use_lead, lead_x, planet_x)
+        planet_y_eff = np.where(use_lead, lead_y, planet_y)
+    else:
+        planet_x_eff = planet_x
+        planet_y_eff = planet_y
+
     dist_norm = (dist / _BOARD_F).astype(np.float32)
 
     min_to_sun = _segment_min_dist_to_point_np(
-        src_x, src_y, planet_x, planet_y, _SUN_X, _SUN_Y
+        src_x, src_y, planet_x_eff, planet_y_eff, _SUN_X, _SUN_Y
     )
     self_pair = np.arange(P) == src_idx
     sun_risk = np.clip(1.0 - min_to_sun / _SUN_GUARD, 0.0, 1.0).astype(np.float32)
@@ -594,6 +648,10 @@ def greedy_multi_action(
     max_fleets_per_turn: int = 8,
     planet_x: np.ndarray | None = None,   # (P,) float -- f26 pair feats
     planet_y: np.ndarray | None = None,
+    planet_orbit_phase: np.ndarray | None = None,
+    planet_orbit_radius: np.ndarray | None = None,
+    planet_is_orbiting: np.ndarray | None = None,
+    angular_velocity: float | None = None,
     home_idx: int = 0,
     emit_hard_stop: bool = False,
     emit_hard_stop_min_step: int = 1,
@@ -696,6 +754,10 @@ def greedy_multi_action(
             dst_pair, sun_block = _dst_pair_features_np(
                 planet_x, planet_y, ships, planet_mask_b,
                 target_mask_b, remaining, src_t,
+                planet_orbit_phase=planet_orbit_phase,
+                planet_orbit_radius=planet_orbit_radius,
+                planet_is_orbiting=planet_is_orbiting,
+                angular_velocity=angular_velocity,
             )
             if flip_hard_mask:
                 flip_block = _dst_flip_block_mask_np(

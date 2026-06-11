@@ -62,7 +62,11 @@ PADDING_OWNER = -2
 
 PLANET_FEAT_DIM = 41
 FLEET_FEAT_DIM = 10
-GLOBAL_FEAT_DIM = 427
+BASE_GLOBAL_FEAT_DIM = 27
+HIST_LEN = 50
+TEMPORAL_GLOBAL_DIM = 8
+GLOBAL_FEAT_DIM = 427  # BASE_GLOBAL_FEAT_DIM + HIST_LEN * TEMPORAL_GLOBAL_DIM
+DEFAULT_MAX_SHIP_SPEED = 6.0
 
 # Orbital constants (must mirror env/constants.py).
 ROTATION_RADIUS_LIMIT = 50.0
@@ -80,6 +84,91 @@ MAX_FLEETS_PER_TURN = 8
 
 _LOG_1000 = float(np.log(1000.0))
 _PCT_BIN_TABLE_NP = None
+_GLOBAL_HIST = np.zeros((HIST_LEN, TEMPORAL_GLOBAL_DIM), dtype=np.float32)
+
+
+def _predict_planet_pos_np(
+    orbit_phase: np.ndarray,
+    orbit_radius: np.ndarray,
+    omega: float,
+    lead_time: np.ndarray,
+    cur_x: np.ndarray,
+    cur_y: np.ndarray,
+    rotate_mask_f: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    new_phase = orbit_phase + np.float32(omega) * lead_time
+    rot_x = SUN_X + orbit_radius * np.cos(new_phase)
+    rot_y = SUN_Y + orbit_radius * np.sin(new_phase)
+    out_x = rotate_mask_f * rot_x + (1.0 - rotate_mask_f) * cur_x
+    out_y = rotate_mask_f * rot_y + (1.0 - rotate_mask_f) * cur_y
+    return out_x.astype(np.float32), out_y.astype(np.float32)
+
+
+def _temporal_global_slice_np(
+    player: int,
+    planet_owner: np.ndarray,
+    planet_ships: np.ndarray,
+    planet_prod: np.ndarray,
+    planet_mask: np.ndarray,
+    fleet_owner: np.ndarray,
+    fleet_ships: np.ndarray,
+    fleet_mask: np.ndarray,
+) -> np.ndarray:
+    """8-dim macro snapshot (mirror features/history.temporal_global_slice)."""
+    opp = 1 - player
+
+    def _ships(p: int) -> float:
+        ps = float(planet_ships[(planet_owner == p) & planet_mask].sum())
+        fs = float(fleet_ships[(fleet_owner == p) & fleet_mask].sum())
+        return ps + fs
+
+    def _prod(p: int) -> float:
+        return float(planet_prod[(planet_owner == p) & planet_mask].sum())
+
+    def _garr(p: int) -> float:
+        return float(planet_ships[(planet_owner == p) & planet_mask].sum())
+
+    my_ships = _ships(player)
+    foe_ships = _ships(opp)
+    my_prod = _prod(player)
+    foe_prod = _prod(opp)
+    my_garr = _garr(player)
+    foe_garr = float(
+        planet_ships[
+            (planet_owner >= 0) & (planet_owner != player) & planet_mask
+        ].sum()
+    )
+    my_fleet = float(fleet_ships[(fleet_owner == player) & fleet_mask].sum())
+    foe_fleet = float(
+        fleet_ships[
+            (fleet_owner >= 0) & (fleet_owner != player) & fleet_mask
+        ].sum()
+    )
+
+    total_ships = max(my_ships + foe_ships, 1.0)
+    total_prod = max(my_prod + foe_prod, 1.0)
+    my_total = max(my_garr + my_fleet, 1.0)
+
+    prod_adv = float(np.clip((my_prod - foe_prod) / total_prod, -1.0, 1.0))
+    garr_adv = float(
+        np.clip((my_garr - foe_garr) / max(my_garr + foe_garr, 1.0), -1.0, 1.0)
+    )
+    fleet_mass = my_fleet / my_total
+    threat = float(np.clip(foe_fleet / max(my_garr, 1.0), 0.0, 2.0) / 2.0)
+
+    return np.array(
+        [
+            my_ships / total_ships,
+            foe_ships / total_ships,
+            my_prod / total_prod,
+            foe_prod / total_prod,
+            prod_adv,
+            garr_adv,
+            fleet_mass,
+            threat,
+        ],
+        dtype=np.float32,
+    )
 
 
 # --- feature encoding (mirror features.encode) --------------------------------
@@ -150,7 +239,13 @@ def _soft_inbound_and_eta_np(
     return inbound_soft.astype(np.float32), eta_norm.astype(np.float32)
 
 
-def encode_obs(obs: Dict[str, Any], player: int, step: int, episode_steps: int) -> dict:
+def encode_obs(
+    obs: Dict[str, Any],
+    player: int,
+    step: int,
+    episode_steps: int,
+    hist_flat: Optional[np.ndarray] = None,
+) -> dict:
     opp = 1 - player
 
     raw_planets = list(obs.get("planets") or [])
@@ -369,6 +464,24 @@ def encode_obs(obs: Dict[str, Any], player: int, step: int, episode_steps: int) 
     my_ships_at_t15 = np.where(is_mine, planet_ships.astype(np.float32), 0.0) + friendly_w2 - enemy_w2
     net_garrison_t15 = np.clip(my_ships_at_t15 / my_total_garr_f, -1.0, 1.0) * is_mine.astype(np.float32)
 
+    prod_f = planet_prod.astype(np.float32)
+    min_reserve = np.maximum(np.float32(8.0), prod_f * np.float32(2.5))
+    safe_emit_margin = np.where(
+        is_mine,
+        np.clip(
+            (my_ships_f - foe_soft - min_reserve) / np.maximum(my_ships_f, np.float32(1.0)),
+            0.0,
+            1.0,
+        ),
+        np.float32(0.0),
+    )
+    my_prod_max = float(prod_f[is_mine].max()) if bool(is_mine.any()) else 0.0
+    hold_value = np.where(
+        is_mine,
+        np.clip(prod_f / max(my_prod_max, np.float32(1.0)), 0.0, 1.0) * safe_emit_margin,
+        np.float32(0.0),
+    )
+
     planet_feats = np.stack(
         [
             is_mine.astype(np.float32), is_enemy.astype(np.float32), is_neutral.astype(np.float32),
@@ -383,6 +496,7 @@ def encode_obs(obs: Dict[str, Any], player: int, step: int, episode_steps: int) 
             prod_per_need, v20_target_score,
             friendly_eta_w1, friendly_eta_w2, enemy_eta_w1, enemy_eta_w2,
             net_garrison_t5, net_garrison_t15,
+            safe_emit_margin, hold_value,
         ],
         axis=-1,
     ).astype(np.float32)
@@ -468,7 +582,7 @@ def encode_obs(obs: Dict[str, Any], player: int, step: int, episode_steps: int) 
     growth_potential_g = min(my_prod_total / max(my_garr_total, 1.0), 1.0)
     threat_pressure_g = min(foe_fleet_total / max(my_garr_total, 1.0), 2.0) / 2.0
 
-    global_feats = np.array(
+    base_global = np.array(
         [
             step_norm,
             _player_ships(player) / total_ships, _player_ships(opp) / total_ships,
@@ -495,6 +609,9 @@ def encode_obs(obs: Dict[str, Any], player: int, step: int, episode_steps: int) 
         ],
         dtype=np.float32,
     )
+    if hist_flat is None:
+        hist_flat = np.zeros(HIST_LEN * TEMPORAL_GLOBAL_DIM, dtype=np.float32)
+    global_feats = np.concatenate([base_global, hist_flat.astype(np.float32)])
 
     # f26: expose planet_x/y so greedy_multi_action can compute pair feats.
     return dict(
@@ -507,6 +624,10 @@ def encode_obs(obs: Dict[str, Any], player: int, step: int, episode_steps: int) 
         planet_ships=planet_ships,
         planet_x=planet_x,
         planet_y=planet_y,
+        planet_orbit_phase=orbit_phase_np.astype(np.float32),
+        planet_orbit_radius=orbit_radius_np.astype(np.float32),
+        planet_is_orbiting=is_orbiting_np.astype(bool),
+        angular_velocity=np.float32(av_raw),
     )
 
 
@@ -528,7 +649,10 @@ def _segment_min_dist_to_point(ax, ay, bx, by, cx, cy):
 
 
 def _dst_pair_features(planet_x, planet_y, planet_ships, planet_mask,
-                       is_target_mask, remaining, src_idx):
+                       is_target_mask, remaining, src_idx, *,
+                       planet_orbit_phase=None, planet_orbit_radius=None,
+                       planet_is_orbiting=None, angular_velocity=None,
+                       fleet_speed=DEFAULT_MAX_SHIP_SPEED):
     P = planet_x.shape[0]
     src_x = float(planet_x[src_idx])
     src_y = float(planet_y[src_idx])
@@ -537,9 +661,39 @@ def _dst_pair_features(planet_x, planet_y, planet_ships, planet_mask,
     dx = planet_x - src_x
     dy = planet_y - src_y
     dist = np.sqrt(dx * dx + dy * dy + 1e-6)
+
+    if (
+        planet_orbit_phase is not None
+        and planet_orbit_radius is not None
+        and planet_is_orbiting is not None
+        and angular_velocity is not None
+    ):
+        spd = np.float32(max(float(fleet_speed), 0.5))
+        eta = dist / spd
+        rotate_mask_f = planet_is_orbiting.astype(np.float32)
+        lead_x, lead_y = _predict_planet_pos_np(
+            planet_orbit_phase.astype(np.float32),
+            planet_orbit_radius.astype(np.float32),
+            float(angular_velocity),
+            eta.astype(np.float32),
+            planet_x.astype(np.float32),
+            planet_y.astype(np.float32),
+            rotate_mask_f,
+        )
+        dx_lead = lead_x - src_x
+        dy_lead = lead_y - src_y
+        dist_lead = np.sqrt(dx_lead * dx_lead + dy_lead * dy_lead + 1e-6)
+        use_lead = rotate_mask_f > np.float32(0.0)
+        dist = np.where(use_lead, dist_lead, dist)
+        planet_x_eff = np.where(use_lead, lead_x, planet_x)
+        planet_y_eff = np.where(use_lead, lead_y, planet_y)
+    else:
+        planet_x_eff = planet_x
+        planet_y_eff = planet_y
+
     dist_norm = (dist / BOARD).astype(np.float32)
 
-    min_to_sun = _segment_min_dist_to_point(src_x, src_y, planet_x, planet_y,
+    min_to_sun = _segment_min_dist_to_point(src_x, src_y, planet_x_eff, planet_y_eff,
                                             SUN_X, SUN_Y)
     self_pair = np.arange(P) == src_idx
     sun_risk = np.clip(1.0 - min_to_sun / SUN_GUARD, 0.0, 1.0).astype(np.float32)
@@ -927,6 +1081,10 @@ def greedy_multi_action(W, enc, home_idx: int = 0) -> Tuple[List[int], List[int]
         dst_pair, sun_block = _dst_pair_features(
             planet_x, planet_y, ships, planet_mask, target_mask,
             remaining, src_t,
+            planet_orbit_phase=enc.get("planet_orbit_phase"),
+            planet_orbit_radius=enc.get("planet_orbit_radius"),
+            planet_is_orbiting=enc.get("planet_is_orbiting"),
+            angular_velocity=enc.get("angular_velocity"),
         )
         flip_block = None
         if F31_HARD_MASKS:
@@ -1100,7 +1258,7 @@ def _resolve_home_idx(obs: Dict[str, Any], player: int) -> int:
 
 def agent(obs, config=None):
     """Kaggle-required entry. Returns list of [src_id, angle, ships] moves."""
-    global _STEP_COUNTER, _HOME_IDX
+    global _STEP_COUNTER, _HOME_IDX, _GLOBAL_HIST
     try:
         if _detect_new_episode(obs):
             _STEP_COUNTER = 0
@@ -1116,8 +1274,39 @@ def agent(obs, config=None):
         if not any(int(p[1]) == player for p in planets):
             return []
 
+        hist_flat = _GLOBAL_HIST.reshape(-1)
+        if _STEP_COUNTER > 0:
+            planet_owner = np.full((MAX_PLANETS,), PADDING_OWNER, dtype=np.int32)
+            planet_ships = np.zeros((MAX_PLANETS,), dtype=np.int32)
+            planet_prod = np.zeros((MAX_PLANETS,), dtype=np.int32)
+            planet_mask = np.zeros((MAX_PLANETS,), dtype=bool)
+            for p in planets:
+                pid = int(p[0])
+                if 0 <= pid < MAX_PLANETS:
+                    planet_owner[pid] = int(p[1])
+                    planet_ships[pid] = int(p[5])
+                    planet_prod[pid] = int(p[6])
+                    planet_mask[pid] = True
+            fleet_owner = np.full((MAX_FLEETS,), PADDING_OWNER, dtype=np.int32)
+            fleet_ships = np.zeros((MAX_FLEETS,), dtype=np.int32)
+            fleet_mask = np.zeros((MAX_FLEETS,), dtype=bool)
+            for i, f in enumerate(list(obs.get("fleets") or [])[:MAX_FLEETS]):
+                fleet_owner[i] = int(f[1])
+                fleet_ships[i] = int(f[6])
+                fleet_mask[i] = True
+            sl = _temporal_global_slice_np(
+                player, planet_owner, planet_ships, planet_prod, planet_mask,
+                fleet_owner, fleet_ships, fleet_mask,
+            )
+            _GLOBAL_HIST = np.roll(_GLOBAL_HIST, -1, axis=0)
+            _GLOBAL_HIST[-1] = sl
+            hist_flat = _GLOBAL_HIST.reshape(-1)
+
         W = _load_weights()
-        enc = encode_obs(obs, player=player, step=_STEP_COUNTER, episode_steps=episode_steps)
+        enc = encode_obs(
+            obs, player=player, step=_STEP_COUNTER, episode_steps=episode_steps,
+            hist_flat=hist_flat,
+        )
         if not bool(enc["my_planet_mask"].any()):
             return []
         src_list, dst_list, pct_list = greedy_multi_action(W, enc, home_idx=_HOME_IDX)
