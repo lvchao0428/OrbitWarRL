@@ -239,6 +239,10 @@ class ActorCritic(nn.Module):
         planet_x: jnp.ndarray,           # (..., P) float -- f26 pair feats
         planet_y: jnp.ndarray,           # (..., P) float
         home_idx: jnp.ndarray,           # (...,) int32
+        planet_orbit_phase: jnp.ndarray | None = None,
+        planet_orbit_radius: jnp.ndarray | None = None,
+        planet_is_orbiting: jnp.ndarray | None = None,
+        angular_velocity: jnp.ndarray | None = None,
         opp_obs: EncodedObs | None = None,
     ) -> ActorCriticOutput:
         """Compute per-step logits + value given pre-chosen K-step actions.
@@ -323,6 +327,10 @@ class ActorCritic(nn.Module):
             dst_pair, sun_block = dst_pair_features_batched(
                 planet_x, planet_y, ships_raw_b, obs_pmask,
                 target_mask, remaining, src_t,
+                planet_orbit_phase=planet_orbit_phase,
+                planet_orbit_radius=planet_orbit_radius,
+                planet_is_orbiting=planet_is_orbiting,
+                angular_velocity=angular_velocity,
             )
             flip_block = (
                 dst_flip_block_mask(
@@ -422,6 +430,10 @@ class ActorCritic(nn.Module):
         home_idx: jnp.ndarray,
         *,
         deterministic: bool = False,
+        planet_orbit_phase: jnp.ndarray | None = None,
+        planet_orbit_radius: jnp.ndarray | None = None,
+        planet_is_orbiting: jnp.ndarray | None = None,
+        angular_velocity: jnp.ndarray | None = None,
         opp_obs: EncodedObs | None = None,
     ) -> SampledMultiAction:
         """Sample a K-step multi-fleet action.
@@ -554,6 +566,10 @@ class ActorCritic(nn.Module):
             dst_pair, sun_block = dst_pair_features_batched(
                 planet_x, planet_y, ships_raw, obs_pmask,
                 target_mask, remaining, src_t,
+                planet_orbit_phase=planet_orbit_phase,
+                planet_orbit_radius=planet_orbit_radius,
+                planet_is_orbiting=planet_is_orbiting,
+                angular_velocity=angular_velocity,
             )
             flip_block = (
                 dst_flip_block_mask(

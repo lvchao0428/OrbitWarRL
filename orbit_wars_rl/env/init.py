@@ -13,6 +13,7 @@ import jax.numpy as jnp
 
 from orbit_wars_rl.env import constants
 from orbit_wars_rl.env.state import EnvState
+from orbit_wars_rl.features.history import empty_global_hist
 
 
 def _symmetric_group_offsets(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
@@ -216,6 +217,7 @@ def reset(rng: jnp.ndarray, num_groups: int = 5, shuffle_slots: bool | None = No
         match_idx=jnp.int32(0),
         init_planet_ships=planet_ships,
         init_planet_owner=planet_owner,
+        global_hist=empty_global_hist(),
     )
 
 
@@ -244,4 +246,5 @@ def reset_match_same_map(state: EnvState, winner: jnp.ndarray) -> EnvState:
         done=jnp.bool_(False),
         match_score=new_score,
         match_idx=state.match_idx + 1,
+        global_hist=empty_global_hist(),
     )

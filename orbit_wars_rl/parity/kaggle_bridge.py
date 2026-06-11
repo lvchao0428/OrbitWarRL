@@ -186,6 +186,13 @@ def kaggle_obs_to_envstate(obs: dict[str, Any]) -> EnvState:
         # parity bridge can't recover the true home idx from a mid-game kaggle
         # observation; zero is a safe sentinel (shaping not used in parity).
         home_planet_idx=jnp.zeros((2,), dtype=jnp.int32),
+        match_score=jnp.zeros((constants.NUM_PLAYERS,), dtype=jnp.int32),
+        match_idx=jnp.int32(0),
+        init_planet_ships=jnp.asarray(planet_ships),
+        init_planet_owner=jnp.asarray(planet_owner),
+        global_hist=__import__(
+            "orbit_wars_rl.features.history", fromlist=["empty_global_hist"]
+        ).empty_global_hist(),
     )
 
 

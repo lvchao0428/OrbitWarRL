@@ -138,6 +138,10 @@ def load_state_buffer(path: str) -> "EnvState":
     """
     import numpy as np
     data = np.load(path)
+    from orbit_wars_rl.features.history import empty_global_hist
+
+    n = data["step"].shape[0]
+    gh = empty_global_hist()
     return EnvState(
         planet_owner=jnp.asarray(data["planet_owner"]),
         planet_x=jnp.asarray(data["planet_x"]),
@@ -160,6 +164,11 @@ def load_state_buffer(path: str) -> "EnvState":
         planet_orbit_phase=jnp.asarray(data["planet_orbit_phase"]),
         planet_is_orbiting=jnp.asarray(data["planet_is_orbiting"]),
         home_planet_idx=jnp.asarray(data["home_planet_idx"]),
+        match_score=jnp.zeros((n, constants.NUM_PLAYERS), dtype=jnp.int32),
+        match_idx=jnp.zeros((n,), dtype=jnp.int32),
+        init_planet_ships=jnp.asarray(data["planet_ships"]),
+        init_planet_owner=jnp.asarray(data["planet_owner"]),
+        global_hist=jnp.broadcast_to(gh, (n, *gh.shape)),
     )
 
 
@@ -396,13 +405,21 @@ def train(
         ckpt = load_checkpoint(resume_from)
         try:
             chex.assert_trees_all_equal_shapes(params, ckpt["params"])
+            params = ckpt["params"]
+            print(f"[resume] loaded params from {resume_from} (step={ckpt.get('step', '?')})")
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                f"resume params shape mismatch with {resume_from}: {exc}. "
-                "Refusing to silently drop layers."
-            ) from exc
-        params = ckpt["params"]
-        print(f"[resume] loaded params from {resume_from} (step={ckpt.get('step', '?')})")
+            adapted = _adapt_strong_params(params, ckpt["params"])
+            if adapted is None:
+                raise RuntimeError(
+                    f"resume params shape mismatch with {resume_from}: {exc}. "
+                    "Refusing to silently drop layers."
+                ) from exc
+            params = adapted
+            print(
+                f"[resume] shape-adapted params from {resume_from} "
+                f"(step={ckpt.get('step', '?')})",
+                flush=True,
+            )
         # opt_state stays freshly initialised: lr / momentum schedules are
         # re-baked from the new PPOConfig (which is the whole point of an
         # extension run with a tweaked schedule).
@@ -540,6 +557,7 @@ def train(
             print(f"[gated-pool] {status} seed opponent {seed_path}", flush=True)
 
     for update in range(cfg.num_updates):
+        env_rewards.set_curriculum(update)
         rng_iter, r_step, r_opp_pick, r_pool_sample = jax.random.split(rng_iter, 4)
 
         opp_tag = "rand"

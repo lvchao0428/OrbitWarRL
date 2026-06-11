@@ -71,6 +71,10 @@ class EnvState:
     init_planet_ships: chex.Array   # [MAX_PLANETS] int32
     init_planet_owner: chex.Array   # [MAX_PLANETS] int8
 
+    # v17: Lux-style global temporal stack per player POV.
+    # Shape [NUM_PLAYERS, HIST_LEN, TEMPORAL_GLOBAL_DIM]; oldest at index 0.
+    global_hist: chex.Array
+
 
 def empty_state(max_planets: int, max_fleets: int) -> EnvState:
     """All-zero placeholder; useful for shape probing or unit tests."""
@@ -100,4 +104,8 @@ def empty_state(max_planets: int, max_fleets: int) -> EnvState:
         match_idx=jnp.int32(0),
         init_planet_ships=jnp.zeros((max_planets,), dtype=jnp.int32),
         init_planet_owner=jnp.full((max_planets,), -2, dtype=jnp.int8),
+        global_hist=jnp.zeros(
+            (constants.NUM_PLAYERS, constants.HIST_LEN, constants.TEMPORAL_GLOBAL_DIM),
+            dtype=jnp.float32,
+        ),
     )

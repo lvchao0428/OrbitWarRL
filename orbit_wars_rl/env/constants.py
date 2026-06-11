@@ -51,3 +51,7 @@ ORBIT_OMEGA_MIN: float = 0.025
 ORBIT_OMEGA_MAX: float = 0.05
 # A planet orbits iff (distance_to_sun + planet_radius) < this threshold.
 ORBIT_RADIUS_LIMIT: float = 50.0
+
+# v17: Lux-style global temporal history (50 frames @ 8 dims = 10% of 500-step match).
+HIST_LEN: int = 50
+TEMPORAL_GLOBAL_DIM: int = 8

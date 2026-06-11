@@ -47,6 +47,7 @@ import jax
 import jax.numpy as jnp
 
 from orbit_wars_rl.env import constants
+from orbit_wars_rl.features.encode import _predict_planet_pos
 
 
 _BOARD = jnp.float32(constants.BOARD)
@@ -91,6 +92,12 @@ def dst_pair_features(
     is_target_mask: jnp.ndarray,  # (P,) bool -- enemy | neutral
     remaining: jnp.ndarray,       # (P,) int  -- remaining at every src (only src_idx row used)
     src_idx: jnp.ndarray,         # () int
+    *,
+    planet_orbit_phase: jnp.ndarray | None = None,
+    planet_orbit_radius: jnp.ndarray | None = None,
+    planet_is_orbiting: jnp.ndarray | None = None,
+    angular_velocity: jnp.ndarray | None = None,
+    fleet_speed: jnp.ndarray | float | None = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Per-candidate-dst features given a chosen src.
 
@@ -111,10 +118,44 @@ def dst_pair_features(
     dx = planet_x - src_x
     dy = planet_y - src_y
     dist = jnp.sqrt(dx * dx + dy * dy + jnp.float32(1e-6))
+
+    # v17: ETA-based lead targeting for orbiting destinations.
+    if (
+        planet_orbit_phase is not None
+        and planet_orbit_radius is not None
+        and planet_is_orbiting is not None
+        and angular_velocity is not None
+    ):
+        spd = jnp.float32(fleet_speed if fleet_speed is not None else constants.DEFAULT_MAX_SHIP_SPEED)
+        eta = dist / jnp.maximum(spd, jnp.float32(0.5))
+        rotate_mask_f = planet_is_orbiting.astype(jnp.float32)
+        omega_b = angular_velocity
+        if omega_b is not None and omega_b.ndim < planet_x.ndim:
+            omega_b = omega_b[..., None]
+        lead_x, lead_y = _predict_planet_pos(
+            planet_orbit_phase,
+            planet_orbit_radius,
+            omega_b,
+            eta,
+            planet_x,
+            planet_y,
+            rotate_mask_f,
+        )
+        dx_lead = lead_x - src_x
+        dy_lead = lead_y - src_y
+        dist_lead = jnp.sqrt(dx_lead * dx_lead + dy_lead * dy_lead + jnp.float32(1e-6))
+        use_lead = rotate_mask_f > jnp.float32(0.0)
+        dist = jnp.where(use_lead, dist_lead, dist)
+        planet_x_eff = jnp.where(use_lead, lead_x, planet_x)
+        planet_y_eff = jnp.where(use_lead, lead_y, planet_y)
+    else:
+        planet_x_eff = planet_x
+        planet_y_eff = planet_y
+
     dist_norm = dist / _BOARD
 
     min_to_sun = _segment_min_dist_to_point(
-        src_x, src_y, planet_x, planet_y, _SUN[0], _SUN[1]
+        src_x, src_y, planet_x_eff, planet_y_eff, _SUN[0], _SUN[1]
     )
     # Self-pair (src==dst) -> degenerate segment; force sun_risk=0 to avoid NaN-like behaviour.
     self_pair = jnp.arange(P) == src_idx
@@ -150,6 +191,12 @@ def dst_pair_features_batched(
     is_target_mask: jnp.ndarray,  # (..., P)
     remaining: jnp.ndarray,       # (..., P)
     src_idx: jnp.ndarray,         # (...,)
+    *,
+    planet_orbit_phase: jnp.ndarray | None = None,
+    planet_orbit_radius: jnp.ndarray | None = None,
+    planet_is_orbiting: jnp.ndarray | None = None,
+    angular_velocity: jnp.ndarray | None = None,
+    fleet_speed: jnp.ndarray | float | None = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Same as ``dst_pair_features`` with arbitrary leading batch dims.
 
@@ -159,6 +206,11 @@ def dst_pair_features_batched(
         return dst_pair_features(
             planet_x, planet_y, planet_ships, planet_mask,
             is_target_mask, remaining, src_idx,
+            planet_orbit_phase=planet_orbit_phase,
+            planet_orbit_radius=planet_orbit_radius,
+            planet_is_orbiting=planet_is_orbiting,
+            angular_velocity=angular_velocity,
+            fleet_speed=fleet_speed,
         )
     P = planet_x.shape[-1]
     src_idx_e = src_idx[..., None]
@@ -170,10 +222,43 @@ def dst_pair_features_batched(
     dx = planet_x - src_x
     dy = planet_y - src_y
     dist = jnp.sqrt(dx * dx + dy * dy + jnp.float32(1e-6))
+
+    if (
+        planet_orbit_phase is not None
+        and planet_orbit_radius is not None
+        and planet_is_orbiting is not None
+        and angular_velocity is not None
+    ):
+        spd = jnp.float32(fleet_speed if fleet_speed is not None else constants.DEFAULT_MAX_SHIP_SPEED)
+        eta = dist / jnp.maximum(spd, jnp.float32(0.5))
+        rotate_mask_f = planet_is_orbiting.astype(jnp.float32)
+        omega_b = angular_velocity
+        if omega_b is not None and omega_b.ndim < planet_x.ndim:
+            omega_b = omega_b[..., None]
+        lead_x, lead_y = _predict_planet_pos(
+            planet_orbit_phase,
+            planet_orbit_radius,
+            omega_b,
+            eta,
+            planet_x,
+            planet_y,
+            rotate_mask_f,
+        )
+        dx_lead = lead_x - src_x
+        dy_lead = lead_y - src_y
+        dist_lead = jnp.sqrt(dx_lead * dx_lead + dy_lead * dy_lead + jnp.float32(1e-6))
+        use_lead = rotate_mask_f > jnp.float32(0.0)
+        dist = jnp.where(use_lead, dist_lead, dist)
+        planet_x_eff = jnp.where(use_lead, lead_x, planet_x)
+        planet_y_eff = jnp.where(use_lead, lead_y, planet_y)
+    else:
+        planet_x_eff = planet_x
+        planet_y_eff = planet_y
+
     dist_norm = dist / _BOARD
 
     min_to_sun = _segment_min_dist_to_point(
-        src_x, src_y, planet_x, planet_y, _SUN[0], _SUN[1]
+        src_x, src_y, planet_x_eff, planet_y_eff, _SUN[0], _SUN[1]
     )
     arange = jnp.arange(P)
     # Broadcast self_pair = arange == src_idx along leading dims.

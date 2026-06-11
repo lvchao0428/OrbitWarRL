@@ -1,0 +1,22 @@
+{
+  "update": 599,
+  "opp_tag": "symm",
+  "export": {
+    "allow_hold": true,
+    "force_emit_worth_it": false,
+    "min_pct_bin": 5,
+    "emit_hard_stop": true,
+    "emit_hard_stop_min_step": 0,
+    "flip_hard_mask": true
+  },
+  "spf": 61.93416976928711,
+  "z0": 0.83349609375,
+  "garr": 275.810791015625,
+  "emit2_rate": 0.05712890625,
+  "align_spf": null,
+  "align_e2": null,
+  "align_z0": null,
+  "eval_vs_v20_spf": null,
+  "eval_vs_v20_e2_plus_pct": null,
+  "eval_vs_v20_flip_pct": null
+}

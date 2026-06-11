@@ -1,0 +1,18 @@
+tag=v15_frog_u5599  bin0=0.0%  spf=25.29  garr=145.14  flip=31.09%  z0=39.8%  e8=0.2%  e2+=0.2%  WLD=0/5/0
+
+Day5 first-80 gate (Top10 calibrated):
+  spf  > 10    actual 25.29    OK
+  garr > 60    actual 145.14   OK
+  flip > 6%    actual 31.09%  OK
+  e2+  > 5%    actual 0.2% FAIL
+
+f31/f32 gate (aggregate first-80):
+  bin0 < 15%     actual 0.0%   OK
+  e8   < 5%      actual 0.2%    OK
+  z0   > 8%      actual 39.8%    OK  (f32 target)
+  z0   > 10%     actual 39.8%    OK  (f31 target)
+
+f31 anti-spam metrics (player_0, first 80 / all launches):
+  min_game_spf       = 21.16   (gate > 5)
+  one_ship_rate      = 0.0%  (gate < 50%)
+  home_le1_emit_rate = 3.6%  (lower is better)

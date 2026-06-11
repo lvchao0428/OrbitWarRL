@@ -46,6 +46,10 @@ def _per_step_dict_symmetric(obs0, obs1, state, sampled, out):
         planet_x_raw=state.planet_x,
         planet_y_raw=state.planet_y,
         home_idx_raw=state.home_planet_idx[0],
+        planet_orbit_phase_raw=state.planet_orbit_phase,
+        planet_orbit_radius_raw=state.planet_orbit_radius,
+        planet_is_orbiting_raw=state.planet_is_orbiting,
+        angular_velocity_raw=state.angular_velocity,
         src_idx=sampled.src_idx,
         dst_idx=sampled.dst_idx,
         pct_bin=sampled.pct_bin,
@@ -85,6 +89,10 @@ def _rollout_from_traj_symmetric(
         planet_x_raw=traj_swapped["planet_x_raw"],
         planet_y_raw=traj_swapped["planet_y_raw"],
         home_idx_raw=traj_swapped["home_idx_raw"],
+        planet_orbit_phase_raw=traj_swapped["planet_orbit_phase_raw"],
+        planet_orbit_radius_raw=traj_swapped["planet_orbit_radius_raw"],
+        planet_is_orbiting_raw=traj_swapped["planet_is_orbiting_raw"],
+        angular_velocity_raw=traj_swapped["angular_velocity_raw"],
         src_idx=traj_swapped["src_idx"],
         dst_idx=traj_swapped["dst_idx"],
         pct_bin=traj_swapped["pct_bin"],
@@ -132,6 +140,10 @@ def make_rollout_fn_symmetric(
         sampled0 = model.apply(
             params, obs0, r_act0, state.planet_ships,
             state.planet_x, state.planet_y, state.home_planet_idx[0],
+            planet_orbit_phase=state.planet_orbit_phase,
+            planet_orbit_radius=state.planet_orbit_radius,
+            planet_is_orbiting=state.planet_is_orbiting,
+            angular_velocity=state.angular_velocity,
             opp_obs=obs1 if use_zero_sum else None,
         )
         action_0 = _sampled_to_multi(sampled0)
@@ -139,6 +151,10 @@ def make_rollout_fn_symmetric(
         sampled1 = model.apply(
             params, obs1, r_act1, state.planet_ships,
             state.planet_x, state.planet_y, state.home_planet_idx[1],
+            planet_orbit_phase=state.planet_orbit_phase,
+            planet_orbit_radius=state.planet_orbit_radius,
+            planet_is_orbiting=state.planet_is_orbiting,
+            angular_velocity=state.angular_velocity,
             opp_obs=obs0 if use_zero_sum else None,
         )
         action_1 = _sampled_to_multi(sampled1)
@@ -162,6 +178,10 @@ def make_rollout_fn_symmetric(
             final_state.planet_ships,
             final_state.planet_x, final_state.planet_y,
             final_state.home_planet_idx[0],
+            planet_orbit_phase=final_state.planet_orbit_phase,
+            planet_orbit_radius=final_state.planet_orbit_radius,
+            planet_is_orbiting=final_state.planet_is_orbiting,
+            angular_velocity=final_state.angular_velocity,
             opp_obs=final_obs1,
         )
         return final_state, traj, sampled_final.value

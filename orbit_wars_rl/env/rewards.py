@@ -589,6 +589,78 @@ SHAPING_ANTI_HOARD_THRESH: float = float(
     _os.environ.get("ORBITWARS_SHAPING_ANTI_HOARD_THRESH", "0.6")
 )
 
+# v17 Frog curriculum: capture anneals to 0; defense-empty scales with history.
+SHAPING_DEFENSE_EMPTY: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_DEFENSE_EMPTY", "0.0")
+)
+SHAPING_CAPTURE_START: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_CAPTURE_START", "0.03")
+)
+_curriculum_capture_anneal: int = int(
+    _os.environ.get("ORBITWARS_CAPTURE_ANNEAL_UPDATES", "8000")
+)
+
+
+def set_curriculum(
+    update: int,
+    *,
+    capture_start: float | None = None,
+    capture_anneal: int | None = None,
+    defense_empty: float | None = None,
+) -> None:
+    """Update Frog-style shaping coefficients between PPO updates (Python side)."""
+    global SHAPING_CAPTURE, SHAPING_DEFENSE_EMPTY, _curriculum_capture_anneal
+    cap0 = SHAPING_CAPTURE_START if capture_start is None else capture_start
+    anneal = _curriculum_capture_anneal if capture_anneal is None else capture_anneal
+    def0 = float(_os.environ.get("ORBITWARS_SHAPING_DEFENSE_EMPTY", "0.02")) if defense_empty is None else defense_empty
+    t = min(1.0, float(update) / float(max(anneal, 1)))
+    SHAPING_CAPTURE = cap0 * (1.0 - t)
+    # Keep a mild defense signal into sparse phase (Frog: sparse win only at end).
+    SHAPING_DEFENSE_EMPTY = def0 * (1.0 - t * 0.5)
+
+
+def capture_hist_balance_reward(
+    prev_state: EnvState, next_state: EnvState, player: int
+) -> jnp.ndarray:
+    """Capture shaping scaled by recent garrison stability from global hist.
+
+    When hist shows collapsing garr_advantage (nomadic empty-base play), down-
+    weight capture bonus so sparse terminal win + defense dominate.
+    """
+    if SHAPING_CAPTURE <= 0.0:
+        return jnp.float32(0.0)
+    prev_mine = (prev_state.planet_owner == player) & prev_state.planet_mask
+    next_mine = (next_state.planet_owner == player) & next_state.planet_mask
+    gained = next_mine & jnp.logical_not(prev_mine)
+    prod_gained = jnp.where(
+        gained, next_state.planet_prod.astype(jnp.float32), jnp.float32(0.0)
+    ).sum()
+    total_prod = jnp.maximum(
+        next_state.planet_prod.astype(jnp.float32).sum(), jnp.float32(1.0)
+    )
+    base = jnp.float32(SHAPING_CAPTURE) * prod_gained / total_prod
+    from orbit_wars_rl.features.history import TGF_GARR_ADV  # noqa: PLC0415
+
+    trail = next_state.global_hist[player, -10:, TGF_GARR_ADV]
+    stability = jnp.clip(trail.mean() + jnp.float32(0.5), jnp.float32(0.5), jnp.float32(1.5))
+    return base * stability
+
+
+def defense_empty_penalty_reward(
+    prev_state: EnvState, next_state: EnvState, player: int
+) -> jnp.ndarray:
+    """Penalize emptying high-value owned planets below a production-aware reserve."""
+    if SHAPING_DEFENSE_EMPTY <= 0.0:
+        return jnp.float32(0.0)
+    my = (next_state.planet_owner == player) & next_state.planet_mask
+    prod = next_state.planet_prod.astype(jnp.float32)
+    min_reserve = jnp.maximum(jnp.float32(8.0), prod * jnp.float32(2.5))
+    garr = next_state.planet_ships.astype(jnp.float32)
+    viol = my & (prod >= jnp.float32(2.0)) & (garr < min_reserve)
+    n_viol = viol.astype(jnp.float32).sum()
+    n_mine = jnp.maximum(my.astype(jnp.float32).sum(), jnp.float32(1.0))
+    return -jnp.float32(SHAPING_DEFENSE_EMPTY) * n_viol / n_mine
+
 
 def hold_bonus_reward(
     valid_mask: jnp.ndarray,

@@ -5,8 +5,10 @@ from orbit_wars_rl.features.encode import (
     PLANET_FEAT_DIM,
     FLEET_FEAT_DIM,
     GLOBAL_FEAT_DIM,
+    BASE_GLOBAL_FEAT_DIM,
     encode,
 )
+from orbit_wars_rl.features.history import HIST_LEN, TEMPORAL_GLOBAL_DIM
 from orbit_wars_rl.features.pair import (
     DST_PAIR_DIM,
     EMIT_PAIR_DIM,

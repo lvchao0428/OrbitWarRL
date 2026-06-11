@@ -52,6 +52,12 @@ EMIT_PAIR_DIM=$(echo "$ARCH_INFO" | awk '{print $6}')
 
 if [ "$PLANET_DIM" = "19" ]; then
   TEMPLATE="submission_rl_v4.py"
+elif [ "$PLANET_DIM" = "41" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "427" ]; then
+  TEMPLATE="submission_rl_v17.py"
+elif [ "$PLANET_DIM" = "39" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "427" ]; then
+  TEMPLATE="submission_rl_v17.py"
+elif [ "$PLANET_DIM" = "39" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "27" ]; then
+  TEMPLATE="submission_rl_v15.py"
 elif [ "$PLANET_DIM" = "39" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "24" ]; then
   TEMPLATE="submission_rl_v13c.py"
 elif [ "$PLANET_DIM" = "33" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "18" ]; then

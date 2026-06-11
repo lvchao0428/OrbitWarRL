@@ -1,0 +1,56 @@
+# v17: Frog sparse + global hist=50 + ETA-lead dst + safe_emit + curriculum capture
+#
+# Resume from v15 u9999 with shape-adapted global/planet proj (zero-pad new dims).
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 15000
+  num_groups: 5
+  episode_steps: 500
+  wins_needed: 2
+  eval_every: 200
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v17_frog_hist50
+  ckpt_every: 200
+  log_every: 1
+  seed: 1700
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.0001
+  lr_warmup_steps: 100
+  lr_decay_steps: 120000
+  lr_floor: 0.00001
+  clip_eps: 0.20
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.0001
+  ent_coef_dst: 0.0001
+  ent_coef_pct: 0.0001
+  ent_coef_emit: 0.0001
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.85
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.02
+
+selfplay:
+  enabled: false

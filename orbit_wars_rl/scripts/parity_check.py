@@ -82,6 +82,13 @@ def _build_mvp_state_from_kaggle(kobs, num_players: int = 2) -> EnvState:
         planet_orbit_phase=jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.float32),
         planet_is_orbiting=jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.bool_),
         home_planet_idx=jnp.zeros((2,), dtype=jnp.int32),
+        match_score=jnp.zeros((constants.NUM_PLAYERS,), dtype=jnp.int32),
+        match_idx=jnp.int32(0),
+        init_planet_ships=jnp.asarray(ships),
+        init_planet_owner=jnp.asarray(owners),
+        global_hist=__import__(
+            "orbit_wars_rl.features.history", fromlist=["empty_global_hist"]
+        ).empty_global_hist(),
     )
 
 

@@ -1,0 +1,57 @@
+# v16a: resume v15 u9999 + light capture shaping (5k extend)
+#
+# v15 pure-terminal BO3 reached WRr=0.88 but 0/10 vs v20.
+# Add only CAPTURE shaping to encourage aggression vs strong opponents.
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 5000
+  num_groups: 5
+  episode_steps: 500
+  wins_needed: 2
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v16a_capture
+  ckpt_every: 200
+  log_every: 1
+  seed: 1600
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: true
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ./ckpt_multi_action_v15_frog/ckpt_009999.pkl
+
+ppo:
+  lr_peak: 0.00002
+  lr_warmup_steps: 20
+  lr_decay_steps: 40000
+  lr_floor: 0.000005
+  clip_eps: 0.08
+  value_clip_eps: 0.08
+  value_coef: 0.5
+  ent_coef_src: 0.001
+  ent_coef_dst: 0.001
+  ent_coef_pct: 0.001
+  ent_coef_emit: 0.004
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.95
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.02
+
+selfplay:
+  enabled: false

@@ -103,9 +103,16 @@ from orbit_wars_rl.env.dynamics import fleet_speed
 from orbit_wars_rl.env.state import EnvState
 
 
-PLANET_FEAT_DIM = 39  # v13: +6 fleet arrival prediction dims (33..38)
+PLANET_FEAT_DIM = 41  # v17: +safe_emit_margin, +hold_value (39..40)
 FLEET_FEAT_DIM = 10
-GLOBAL_FEAT_DIM = 27  # v15: +3 multi-match series context (24..26)
+BASE_GLOBAL_FEAT_DIM = 27  # v15: +3 multi-match series context (24..26)
+from orbit_wars_rl.features.history import (
+    HIST_LEN,
+    TEMPORAL_GLOBAL_DIM,
+    flatten_global_hist,
+    update_global_hist,
+)
+GLOBAL_FEAT_DIM = BASE_GLOBAL_FEAT_DIM + HIST_LEN * TEMPORAL_GLOBAL_DIM  # v17: +hist stack
 
 LEAD_TIMES = (15.0, 30.0)
 
@@ -540,6 +547,28 @@ def _encode_planets(
         -1.0, 1.0,
     ) * is_mine.astype(jnp.float32)
 
+    # v17 dims 39-40: safe emit margin + hold value (discourage emptying bases)
+    min_reserve = jnp.maximum(
+        jnp.float32(8.0),
+        state.planet_prod.astype(jnp.float32) * jnp.float32(2.5),
+    )
+    safe_emit_margin = jnp.where(
+        is_mine,
+        jnp.clip(
+            (my_ships_f - foe_soft - min_reserve) / jnp.maximum(my_ships_f, jnp.float32(1.0)),
+            0.0,
+            1.0,
+        ),
+        jnp.float32(0.0),
+    )
+    my_prod_max = jnp.max(jnp.where(is_mine, prod_f, jnp.float32(0.0)))
+    hold_value = jnp.where(
+        is_mine,
+        jnp.clip(prod_f / jnp.maximum(my_prod_max, jnp.float32(1.0)), 0.0, 1.0)
+        * safe_emit_margin,
+        jnp.float32(0.0),
+    )
+
     feats = jnp.stack(
         [
             is_mine.astype(jnp.float32),
@@ -581,6 +610,8 @@ def _encode_planets(
             enemy_eta_w2,
             net_garrison_t5,
             net_garrison_t15,
+            safe_emit_margin,
+            hold_value,
         ],
         axis=-1,
     )
@@ -791,7 +822,7 @@ def _encode_global(
     max_matches = 2.0 * wn - 1.0  # e.g. BO3 → 3, BO5 → 5
     match_progress = state.match_idx.astype(jnp.float32) / jnp.maximum(max_matches, jnp.float32(1.0))
 
-    return jnp.stack(
+    base = jnp.stack(
         [
             step_norm,
             player_ships(player) / total_ships,
@@ -822,6 +853,8 @@ def _encode_global(
             match_progress,
         ],
     )
+    hist_flat = flatten_global_hist(state, player)
+    return jnp.concatenate([base, hist_flat])
 
 
 def encode(

@@ -13,6 +13,7 @@ import jax.numpy as jnp
 from orbit_wars_rl.env import constants, dynamics, init, rewards
 from orbit_wars_rl.env.actions import MultiPlayerAction, PlayerAction, single_to_multi
 from orbit_wars_rl.env.state import EnvState
+from orbit_wars_rl.features.history import update_global_hist
 
 
 @chex.dataclass(frozen=True)
@@ -85,7 +86,8 @@ class OrbitWarsEnv:
         planet_r = rewards.planet_share_reward(s4, 0)
         fleet_log_r = rewards.fleet_size_log_reward(valid_p0, ships_p0)
         prod_d_r = rewards.prod_share_delta_reward(state, s4, 0)
-        capture_r = rewards.capture_flip_reward(state, s4, 0)
+        capture_r = rewards.capture_hist_balance_reward(state, s4, 0)
+        defense_empty_r = rewards.defense_empty_penalty_reward(state, s4, 0)
         release_r = rewards.release_bonus_reward(
             state, actions[0].src_idx, valid_p0, ships_p0
         )
@@ -102,19 +104,22 @@ class OrbitWarsEnv:
             shaping
             + keep_r + fleet_r
             + prod_r + planet_r + fleet_log_r
-            + prod_d_r + capture_r + emit_log_r + release_r
+            + prod_d_r + capture_r + defense_empty_r + emit_log_r + release_r
             + one_ship_r + high_prod_r + capture_fs_r + multi_emit_r + hold_r
             + anti_hoard_r
         )
         reward_p0 = jnp.where(done_now, terminal_r, non_terminal_r)
 
+        s5 = s4.replace(step=next_step, done=done_now)
+        s5 = update_global_hist(s5, self.episode_steps, self.wins_needed)
+
         out = EnvOutput(
             reward=reward_p0,
             done=done_now,
-            info_my_ships=rewards.player_total_ships(s4, 0).astype(jnp.float32),
-            info_opp_ships=rewards._strongest_opp_ships(s4, 0).astype(jnp.float32),
+            info_my_ships=rewards.player_total_ships(s5, 0).astype(jnp.float32),
+            info_opp_ships=rewards._strongest_opp_ships(s5, 0).astype(jnp.float32),
         )
-        return s4.replace(step=next_step, done=done_now), out
+        return s5, out
 
     def step_and_autoreset(
         self,
