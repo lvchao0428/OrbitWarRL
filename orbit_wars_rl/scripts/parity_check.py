@@ -89,6 +89,9 @@ def _build_mvp_state_from_kaggle(kobs, num_players: int = 2) -> EnvState:
         global_hist=__import__(
             "orbit_wars_rl.features.history", fromlist=["empty_global_hist"]
         ).empty_global_hist(),
+        planet_hist=__import__(
+            "orbit_wars_rl.features.history", fromlist=["empty_planet_hist"]
+        ).empty_planet_hist(),
     )
 
 

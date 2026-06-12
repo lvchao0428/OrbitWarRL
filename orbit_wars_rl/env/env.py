@@ -13,7 +13,7 @@ import jax.numpy as jnp
 from orbit_wars_rl.env import constants, dynamics, init, rewards
 from orbit_wars_rl.env.actions import MultiPlayerAction, PlayerAction, single_to_multi
 from orbit_wars_rl.env.state import EnvState
-from orbit_wars_rl.features.history import update_global_hist
+from orbit_wars_rl.features.history import update_global_hist, update_planet_hist
 
 
 @chex.dataclass(frozen=True)
@@ -112,6 +112,7 @@ class OrbitWarsEnv:
 
         s5 = s4.replace(step=next_step, done=done_now)
         s5 = update_global_hist(s5, self.episode_steps, self.wins_needed)
+        s5 = update_planet_hist(s5, self.episode_steps)
 
         out = EnvOutput(
             reward=reward_p0,

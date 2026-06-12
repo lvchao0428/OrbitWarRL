@@ -632,12 +632,19 @@ def capture_hist_balance_reward(
     prev_mine = (prev_state.planet_owner == player) & prev_state.planet_mask
     next_mine = (next_state.planet_owner == player) & next_state.planet_mask
     gained = next_mine & jnp.logical_not(prev_mine)
-    prod_gained = jnp.where(
-        gained, next_state.planet_prod.astype(jnp.float32), jnp.float32(0.0)
-    ).sum()
-    total_prod = jnp.maximum(
-        next_state.planet_prod.astype(jnp.float32).sum(), jnp.float32(1.0)
+    prod_f = next_state.planet_prod.astype(jnp.float32)
+    garr_f = next_state.planet_ships.astype(jnp.float32)
+    # Flip proxy: down-weight trickle captures that flip empty/low-garr planets.
+    # Strong flips (large arriving fleet) get full capture credit; chip damage ~0.
+    garr_on_gain = jnp.where(gained, garr_f, jnp.float32(0.0))
+    prod_on_gain = jnp.where(gained, prod_f, jnp.float32(0.0))
+    flip_proxy = jnp.clip(
+        garr_on_gain / jnp.maximum(prod_on_gain + jnp.float32(1.0), jnp.float32(1.0)),
+        0.0,
+        1.0,
     )
+    prod_gained = (prod_on_gain * flip_proxy).sum()
+    total_prod = jnp.maximum(prod_f.sum(), jnp.float32(1.0))
     base = jnp.float32(SHAPING_CAPTURE) * prod_gained / total_prod
     from orbit_wars_rl.features.history import TGF_GARR_ADV  # noqa: PLC0415
 

@@ -54,6 +54,15 @@ Feature layouts (kept in lock-step with the heads):
     [32]    v20_target_score -- f35: (prod*20 + weak*30) * dist_decay - need*0.5, /100,
                                clip [-1,1]. v20 target_score distillation: near high-prod
                                targets dominate. dist_decay=1/(1+eta_proxy*0.1). 0 for mine.
+    [33..38] fleet arrival windows (friendly/enemy w1/w2, net_garrison_t5/t15)
+    [39]    safe_emit_margin -- v17: ships safely peelable after foe threat + reserve
+    [40]    hold_value -- v17: prod rank * safe_emit_margin on my planets
+    [41]    future_owner_flip_risk -- v21: enemy_w2 vs garrison+friendly_w2 (mine);
+                                      friendly_w2 vs garrison+enemy_w2 (enemy/neutral).
+                                      Proxy for owner flip by t+15.
+    [42]    future_garrison_growth -- v21: clip(prod*15/max(garr,1), 0, 2)/2 over 15 steps.
+    [43..62] planet_hist -- v21: 5 frames x 4 dims [is_mine, garr_norm, inbound_foe_norm,
+                            was_flipped] per planet.
 
   fleet (10 dims):
     [0]     is_mine
@@ -103,13 +112,14 @@ from orbit_wars_rl.env.dynamics import fleet_speed
 from orbit_wars_rl.env.state import EnvState
 
 
-PLANET_FEAT_DIM = 41  # v17: +safe_emit_margin, +hold_value (39..40)
+PLANET_FEAT_DIM = constants.PLANET_FEAT_DIM  # v21: 43 base + 20 planet hist
 FLEET_FEAT_DIM = 10
 BASE_GLOBAL_FEAT_DIM = 27  # v15: +3 multi-match series context (24..26)
 from orbit_wars_rl.features.history import (
     HIST_LEN,
     TEMPORAL_GLOBAL_DIM,
     flatten_global_hist,
+    flatten_planet_hist,
     update_global_hist,
 )
 GLOBAL_FEAT_DIM = BASE_GLOBAL_FEAT_DIM + HIST_LEN * TEMPORAL_GLOBAL_DIM  # v17: +hist stack
@@ -569,6 +579,27 @@ def _encode_planets(
         jnp.float32(0.0),
     )
 
+    # v21 dims 41-42: future garrison / ownership prediction over 15 steps.
+    my_garr_f = state.planet_ships.astype(jnp.float32)
+    future_owner_flip_risk = jnp.where(
+        is_mine,
+        jnp.clip(
+            enemy_w2 / jnp.maximum(my_garr_f + friendly_w2, jnp.float32(1.0)),
+            0.0,
+            1.0,
+        ),
+        jnp.clip(
+            friendly_w2 / jnp.maximum(my_garr_f + enemy_w2, jnp.float32(1.0)),
+            0.0,
+            1.0,
+        ),
+    )
+    future_garrison_growth = jnp.clip(
+        prod_f * jnp.float32(15.0) / jnp.maximum(my_garr_f, jnp.float32(1.0)),
+        0.0,
+        2.0,
+    ) / jnp.float32(2.0)
+
     feats = jnp.stack(
         [
             is_mine.astype(jnp.float32),
@@ -612,9 +643,13 @@ def _encode_planets(
             net_garrison_t15,
             safe_emit_margin,
             hold_value,
+            future_owner_flip_risk,
+            future_garrison_growth,
         ],
         axis=-1,
     )
+    planet_hist_flat = flatten_planet_hist(state, player)
+    feats = jnp.concatenate([feats, planet_hist_flat], axis=-1)
     feats = feats * state.planet_mask[:, None].astype(jnp.float32)
 
     # Aux scalars for the global encoder.

@@ -193,6 +193,12 @@ def _emit_pair_globals_np(
     home_idx: int,
     home_init: float,
     total_init: float,
+    *,
+    planet_orbit_phase: np.ndarray | None = None,
+    planet_orbit_radius: np.ndarray | None = None,
+    planet_is_orbiting: np.ndarray | None = None,
+    angular_velocity: float | None = None,
+    reserved: np.ndarray | None = None,
 ) -> np.ndarray:
     P = planet_x.shape[0]
     rem_my = np.where(my_mask, remaining, 0).astype(np.float32)
@@ -204,7 +210,8 @@ def _emit_pair_globals_np(
         my_mask[:, None] & target_mask[None, :]
         & planet_mask[:, None] & planet_mask[None, :]
     )
-    feasible = pair_valid & (margin > 0)
+    min_overkill = np.float32(0.1) * np.maximum(garr_dst[None, :], np.float32(1.0))
+    feasible = pair_valid & (margin > min_overkill)
     emit_worth_it = 1.0 if bool(feasible.any()) else 0.0
 
     margin_masked = np.where(feasible, margin, 0.0)
@@ -212,17 +219,15 @@ def _emit_pair_globals_np(
     best_margin = max(best_margin, 0.0)
     best_margin_norm = float(min(np.log1p(best_margin) / 8.0, 1.0))
 
-    rem_at_home = float(rem_my[home_idx])
+    rem_at_home = float(rem_my[home_idx]) if 0 <= home_idx < P else 0.0
     home_remain_ratio = float(min(rem_at_home / max(home_init, 1.0), 1.0))
     total_remaining = float(rem_my.sum())
     total_remain_ratio = float(min(total_remaining / max(total_init, 1.0), 1.0))
 
-    # [4] feasible_target_count: how many distinct dst planets can be flipped
-    dst_flippable = feasible.any(axis=0)  # (P,) any src can flip this dst
+    dst_flippable = feasible.any(axis=0)
     feasible_count = float(dst_flippable.astype(np.float32).sum())
     feasible_target_count_norm = float(min(feasible_count / _MAX_PLANETS, 1.0))
 
-    # [5] surplus_ratio: after flipping all feasible targets cheaply, leftover
     target_need = (garr_dst + np.float32(1.0)) * target_mask.astype(np.float32)
     flippable_need = target_need * dst_flippable.astype(np.float32)
     sum_min_needs = float(flippable_need.sum())
@@ -230,9 +235,63 @@ def _emit_pair_globals_np(
         min(max((total_remaining - sum_min_needs) / max(total_remaining, 1.0), 0.0), 1.0)
     )
 
+    src_x = planet_x[:, None]
+    src_y = planet_y[:, None]
+    dst_x = planet_x[None, :]
+    dst_y = planet_y[None, :]
+    dx = dst_x - src_x
+    dy = dst_y - src_y
+    dist = np.sqrt(dx * dx + dy * dy + 1e-6)
+    if (
+        planet_orbit_phase is not None
+        and planet_orbit_radius is not None
+        and planet_is_orbiting is not None
+        and angular_velocity is not None
+    ):
+        spd = np.float32(max(float(_DEFAULT_FLEET_SPEED), 0.5))
+        eta = dist / spd
+        rotate_mask_f = planet_is_orbiting.astype(np.float32)
+        av = float(angular_velocity)
+        phase_dst = planet_orbit_phase[None, :]
+        radius_dst = planet_orbit_radius[None, :]
+        new_phase = phase_dst + av * eta
+        lead_x = _SUN_X + radius_dst * np.cos(new_phase)
+        lead_y = _SUN_Y + radius_dst * np.sin(new_phase)
+        dx_lead = lead_x - src_x
+        dy_lead = lead_y - src_y
+        dist_lead = np.sqrt(dx_lead * dx_lead + dy_lead * dy_lead + 1e-6)
+        use_lead = rotate_mask_f[None, :] > np.float32(0.0)
+        dist = np.where(use_lead, dist_lead, dist)
+    dist_norm = dist / _BOARD_F
+    big = np.float32(1e6)
+    dist_masked = np.where(feasible, dist_norm, big)
+    best_lead_dist_norm = float(np.clip(dist_masked.min(), 0.0, 1.0))
+
+    my_count = float(my_mask.astype(np.float32).sum())
+    my_count_safe = max(my_count, 1.0)
+    if reserved is not None:
+        reserved_f = np.where(my_mask, reserved, 0).astype(np.float32)
+        has_emitted = (reserved_f > 0.5) & my_mask
+        active_emitter_ratio = float(
+            min(has_emitted.astype(np.float32).sum() / my_count_safe, 1.0)
+        )
+        coord_coverage = active_emitter_ratio
+    else:
+        active_emitter_ratio = 0.0
+        coord_coverage = 0.0
+
+    rem_sorted = np.sort(rem_my)[::-1]
+    top2_mean = (rem_sorted[0] + rem_sorted[1]) / 2.0 if P >= 2 else rem_sorted[0]
+    top2_src_remain_norm = float(min(np.log1p(top2_mean) / 8.0, 1.0))
+    concentration_ratio = float(
+        min(rem_sorted[0] / max(total_remaining, 1.0), 1.0)
+    )
+
     return np.array(
         [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio,
-         feasible_target_count_norm, surplus_ratio],
+         feasible_target_count_norm, surplus_ratio, best_lead_dist_norm,
+         active_emitter_ratio, top2_src_remain_norm, concentration_ratio,
+         coord_coverage],
         dtype=np.float32,
     )
 
@@ -258,6 +317,7 @@ def _pct_pair_features_np(
     net_garrison_t15_dst: float = 0.0,
     src_prod_ratio: float = 0.0,
     fleet_count_norm: float = 0.0,
+    lead_dist_norm: float = 0.0,
     extended: bool = False,
 ) -> np.ndarray:
     min_bin = _pct_min_bin_index_np(garr_dst, remaining_src)
@@ -269,7 +329,7 @@ def _pct_pair_features_np(
         return np.array([
             min_bin_norm, pair_flip_bin5,
             enemy_inbound_norm, net_garrison_t15_dst,
-            src_prod_ratio, fleet_count_norm,
+            src_prod_ratio, fleet_count_norm, lead_dist_norm,
         ], dtype=np.float32)
     return np.array([min_bin_norm, pair_flip_bin5], dtype=np.float32)
 
@@ -714,6 +774,11 @@ def greedy_multi_action(
                 planet_x, planet_y, ships, planet_mask_b,
                 my_mask_b, target_mask_b, remaining,
                 home_idx, home_init, total_init,
+                planet_orbit_phase=planet_orbit_phase,
+                planet_orbit_radius=planet_orbit_radius,
+                planet_is_orbiting=planet_is_orbiting,
+                angular_velocity=angular_velocity,
+                reserved=reserved,
             )
         emit_worth_it = (emit_pair_g is not None) and (float(emit_pair_g[0]) > 0.0)
         emit_force_stop = (
@@ -788,11 +853,13 @@ def greedy_multi_action(
                     my_prod_total = float((planet_prod * my_mask_b.astype(np.float32)).sum())
                     _sp = float(planet_prod[src_t]) / max(my_prod_total, 1e-6)
                 _fc = float(t) / max(max_fleets_per_turn - 1, 1)
+                _lead = float(dst_pair[dst_t, 0]) if dst_pair is not None else 0.0
                 ext_kwargs = dict(
                     enemy_inbound_norm=_ein,
                     net_garrison_t15_dst=_ngt,
                     src_prod_ratio=_sp,
                     fleet_count_norm=_fc,
+                    lead_dist_norm=_lead,
                     extended=True,
                 )
             pct_pair = _pct_pair_features_np(garr, rem, **ext_kwargs)

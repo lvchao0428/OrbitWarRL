@@ -1,0 +1,79 @@
+# v22: fix v21 structural failures — mixed opponents + flip-gated capture + working eval
+#
+# v21 lessons:
+#   - 100% symm + constant capture -> train/eval gap, e2=0 collapse, flip=3%
+#   - inline eval broken (export dim mismatch) -> blind training
+#
+# v22 fixes:
+#   - NO pure symm: 50% frozen v16a pool + 50% rand self-play
+#   - capture gated by flip proxy (garr/prod on captured planet)
+#   - higher emit entropy + min_pct_bin to prevent single-emit collapse
+#   - fresh train (do NOT resume v21 — learned wrong equilibrium)
+#   - eval pipeline fixed (weights v21 dims + ORBITWARS_SKIP_PARITY for inline gate)
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 10000
+  num_groups: 5
+  episode_steps: 500
+  wins_needed: 2
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v22_align_fix
+  ckpt_every: 200
+  log_every: 1
+  seed: 2200
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 2
+  flip_hard_mask: false
+  allow_hold: true
+  force_emit_worth_it: false
+  min_pct_bin: 3
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 5
+  symmetric_selfplay: false
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00008
+  lr_warmup_steps: 200
+  lr_decay_steps: 100000
+  lr_floor: 0.00001
+  clip_eps: 0.12
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.0005
+  ent_coef_dst: 0.0005
+  ent_coef_pct: 0.0005
+  ent_coef_emit: 0.004
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.9
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.03
+
+selfplay:
+  enabled: true
+  warmup_updates: 0
+  snapshot_every: 400
+  pool_capacity: 4
+  frozen_ratio: 0.50
+  eval_vs_frozen: true
+  strong_ckpt_path: ""
+  strong_ratio: 0.0
+  pool_seed_paths:
+    - ./ckpt_multi_action_v16a_capture/ckpt_003199.pkl
+  snapshot_current: false
+  buffer_path: ""
+  buffer_reset_ratio: 0.0
+  buffer_rollout_ratio: 0.0

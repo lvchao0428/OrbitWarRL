@@ -13,6 +13,8 @@ from orbit_wars_rl.env.state import EnvState
 
 HIST_LEN = constants.HIST_LEN
 TEMPORAL_GLOBAL_DIM = constants.TEMPORAL_GLOBAL_DIM
+PLANET_HIST_LEN = constants.PLANET_HIST_LEN
+PLANET_HIST_DIM = constants.PLANET_HIST_DIM
 
 # Indices within each 8-dim temporal slice (stable contract for rewards).
 TGF_SHIP_MINE = 0
@@ -139,3 +141,82 @@ def recent_garr_advantage_mean(state: EnvState, player: int, n: int = 10) -> jnp
     """Mean garr_advantage over the last ``n`` hist frames (scalar)."""
     trail = state.global_hist[player, -n:, TGF_GARR_ADV]
     return trail.mean()
+
+
+def empty_planet_hist() -> jnp.ndarray:
+    """Shape [NUM_PLAYERS, PLANET_HIST_LEN, MAX_PLANETS, PLANET_HIST_DIM]."""
+    return jnp.zeros(
+        (
+            constants.NUM_PLAYERS,
+            PLANET_HIST_LEN,
+            constants.MAX_PLANETS,
+            PLANET_HIST_DIM,
+        ),
+        dtype=jnp.float32,
+    )
+
+
+def _inbound_foe_ships(state: EnvState, player: int) -> jnp.ndarray:
+    """Hard inbound from all opponents toward each planet (simplified)."""
+    speed = jnp.float32(1.0)  # unused; heading heuristic only
+    del speed
+    eps = jnp.float32(1e-6)
+    dxn = jnp.cos(state.fleet_angle)
+    dyn = jnp.sin(state.fleet_angle)
+
+    rel_x = state.planet_x[None, :] - state.fleet_x[:, None]
+    rel_y = state.planet_y[None, :] - state.fleet_y[:, None]
+    proj = rel_x * dxn[:, None] + rel_y * dyn[:, None]
+    perp_x = rel_x - proj * dxn[:, None]
+    perp_y = rel_y - proj * dyn[:, None]
+    perp_d2 = perp_x * perp_x + perp_y * perp_y
+
+    in_front = proj > 0
+    cost = jnp.where(in_front, perp_d2, jnp.float32(1e9))
+    cost = jnp.where(state.planet_mask[None, :], cost, jnp.float32(1e9))
+    target_idx = jnp.argmin(cost, axis=1)
+
+    is_opp = (
+        (state.fleet_owner >= 0)
+        & (state.fleet_owner != player)
+        & state.fleet_mask
+    )
+    ships_opp = jnp.where(is_opp, state.fleet_ships, jnp.int32(0))
+
+    inbound = jnp.zeros((constants.MAX_PLANETS,), dtype=jnp.float32)
+    inbound = inbound.at[target_idx].add(ships_opp.astype(jnp.float32))
+    return inbound
+
+
+def _planet_hist_slice(state: EnvState, player: int) -> jnp.ndarray:
+    """4-dim per-planet slice for one player POV. Shape [MAX_PLANETS, 4]."""
+    is_mine = (
+        (state.planet_owner == player) & state.planet_mask
+    ).astype(jnp.float32)
+    garr_norm = (
+        jnp.log1p(jnp.maximum(state.planet_ships, 0).astype(jnp.float32)) / jnp.float32(8.0)
+    )
+    inbound_foe = _inbound_foe_ships(state, player)
+    inbound_foe_norm = jnp.log1p(inbound_foe) / jnp.float32(8.0)
+
+    prev_is_mine = state.planet_hist[player, -1, :, 0]
+    was_flipped = (is_mine != prev_is_mine).astype(jnp.float32)
+
+    return jnp.stack([is_mine, garr_norm, inbound_foe_norm, was_flipped], axis=-1)
+
+
+def update_planet_hist(state: EnvState, episode_steps: int = 500) -> EnvState:
+    """Shift planet history left and append current per-planet slice."""
+    del episode_steps  # reserved for future match-aware slices
+    slices = jnp.stack(
+        [_planet_hist_slice(state, p) for p in range(constants.NUM_PLAYERS)],
+        axis=0,
+    )
+    rolled = jnp.roll(state.planet_hist, shift=-1, axis=1)
+    new_hist = rolled.at[:, -1, :, :].set(slices)
+    return state.replace(planet_hist=new_hist)
+
+
+def flatten_planet_hist(state: EnvState, player: int) -> jnp.ndarray:
+    """Shape [MAX_PLANETS, PLANET_HIST_LEN * PLANET_HIST_DIM] = [40, 20]."""
+    return state.planet_hist[player].transpose(1, 0, 2).reshape(constants.MAX_PLANETS, -1)

@@ -323,6 +323,11 @@ class ActorCritic(nn.Module):
                 planet_x, planet_y, ships_raw_b, obs_pmask,
                 obs_my, target_mask, remaining,
                 home_idx, home_init, total_init,
+                planet_orbit_phase=planet_orbit_phase,
+                planet_orbit_radius=planet_orbit_radius,
+                planet_is_orbiting=planet_is_orbiting,
+                angular_velocity=angular_velocity,
+                reserved=reserved,
             )
             dst_pair, sun_block = dst_pair_features_batched(
                 planet_x, planet_y, ships_raw_b, obs_pmask,
@@ -378,6 +383,9 @@ class ActorCritic(nn.Module):
             _my_prod_total = (pf[..., 7] * obs_my.astype(jnp.float32)).sum(axis=-1)
             _src_prod_ratio = _src_prod / jnp.maximum(_my_prod_total, jnp.float32(1e-6))
             _fleet_count_norm = jnp.float32(t) / jnp.float32(max(K - 1, 1))
+            lead_dist_norm_chosen = jnp.take_along_axis(
+                dst_pair[..., 0], dst_t[..., None], axis=-1
+            )[..., 0]
 
             pct_pair = pct_pair_features(
                 garr_dst_chosen, rem_src_chosen,
@@ -385,6 +393,7 @@ class ActorCritic(nn.Module):
                 net_garrison_t15_dst=_ngt15_dst,
                 src_prod_ratio=_src_prod_ratio,
                 fleet_count_norm=jnp.broadcast_to(jnp.float32(_fleet_count_norm), garr_dst_chosen.shape),
+                lead_dist_norm=lead_dist_norm_chosen,
             )
             min_bin = pct_min_bin_index(garr_dst_chosen, rem_src_chosen)
             min_bin = jnp.maximum(min_bin, jnp.int32(self.min_pct_bin))
@@ -510,6 +519,11 @@ class ActorCritic(nn.Module):
                 planet_x, planet_y, ships_raw, obs_pmask,
                 obs_my, target_mask, remaining,
                 home_idx, home_init, total_init,
+                planet_orbit_phase=planet_orbit_phase,
+                planet_orbit_radius=planet_orbit_radius,
+                planet_is_orbiting=planet_is_orbiting,
+                angular_velocity=angular_velocity,
+                reserved=reserved,
             )
             src_logits_t = self.src_head(planet_emb, eff_mask, remaining_norm)
             emit_worth_it = emit_pair_g[..., 0] > 0
@@ -610,6 +624,9 @@ class ActorCritic(nn.Module):
             _my_prod_total = (pf[..., 7] * obs_my.astype(jnp.float32)).sum(axis=-1)
             _src_prod_ratio = _src_prod / jnp.maximum(_my_prod_total, jnp.float32(1e-6))
             _fleet_count_norm = jnp.float32(t) / jnp.float32(max(K - 1, 1))
+            lead_dist_norm_chosen = jnp.take_along_axis(
+                dst_pair[..., 0], dst_t[..., None], axis=-1
+            )[..., 0]
 
             pct_pair = pct_pair_features(
                 garr_dst_chosen, rem_src_chosen,
@@ -617,6 +634,7 @@ class ActorCritic(nn.Module):
                 net_garrison_t15_dst=_ngt15_dst,
                 src_prod_ratio=_src_prod_ratio,
                 fleet_count_norm=jnp.broadcast_to(jnp.float32(_fleet_count_norm), garr_dst_chosen.shape),
+                lead_dist_norm=lead_dist_norm_chosen,
             )
             min_bin = pct_min_bin_index(garr_dst_chosen, rem_src_chosen)
             min_bin = jnp.maximum(min_bin, jnp.int32(self.min_pct_bin))

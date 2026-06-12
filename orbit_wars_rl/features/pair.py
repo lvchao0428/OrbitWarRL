@@ -321,16 +321,28 @@ def emit_pair_globals(
     home_idx: jnp.ndarray,       # (...,) int  -- this player's home slot
     home_init: jnp.ndarray,      # (...,) float -- starting garrison at home (HOME_PLANET_SHIPS or first-turn)
     total_init: jnp.ndarray,     # (...,) float -- total my garrison at turn start (sum of ships_raw on mine)
+    *,
+    planet_orbit_phase: jnp.ndarray | None = None,
+    planet_orbit_radius: jnp.ndarray | None = None,
+    planet_is_orbiting: jnp.ndarray | None = None,
+    angular_velocity: jnp.ndarray | None = None,
+    reserved: jnp.ndarray | None = None,
 ) -> jnp.ndarray:
-    """6 scalar features describing remaining attack budget & emit stop signal.
+    """11 scalar features describing remaining attack budget, emit stop signal,
+    and multi-planet coordination state.
 
-    Returns (..., 6):
+    Returns (..., 11):
       [0] emit_worth_it           -- 1.0 iff any (src,dst) pair has margin>0 with current remaining
       [1] best_pair_margin_norm   -- log1p(max over feasible pairs of margin) / log1p(MAX_PLANET_SHIPS)
       [2] home_remain_ratio       -- remaining[home] / max(home_init, 1)  clip [0,1]
       [3] total_remain_ratio      -- (sum remaining over mine) / max(total_init, 1) clip [0,1]
       [4] feasible_target_count_norm -- how many distinct dst can be flipped / MAX_PLANETS
       [5] surplus_ratio           -- (total_remaining - sum_min_needs) / total_remaining, clip [0,1]
+      [6] best_lead_dist_norm     -- min ETA-lead-adjusted dist over feasible pairs / BOARD
+      [7] active_emitter_ratio    -- fraction of my planets that have already emitted this turn
+      [8] top2_src_remain_norm    -- mean remaining of top-2 strongest src planets, log1p/8
+      [9] concentration_ratio     -- max(remaining) / total_remaining (1=all on one planet, low=spread)
+      [10] coord_coverage         -- emitted src count / my planet count (how broadly we're attacking)
     """
     P = planet_x.shape[-1]
 
@@ -393,9 +405,76 @@ def emit_pair_globals(
         1.0,
     )
 
+    # [6] best_lead_dist_norm: min lead-adjusted src->dst distance among feasible pairs.
+    src_x = planet_x[..., :, None]
+    src_y = planet_y[..., :, None]
+    dst_x = planet_x[..., None, :]
+    dst_y = planet_y[..., None, :]
+    dx = dst_x - src_x
+    dy = dst_y - src_y
+    dist = jnp.sqrt(dx * dx + dy * dy + jnp.float32(1e-6))
+
+    if (
+        planet_orbit_phase is not None
+        and planet_orbit_radius is not None
+        and planet_is_orbiting is not None
+        and angular_velocity is not None
+    ):
+        spd = jnp.float32(constants.DEFAULT_MAX_SHIP_SPEED)
+        eta = dist / jnp.maximum(spd, jnp.float32(0.5))
+        rotate_mask_f = planet_is_orbiting.astype(jnp.float32)
+        omega_b = angular_velocity
+        if omega_b.ndim < planet_x.ndim:
+            omega_b = omega_b[..., None, None]
+        phase_dst = planet_orbit_phase[..., None, :]
+        radius_dst = planet_orbit_radius[..., None, :]
+        new_phase = phase_dst + omega_b * eta
+        sun_x = _SUN[0]
+        sun_y = _SUN[1]
+        lead_x = sun_x + radius_dst * jnp.cos(new_phase)
+        lead_y = sun_y + radius_dst * jnp.sin(new_phase)
+        dx_lead = lead_x - src_x
+        dy_lead = lead_y - src_y
+        dist_lead = jnp.sqrt(dx_lead * dx_lead + dy_lead * dy_lead + jnp.float32(1e-6))
+        use_lead = rotate_mask_f[..., None, :] > jnp.float32(0.0)
+        dist = jnp.where(use_lead, dist_lead, dist)
+
+    dist_norm = dist / _BOARD
+    big = jnp.float32(1e6)
+    dist_masked = jnp.where(feasible, dist_norm, big)
+    best_lead_dist_norm = dist_masked.reshape(dist_masked.shape[:-2] + (P * P,)).min(axis=-1)
+    best_lead_dist_norm = jnp.clip(best_lead_dist_norm, 0.0, 1.0)
+
+    # [7-10] Multi-planet coordination signals (depend on running reserved buffer).
+    my_count = my_mask.astype(jnp.float32).sum(axis=-1)  # (...,)
+    my_count_safe = jnp.maximum(my_count, jnp.float32(1.0))
+
+    if reserved is not None:
+        reserved_f = jnp.where(my_mask, reserved, jnp.int32(0)).astype(jnp.float32)
+        has_emitted = (reserved_f > jnp.float32(0.5)) & my_mask
+        active_emitter_count = has_emitted.astype(jnp.float32).sum(axis=-1)
+        active_emitter_ratio = jnp.clip(active_emitter_count / my_count_safe, 0.0, 1.0)
+        coord_coverage = active_emitter_ratio
+    else:
+        active_emitter_ratio = jnp.zeros_like(total_remaining)
+        coord_coverage = jnp.zeros_like(total_remaining)
+
+    # Top-2 strongest remaining sources (sorted descending, take mean of top 2).
+    rem_sorted = jnp.sort(rem_my, axis=-1)[..., ::-1]
+    top1 = rem_sorted[..., 0]
+    top2 = rem_sorted[..., 1]
+    top2_mean = (top1 + top2) / jnp.float32(2.0)
+    top2_src_remain_norm = jnp.clip(jnp.log1p(top2_mean) / jnp.float32(8.0), 0.0, 1.0)
+
+    concentration_ratio = jnp.clip(
+        top1 / jnp.maximum(total_remaining, jnp.float32(1.0)), 0.0, 1.0
+    )
+
     return jnp.stack(
         [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio,
-         feasible_target_count_norm, surplus_ratio],
+         feasible_target_count_norm, surplus_ratio, best_lead_dist_norm,
+         active_emitter_ratio, top2_src_remain_norm, concentration_ratio,
+         coord_coverage],
         axis=-1,
     )
 
@@ -436,6 +515,7 @@ def pct_pair_features(
     net_garrison_t15_dst: jnp.ndarray | None = None,  # (...,) float -- predicted garrison balance at dst
     src_prod_ratio: jnp.ndarray | None = None,         # (...,) float -- src prod / total my prod
     fleet_count_norm: jnp.ndarray | None = None,       # (...,) float -- t / MAX_FLEETS_PER_TURN
+    lead_dist_norm: jnp.ndarray | None = None,         # (...,) float -- ETA-lead dist to dst / BOARD
 ) -> jnp.ndarray:
     """(..., PCT_PAIR_DIM) pct decision features given chosen (src, dst).
 
@@ -448,6 +528,7 @@ def pct_pair_features(
       [3] net_garrison_t15_dst -- predicted garrison balance at dst 15 steps out
       [4] src_prod_ratio       -- src production as fraction of total own production
       [5] fleet_count_norm     -- which autoregressive step we're on (0..1)
+      [6] lead_dist_norm       -- ETA-lead-adjusted distance src->dst / BOARD (v21)
     """
     min_bin = pct_min_bin_index(garr_dst, remaining_src)
     min_bin_norm = min_bin.astype(jnp.float32) / jnp.float32(_NUM_PCT_BINS - 1)
@@ -465,11 +546,13 @@ def pct_pair_features(
         parts.append(src_prod_ratio)
     if fleet_count_norm is not None:
         parts.append(fleet_count_norm)
+    if lead_dist_norm is not None:
+        parts.append(lead_dist_norm)
     return jnp.stack(parts, axis=-1)
 
 
 # --------------------- public constants for sanity checks ---------------------
 DST_PAIR_DIM = 5
-EMIT_PAIR_DIM = 6
-PCT_PAIR_DIM = 6
+EMIT_PAIR_DIM = 11
+PCT_PAIR_DIM = 7
 SUN_BLOCK_THRESH = float(_SUN_BLOCK_THRESH)

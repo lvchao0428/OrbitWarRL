@@ -193,6 +193,9 @@ def kaggle_obs_to_envstate(obs: dict[str, Any]) -> EnvState:
         global_hist=__import__(
             "orbit_wars_rl.features.history", fromlist=["empty_global_hist"]
         ).empty_global_hist(),
+        planet_hist=__import__(
+            "orbit_wars_rl.features.history", fromlist=["empty_planet_hist"]
+        ).empty_planet_hist(),
     )
 
 

@@ -1,0 +1,78 @@
+# v19: v20 distribution alignment — resume v18 flip peak + v16a strong + v20 buffer
+#
+# vs v18: break train/eval gap by seeding mid-game v20/top10 states and
+# training mostly vs v16a winners (not self-play rand/symm).
+#
+# Resume: v18 u1799 (gate flip peak ckpt on disk; eval u899 had no ckpt).
+# P0: keep v18 emit chain (hard_stop_min=2, ent_emit=1e-3, multi_emit, soft flip)
+# P1: v16a u3399/u3199 strong + gated frozen pool (no self snapshots)
+# P1: mixed_v20_top10 buffer reset 50% + buffer rollout 20%
+# P2: stronger anti_hoard + light prod_share_delta (see launch script env)
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 6000
+  num_groups: 5
+  episode_steps: 500
+  wins_needed: 2
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v19_v20_align
+  ckpt_every: 200
+  log_every: 1
+  seed: 1900
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 2
+  flip_hard_mask: false
+  allow_hold: true
+  force_emit_worth_it: false
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: false
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00004
+  lr_warmup_steps: 30
+  lr_decay_steps: 60000
+  lr_floor: 0.000005
+  clip_eps: 0.12
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.0001
+  ent_coef_dst: 0.0001
+  ent_coef_pct: 0.0001
+  ent_coef_emit: 0.001
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.85
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.02
+
+selfplay:
+  enabled: true
+  warmup_updates: 0
+  snapshot_every: 200
+  pool_capacity: 8
+  frozen_ratio: 0.30
+  eval_vs_frozen: true
+  strong_ckpt_path: ./ckpt_multi_action_v16a_capture/ckpt_003399.pkl
+  strong_ratio: 0.25
+  pool_seed_paths:
+    - ./ckpt_multi_action_v16a_capture/ckpt_003399.pkl
+    - ./ckpt_multi_action_v16a_capture/ckpt_003199.pkl
+  snapshot_current: false
+  buffer_path: data/mixed_v20_top10.npz
+  buffer_reset_ratio: 0.50
+  buffer_rollout_ratio: 0.20

@@ -75,6 +75,10 @@ class EnvState:
     # Shape [NUM_PLAYERS, HIST_LEN, TEMPORAL_GLOBAL_DIM]; oldest at index 0.
     global_hist: chex.Array
 
+    # v21: per-planet temporal history per player POV.
+    # Shape [NUM_PLAYERS, PLANET_HIST_LEN, MAX_PLANETS, PLANET_HIST_DIM].
+    planet_hist: chex.Array
+
 
 def empty_state(max_planets: int, max_fleets: int) -> EnvState:
     """All-zero placeholder; useful for shape probing or unit tests."""
@@ -106,6 +110,15 @@ def empty_state(max_planets: int, max_fleets: int) -> EnvState:
         init_planet_owner=jnp.full((max_planets,), -2, dtype=jnp.int8),
         global_hist=jnp.zeros(
             (constants.NUM_PLAYERS, constants.HIST_LEN, constants.TEMPORAL_GLOBAL_DIM),
+            dtype=jnp.float32,
+        ),
+        planet_hist=jnp.zeros(
+            (
+                constants.NUM_PLAYERS,
+                constants.PLANET_HIST_LEN,
+                max_planets,
+                constants.PLANET_HIST_DIM,
+            ),
             dtype=jnp.float32,
         ),
     )

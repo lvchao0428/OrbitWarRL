@@ -55,3 +55,9 @@ ORBIT_RADIUS_LIMIT: float = 50.0
 # v17: Lux-style global temporal history (50 frames @ 8 dims = 10% of 500-step match).
 HIST_LEN: int = 50
 TEMPORAL_GLOBAL_DIM: int = 8
+
+# v21: per-planet short temporal history (5 frames @ 4 dims).
+PLANET_HIST_LEN: int = 5
+PLANET_HIST_DIM: int = 4
+# v21: 43 base planet dims + PLANET_HIST_LEN * PLANET_HIST_DIM hist stack.
+PLANET_FEAT_DIM: int = 43 + PLANET_HIST_LEN * PLANET_HIST_DIM  # 63

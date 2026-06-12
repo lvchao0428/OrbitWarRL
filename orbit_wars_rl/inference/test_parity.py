@@ -177,7 +177,7 @@ def run_parity(
         # --- numpy multi-action ---
         ext_kwargs: dict = {}
         if arch.get("pct_pair_dim", 2) >= 6:
-            ext_kwargs["pct_pair_dim"] = 6
+            ext_kwargs["pct_pair_dim"] = arch.get("pct_pair_dim", 6)
             ext_kwargs["in_foe_norm"] = np.asarray(planet_feats[:, 10])
             ext_kwargs["net_garrison_t15"] = np.asarray(planet_feats[:, 38])
             ext_kwargs["planet_prod"] = np.asarray(planet_feats[:, 7])

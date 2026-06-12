@@ -138,10 +138,11 @@ def load_state_buffer(path: str) -> "EnvState":
     """
     import numpy as np
     data = np.load(path)
-    from orbit_wars_rl.features.history import empty_global_hist
+    from orbit_wars_rl.features.history import empty_global_hist, empty_planet_hist
 
     n = data["step"].shape[0]
     gh = empty_global_hist()
+    ph = empty_planet_hist()
     return EnvState(
         planet_owner=jnp.asarray(data["planet_owner"]),
         planet_x=jnp.asarray(data["planet_x"]),
@@ -169,6 +170,7 @@ def load_state_buffer(path: str) -> "EnvState":
         init_planet_ships=jnp.asarray(data["planet_ships"]),
         init_planet_owner=jnp.asarray(data["planet_owner"]),
         global_hist=jnp.broadcast_to(gh, (n, *gh.shape)),
+        planet_hist=jnp.broadcast_to(ph, (n, *ph.shape)),
     )
 
 

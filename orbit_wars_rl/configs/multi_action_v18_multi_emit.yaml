@@ -1,0 +1,69 @@
+# v18: multi-emit unlock + mixed opponent + constant capture + soft flip
+#
+# Resume from v17 u2199 (flip peak). Key changes vs v17/v17b:
+#   P0: emit_hard_stop_min_step=2 (t=1 free), ent_emit=1e-3, multi_emit bonus
+#   P1: selfplay with strong opponent (v16a u3199, shape-adapted)
+#   P2: flip_hard_mask=false (soft flip exploration)
+#   Capture: constant 0.02 (never anneal to 0)
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 8000
+  num_groups: 5
+  episode_steps: 500
+  wins_needed: 2
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v18_multi_emit
+  ckpt_every: 200
+  log_every: 1
+  seed: 1800
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 2
+  flip_hard_mask: false
+  allow_hold: true
+  force_emit_worth_it: false
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 3
+  symmetric_selfplay: false
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00005
+  lr_warmup_steps: 50
+  lr_decay_steps: 80000
+  lr_floor: 0.000005
+  clip_eps: 0.15
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.0001
+  ent_coef_dst: 0.0001
+  ent_coef_pct: 0.0001
+  ent_coef_emit: 0.001
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.85
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.02
+
+selfplay:
+  enabled: true
+  warmup_updates: 0
+  snapshot_every: 200
+  pool_capacity: 5
+  frozen_ratio: 0.3
+  eval_vs_frozen: true
+  strong_ckpt_path: ./ckpt_multi_action_v16a_capture/ckpt_003199.pkl
+  strong_ratio: 0.2
+  snapshot_current: true

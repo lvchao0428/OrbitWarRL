@@ -105,13 +105,19 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
     #   legacy (pre-f26):  2*d_model + K + 1 (total_remaining_norm)
     #   f26-f36:           2*d_model + K + 1 + 4 (pair_feats_g, 4-dim)
     #   f37+:              2*d_model + K + 1 + 6 (pair_feats_g, 6-dim)
+    #   v21:               2*d_model + K + 1 + 11 (pair_feats_g, 11-dim)
     # Try each interpretation; pick the first that yields K in [1, 16].
     k_legacy = emit_in - 2 * d_model - 1
     k_f26 = emit_in - 2 * d_model - 5
     k_f37 = emit_in - 2 * d_model - 7
+    k_v21 = emit_in - 2 * d_model - 12
     has_emit_pair = False
     emit_pair_dim = 0
-    if 1 <= k_f37 <= 16:
+    if 1 <= k_v21 <= 16:
+        max_fleets_per_turn = k_v21
+        has_emit_pair = True
+        emit_pair_dim = 11
+    elif 1 <= k_f37 <= 16:
         max_fleets_per_turn = k_f37
         has_emit_pair = True
         emit_pair_dim = 6
@@ -125,7 +131,7 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
         raise ValueError(
             f"cannot infer max_fleets_per_turn from {emit_key} shape "
             f"{flat[emit_key].shape} d_model={d_model} "
-            f"(legacy={k_legacy}, f26={k_f26}, f37={k_f37})"
+            f"(legacy={k_legacy}, f26={k_f26}, f37={k_f37}, v21={k_v21})"
         )
 
     # Detect dst pair feats and pct pair feats via fc1 input shape.
@@ -158,12 +164,16 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
     #   legacy: 3*d_model + 1
     #   f26:    3*d_model + 1 + 2  (pct_pair_dim=2)
     #   v14:    3*d_model + 1 + 6  (pct_pair_dim=6, extended pair feats)
+    #   v21:    3*d_model + 1 + 7  (pct_pair_dim=7, +lead_dist_norm)
     has_pct_pair = False
     pct_pair_dim = 0
     pct_key = "pct_head/fc1/kernel"
     if pct_key in flat:
         pct_in = int(flat[pct_key].shape[0])
-        if pct_in == 3 * d_model + 7:
+        if pct_in == 3 * d_model + 8:
+            has_pct_pair = True
+            pct_pair_dim = 7
+        elif pct_in == 3 * d_model + 7:
             has_pct_pair = True
             pct_pair_dim = 6
         elif pct_in == 3 * d_model + 3:
@@ -175,7 +185,7 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
         else:
             raise ValueError(
                 f"unexpected pct_head/fc1 input dim={pct_in}; "
-                f"d_model={d_model}, expected 3*d_model+1, +3, or +7"
+                f"d_model={d_model}, expected 3*d_model+1, +3, +7, or +8"
             )
 
     has_pair = has_emit_pair and has_dst_pair and has_pct_pair

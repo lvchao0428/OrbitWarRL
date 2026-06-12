@@ -1,18 +1,18 @@
-tag=train_u2499  bin0=0.0%  spf=43.36  garr=154.75  flip=31.71%  z0=44.3%  e8=0.4%  e2+=1.2%  WLD=0/3/0
+tag=train_u2499  bin0=0.0%  spf=0.00  garr=112.70  flip=0.00%  z0=76.8%  e8=0.0%  e2+=0.0%  WLD=0/5/0
 
 Day5 first-80 gate (Top10 calibrated):
-  spf  > 10    actual 43.36    OK
-  garr > 60    actual 154.75   OK
-  flip > 6%    actual 31.71%  OK
-  e2+  > 5%    actual 1.2% FAIL
+  spf  > 10    actual 0.00    FAIL
+  garr > 60    actual 112.70   OK
+  flip > 6%    actual 0.00%  FAIL
+  e2+  > 5%    actual 0.0% FAIL
 
 f31/f32 gate (aggregate first-80):
   bin0 < 15%     actual 0.0%   OK
-  e8   < 5%      actual 0.4%    OK
-  z0   > 8%      actual 44.3%    OK  (f32 target)
-  z0   > 10%     actual 44.3%    OK  (f31 target)
+  e8   < 5%      actual 0.0%    OK
+  z0   > 8%      actual 76.8%    OK  (f32 target)
+  z0   > 10%     actual 76.8%    OK  (f31 target)
 
 f31 anti-spam metrics (player_0, first 80 / all launches):
-  min_game_spf       = 40.58   (gate > 5)
+  min_game_spf       = 0.00   (gate > 5)
   one_ship_rate      = 0.0%  (gate < 50%)
-  home_le1_emit_rate = 5.9%  (lower is better)
+  home_le1_emit_rate = 0.0%  (lower is better)

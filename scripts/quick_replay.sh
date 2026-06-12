@@ -52,6 +52,8 @@ EMIT_PAIR_DIM=$(echo "$ARCH_INFO" | awk '{print $6}')
 
 if [ "$PLANET_DIM" = "19" ]; then
   TEMPLATE="submission_rl_v4.py"
+elif [ "$PLANET_DIM" = "63" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "427" ]; then
+  TEMPLATE="submission_rl_v21.py"
 elif [ "$PLANET_DIM" = "41" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "427" ]; then
   TEMPLATE="submission_rl_v17.py"
 elif [ "$PLANET_DIM" = "39" ] && [ "$HAS_PAIR" = "1" ] && [ "$GLOBAL_DIM" = "427" ]; then
@@ -103,6 +105,9 @@ fi
 echo "[quick_replay] ckpt=$CKPT  template=$TEMPLATE  out=$SUB  json=$JSON"
 
 EXPORT_ARGS=()
+if [ -n "${ORBITWARS_SKIP_PARITY:-}" ]; then
+  EXPORT_ARGS+=(--skip-parity)
+fi
 if [ -n "${EMIT_HARD_STOP_MIN_STEP:-}" ]; then
   EXPORT_ARGS+=(--emit-hard-stop-min-step "$EMIT_HARD_STOP_MIN_STEP")
 fi

@@ -370,12 +370,14 @@ v17 网络 input 维变大，无法直接 load v15 ckpt。`runner._adapt_strong_
 1. ~~**submission_rl_v17.py 完整 parity**~~ **✅ 已完成**
 2. ~~**numpy_forward.py ETA-lead**~~ **✅ 已完成**
 3. ~~**eval_vs_v20 恢复**~~ **✅ 已完成**
-4. **策略分支（优先级）**
-   - 从 **u2199 / u1399** 短 fine-tune，**不要 anneal capture 到 0 再长 sparse 训**
-   - 或 v16a u3299 权重 + v17 特征 adapter fine-tune
-   - 略提 `ent_coef_emit` / 验证 multi-emit
-5. **P1 架构**：planet spatial hist 4ch、symmetry aug、`flip_hard_mask=false`
-6. **checkpoint 保留 `_eval_u*.pkl`**
+4. **v17b peak fine-tune** **🔄 进行中 (6/12)**
+   - 配置：`orbit_wars_rl/configs/multi_action_v17b_peak_ft.yaml`
+   - 脚本：`scripts/v17b_peak_ft.sh`
+   - Resume：`ckpt_002199.pkl`（u2199 flip peak，**不用末期 u25199**）
+   - 改动：capture **0.025 常数**（不退火到 0）+ defense_empty 0.015；lr 5e-5；ent_emit 5e-4
+5. **备选**：v16a u3299 + v17 shape-adapt fine-tune
+6. **P1 架构**：planet spatial hist 4ch、symmetry aug、`flip_hard_mask=false`
+7. **checkpoint 保留 `_eval_u*.pkl`**
 
 ---
 
