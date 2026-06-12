@@ -233,34 +233,116 @@ v17 网络 input 维变大，无法直接 load v15 ckpt。`runner._adapt_strong_
 | `orbit_wars_rl/ppo/rollout*.py` | rollout 存 orbit raw + model.apply kwargs |
 | `orbit_wars_rl/ppo/runner.py` | shape-adapt resume + set_curriculum |
 | `orbit_wars_rl/configs/multi_action_v17_frog_hist50.yaml` | **新增** |
-| `scripts/v17_frog_hist50.sh` | **新增** |
-| `submission_rl_v17.py` | **新增**（骨架，见待办） |
+| `scripts/v17_frog_hist50.sh` | **新增**（自动 resume 最新 ckpt + 训至 06:00） |
+| `scripts/v17_frog_hist50_extend.sh` | **新增**（sparse 续训） |
+| `scripts/v17_peak_ckpt_eval.sh` | **新增**（peak ckpt offline eval + HTML） |
+| `submission_rl_v17.py` | **新增**（export parity ✅） |
+| `orbit_wars_rl/inference/numpy_forward.py` | ETA-lead dst parity ✅ |
 | `scripts/quick_replay.sh` | GLOBAL_DIM=427 → v17 template |
 
 ---
 
 ## 7. 执行进展
 
-| 阶段 | 状态 | 备注 |
-|------|------|------|
-| v17 代码落地 | **✅** | smoke_test 通过 |
-| 远程开跑 | **🔄 训练中** | `logs/v17_frog_hist50_20260611_231528/train.log` |
-| Resume | **✅** | shape-adapt from v15 u9999 |
-| eval_vs_v20 | **⚠️ 暂失败** | submission_v17 encode 未同步 → export smoke 报错 |
-| submission parity | **待做** | numpy_forward + encode_obs 完整对齐 |
+### 7.1 时间线
 
-### 早期训练指标 (u1028 快照)
+| 时间 | 事件 |
+|------|------|
+| 6/11 23:15 | Run#1 开跑，resume v15 u9999 shape-adapt |
+| 6/12 ~00:03 | Run#1 ~u3600；submission parity **未修** → eval 全 WARN |
+| 6/12 ~00:07 | **submission/numpy_forward parity 修复**；Run#2 重启，resume `ckpt_003599.pkl`，目标 06:00（25383u） |
+| 6/12 ~00:30+ | eval_vs_v20 gate **恢复**（u3199 起正常） |
+| 6/12 ~08:00 | Run#2 跑完 **u25382**；peak ckpt offline eval + HTML 完成 |
 
-| 指标 | v17 u1028 | v15 u9999 | v16a u3999 |
-|------|-----------|-----------|------------|
-| sps | **~2526** | ~2834 | ~1060 (含 eval) |
-| garr | 347 | 191 | 163 |
-| spf | 91 | 55 | 104 |
-| z0 | 0.91 | 0.72 | 0.76 |
-| emits | 0.14 | 0.60 | 0.37 |
-| ent_emit | ~0.22 | ~0.42 | ~0.35 |
+**日志**：
 
-**解读**：shape-adapt 后早期 z0 偏高（偏保守/囤兵），spf 已高于 v15；entropy 降至 Lux 量级。需继续观察 capture curriculum anneal 后 vs-v20 表现。
+- Run#1（已停）：`logs/v17_frog_hist50_20260611_231528/train.log`
+- Run#2（主 overnight）：`logs/v17_frog_hist50_20260612_000727/train.log`
+- Peak eval：`logs/v17_peak_eval.log`
+
+**Ckpt 目录**：`ckpt_multi_action_v17_frog_hist50/`（最新 `ckpt_025399.pkl` 附近）
+
+### 7.2 基础设施
+
+| 项 | 状态 |
+|----|------|
+| v17 代码落地 | **✅** |
+| submission + numpy_forward parity | **✅**（export 16/16，smoke 通过） |
+| eval_vs_v20 inline gate | **✅**（u3199 起） |
+| overnight 长训 | **✅** Run#2 完成 ~25383u |
+
+### 7.3 vs-v20：训练 inline gate（3 局，噪声大）
+
+**Run#1 末期（parity 修好后）**
+
+| update | spf | flip | z0 | WLD |
+|--------|-----|------|-----|-----|
+| u3199 | 44 | 40% | 73% | 0/3 |
+| u3399 | 37 | 30% | 65% | 0/3 |
+
+**Run#2 — capture 期 peak（本 run 计数）**
+
+| update | spf | flip | z0 | WLD |
+|--------|-----|------|-----|-----|
+| u599 | **54** | **50%** | 59% | 0/3 |
+| u999 | 49 | **56%** | 63% | 0/3 |
+| u1399 | 40 | **58%** | 68% | 0/3 |
+| u2199 | 39 | **59%** | 57% | 0/3 |
+
+**Run#2 — capture anneal 后 / sparse 长训（u4400+）**
+
+| update | spf | flip | z0 | WLD |
+|--------|-----|------|-----|-----|
+| u10199 | 35 | 39% | 51% | 0/3 |
+| u22999 | 30 | 33% | 54% | 0/3 |
+| u23799 | 29 | 23% | 54% | 0/3 |
+
+**全程 inline gate：0 胜**（含 u2199 flip≈59% 时仍 0/3）。
+
+### 7.4 vs-v20：peak ckpt offline eval（10 局 × 3 seed）
+
+脚本：`bash scripts/v17_peak_ckpt_eval.sh`
+
+| ckpt | seed_base | spf | flip | garr | WLD |
+|------|-----------|-----|------|------|-----|
+| **u1399** | 0 | 35 | 44% | 130 | **0/10** |
+| u1399 | 1 | 37 | 38% | 135 | 0/10 |
+| u1399 | 42 | 30 | 46% | 127 | 0/10 |
+| **u2199** | 0 | 33 | 45% | 143 | **0/10** |
+| u2199 | 1 | 36 | 42% | 150 | 0/10 |
+| u2199 | 42 | 30 | **54%** | 166 | 0/10 |
+
+**合计 60 局，0 胜。** flip 40–54% 仍不足以赢 v20；e2+ 全程 ≈0%。
+
+### 7.5 HTML Replay（5090 路径）
+
+| 对局 | 路径 |
+|------|------|
+| u1399 seed=0 | `logs/replay_html/v17_u1399_vs_v20_seed0/replay.html` |
+| u1399 seed=1 | `logs/replay_html/v17_u1399_vs_v20_seed1/replay.html` |
+| u2199 seed=0 | `logs/replay_html/v17_u2199_vs_v20_seed0/replay.html` |
+| u2199 seed=1 | `logs/replay_html/v17_u2199_vs_v20_seed1/replay.html` |
+
+（无胜局，未生成 `*_win` replay。）
+
+### 7.6 自博弈（Run#2 末期 u~25382）
+
+| 指标 | 值 | vs v15 u9999 |
+|------|-----|--------------|
+| WRr | 峰值 **0.94** | 0.88 |
+| emits | 0.43–0.62 | 0.60 |
+| spf | 40–79 | 55 |
+| z0 | 0.66–0.83（末期 garr 回潮 450+） | 0.72 |
+| e2+ | ~0.04 | ~0 |
+| sps | ~1776（长训+eval 后） | ~2834 |
+
+### 7.7 结论
+
+1. **hist=50 + ETA-lead + capture curriculum 方向正确**：中期 flip **50–59%**，高于 v15（22–32%）和 v16a 常见水平。
+2. **pure sparse 长训有害**：capture→0 后 flip/spf **回落到 v15 档**，中期 gain 被洗掉。
+3. **仍未赢 v20**：即使 peak flip ckpt，offline **0/60**；无 v16a 式零星胜局。
+4. **e2+ / spf 仍是短板**：spf peak ~54 vs v16a **69**；multi-emit 几乎为 0。
+5. **最佳 ckpt 候选**：`ckpt_002199.pkl`（u2199，flip gate peak）或 `ckpt_001399.pkl` — **勿用末期 ckpt**。
 
 ---
 
@@ -285,50 +367,57 @@ v17 网络 input 维变大，无法直接 load v15 ckpt。`runner._adapt_strong_
 
 ## 9. 待办 (P1)
 
-1. **submission_rl_v17.py 完整 parity**
-   - encode_obs: safe_emit + hold_value + hist flatten + temporal slice update
-   - `_dst_pair_features_np`: ETA-lead（mirror pair.py）
-   - agent() 维护 `_GLOBAL_HIST` 环形缓冲
-2. **numpy_forward.py** 同步 planet 41 / global 427
-3. **eval_vs_v20** 恢复（当前 export smoke 因 dim 不匹配失败）
-4. **checkpoint 保留 `_eval_u*.pkl`**（v16a 教训：gate ckpt 被删无法精确 replay）
+1. ~~**submission_rl_v17.py 完整 parity**~~ **✅ 已完成**
+2. ~~**numpy_forward.py ETA-lead**~~ **✅ 已完成**
+3. ~~**eval_vs_v20 恢复**~~ **✅ 已完成**
+4. **策略分支（优先级）**
+   - 从 **u2199 / u1399** 短 fine-tune，**不要 anneal capture 到 0 再长 sparse 训**
+   - 或 v16a u3299 权重 + v17 特征 adapter fine-tune
+   - 略提 `ent_coef_emit` / 验证 multi-emit
+5. **P1 架构**：planet spatial hist 4ch、symmetry aug、`flip_hard_mask=false`
+6. **checkpoint 保留 `_eval_u*.pkl`**
 
 ---
 
 ## 10. 监控命令
 
 ```bash
-# 实时日志
+# Run#2 日志（overnight 主 run）
 ssh charlie@www.ultrapp.online \
-  "tail -5 /home/charlie/project/OrbitWarRL/logs/v17_frog_hist50_20260611_231528/train.log"
+  "tail -5 /home/charlie/project/OrbitWarRL/logs/v17_frog_hist50_20260612_000727/train.log"
 
-# 里程碑
+# vs-v20 inline gate
 ssh charlie@www.ultrapp.online \
-  "grep -E 'upd  (500|1000|2000|5000|10000|15000) ' \
-   /home/charlie/project/OrbitWarRL/logs/v17_frog_hist50_20260611_231528/train.log"
+  "grep eval_vs_v20 /home/charlie/project/OrbitWarRL/logs/v17_frog_hist50_20260612_000727/train.log | grep -v WARN | tail -10"
 
-# vs-v20 gate（submission 修好后）
+# peak ckpt offline eval + HTML
 ssh charlie@www.ultrapp.online \
-  "grep eval_vs_v20 /home/charlie/project/OrbitWarRL/logs/v17_frog_hist50_20260611_231528/train.log | tail -5"
+  "cat /home/charlie/project/OrbitWarRL/logs/v17_peak_eval.log | tail -30"
+
+# 重启训练（自动 latest ckpt + 训至 06:00）
+ssh charlie@www.ultrapp.online \
+  "cd /home/charlie/project/OrbitWarRL && nohup bash scripts/v17_frog_hist50.sh > logs/v17_launch.log 2>&1 &"
+
+# peak ckpt 10 局 eval + HTML
+ssh charlie@www.ultrapp.online \
+  "cd /home/charlie/project/OrbitWarRL && PYTHON=/home/charlie/anaconda3/bin/python bash scripts/v17_peak_ckpt_eval.sh"
 
 # ckpt 列表
 ssh charlie@www.ultrapp.online \
   "ls -lt /home/charlie/project/OrbitWarRL/ckpt_multi_action_v17_frog_hist50/*.pkl | head -5"
-
-# 进程
-ssh charlie@www.ultrapp.online "ps aux | grep v17_frog | grep -v grep"
 ```
 
 ---
 
-## 11. 预期训练动态
+## 11. 训练动态（实测 vs 预期）
 
-| 阶段 | updates | 预期 | 关注 |
-|------|---------|------|------|
-| Adapt | 0–500 | 新维 random init，策略扰动 | loss 稳定、sps>2000 |
-| Curriculum dense | 500–3000 | capture 教占点，hist 填满 | flip↑, defense 抑制空城 |
-| Mid | 3000–8000 | capture anneal，sparse 权重↑ | vs-v20 spf/flip |
-| Late | 8000–15000 | 纯 sparse + anti-hoard | **vs-v20 WLD** |
+| 阶段 | updates | 预期 | **实测** |
+|------|---------|------|----------|
+| Adapt | 0–500 | 策略扰动 | ✅ loss 稳定 |
+| Curriculum dense | 500–4400 | flip↑ | ✅ flip **50–59%**，spf ~40–54 |
+| Sparse 长训 | 4400–25383 | vs-v20 WLD | ❌ flip **20–33%** 回落，**0 胜** |
+
+**修正方向**：capture 不应完全 anneal 到 0 后再长 sparse；或 mid-ckpt 短训而非 end-ckpt。
 
 ---
 
