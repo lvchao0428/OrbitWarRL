@@ -1,0 +1,10 @@
+{
+  "stage": "done",
+  "updated_at": "2026-06-14T12:02:22.723208Z",
+  "gates": {
+    "gate0_smoke": "pass",
+    "gate3_ppo_train": "pass",
+    "gate4_post_train": "pass"
+  },
+  "exit_code": 0
+}

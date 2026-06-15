@@ -101,6 +101,7 @@ def _dst_pair_features_np(
     planet_is_orbiting: np.ndarray | None = None,
     angular_velocity: float | None = None,
     fleet_speed: float = _DEFAULT_FLEET_SPEED,
+    planet_prod: np.ndarray | None = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     P = planet_x.shape[0]
     src_x = float(planet_x[src_idx])
@@ -151,20 +152,72 @@ def _dst_pair_features_np(
 
     garr_dst = planet_ships.astype(np.float32)
     ships_needed_norm = np.clip((garr_dst + 1.0) / rem_src, 0.0, 1.0).astype(np.float32)
-    ships_at_bin5 = np.floor(rem_src * np.float32(0.7))
-    pair_flip_bin5 = (
-        (ships_at_bin5 > garr_dst).astype(np.float32) * is_target_mask.astype(np.float32)
+    from orbit_wars_rl.features.capture_roi_util import (
+        ROI_NORM,
+        capture_ready_from_slack,
+        capture_roi_from_src,
+        flip_margin_at_max_pct,
+        flip_ok_at_max_pct,
+        need_est_from_garr,
+        ships_at_max_pct,
     )
-    margin = (ships_at_bin5 - garr_dst) / rem_src
+
+    rem_f = np.float32(max(float(rem_src), 1.0))
+    ships_at_max = ships_at_max_pct(rem_f)
+    flip_ok = flip_ok_at_max_pct(rem_f, garr_dst)
+    pair_flip_bin5 = flip_ok.astype(np.float32) * is_target_mask.astype(np.float32)
+    margin = flip_margin_at_max_pct(rem_f, garr_dst) / rem_f
     pair_margin_norm = np.clip(margin, 0.0, 1.0).astype(np.float32) * is_target_mask.astype(np.float32)
 
+    if planet_prod is None:
+        pair_roi_norm = np.zeros((P,), dtype=np.float32)
+    else:
+        prod_f = planet_prod.astype(np.float32)
+        need_est = need_est_from_garr(garr_dst)
+        roi_raw = capture_roi_from_src(
+            prod_f, need_est, dist.astype(np.float32), fleet_speed=fleet_speed, norm=ROI_NORM,
+        )
+        pair_roi_norm = (
+            np.clip(roi_raw, 0.0, 1.0).astype(np.float32)
+            * is_target_mask.astype(np.float32)
+        )
+
+    slack = ships_at_max - garr_dst
+    capture_ready = capture_ready_from_slack(slack).astype(np.float32) * is_target_mask.astype(np.float32)
+
     pair_feats = np.stack(
-        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5, pair_margin_norm], axis=-1
+        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5, pair_margin_norm,
+         pair_roi_norm, capture_ready],
+        axis=-1,
     ).astype(np.float32)
     pair_feats *= planet_mask.astype(np.float32)[:, None]
 
     sun_block_mask = (sun_risk >= _SUN_BLOCK_THRESH) & planet_mask & np.logical_not(self_pair)
     return pair_feats, sun_block_mask
+
+
+def _mask_used_dst_logits_np(
+    dst_logits: np.ndarray,
+    used_dst: np.ndarray,
+    planet_mask: np.ndarray,
+    src_idx: int,
+) -> np.ndarray:
+    P = dst_logits.shape[0]
+    idx = np.arange(P)
+    self_pair = idx == src_idx
+    block = used_dst | np.logical_not(planet_mask) | self_pair
+    masked = np.where(block, np.float32(-1e9), dst_logits.astype(np.float32))
+    if masked.max() <= np.float32(-1e9 * 0.5):
+        return dst_logits.astype(np.float32)
+    return masked
+
+
+def _mark_dst_used_np(used_dst: np.ndarray, dst_idx: int, emit: bool) -> np.ndarray:
+    if not emit:
+        return used_dst
+    out = used_dst.copy()
+    out[dst_idx] = True
+    return out
 
 
 def _dst_flip_block_mask_np(
@@ -173,11 +226,15 @@ def _dst_flip_block_mask_np(
     is_target_mask: np.ndarray,  # (P,) bool
     remaining: np.ndarray,       # (P,) int
     src_idx: int,
+    pair_roi_norm: np.ndarray | None = None,
 ) -> np.ndarray:
+    from orbit_wars_rl.features.capture_roi_util import ROI_EXEMPT_THRESHOLD, flip_ok_at_max_pct
+
     rem_src = float(max(int(remaining[src_idx]), 1))
-    ships_at_bin5 = float(np.floor(rem_src * np.float32(0.7)))
     garr_dst = planet_ships.astype(np.float32)
-    flip_ok = ships_at_bin5 > garr_dst
+    flip_ok = flip_ok_at_max_pct(np.float32(rem_src), garr_dst)
+    if pair_roi_norm is not None:
+        flip_ok = flip_ok | (pair_roi_norm >= np.float32(ROI_EXEMPT_THRESHOLD))
     block = np.logical_not(flip_ok) & is_target_mask.astype(bool) & planet_mask.astype(bool)
     return block
 
@@ -199,20 +256,57 @@ def _emit_pair_globals_np(
     planet_is_orbiting: np.ndarray | None = None,
     angular_velocity: float | None = None,
     reserved: np.ndarray | None = None,
+    planet_prod: np.ndarray | None = None,
 ) -> np.ndarray:
+    from orbit_wars_rl.features.capture_roi_util import (
+        EMIT_URGENCY_THRESH,
+        OPENING_FACTORY_IDX,
+        need_est_from_garr,
+        pair_roi_effective,
+        ships_at_max_pct,
+    )
+
     P = planet_x.shape[0]
     rem_my = np.where(my_mask, remaining, 0).astype(np.float32)
-    ships_at_bin5_src = np.floor(rem_my * np.float32(0.7))     # (P,)
-    garr_dst = planet_ships.astype(np.float32)                 # (P,)
+    rem_at_home = float(rem_my[home_idx]) if 0 <= home_idx < P else 0.0
+    ships_at_max_per_src = ships_at_max_pct(rem_my)
+    garr_dst = planet_ships.astype(np.float32)
 
-    margin = ships_at_bin5_src[:, None] - garr_dst[None, :]    # (P, P)
+    margin = ships_at_max_per_src[:, None] - garr_dst[None, :]
     pair_valid = (
         my_mask[:, None] & target_mask[None, :]
         & planet_mask[:, None] & planet_mask[None, :]
     )
     min_overkill = np.float32(0.1) * np.maximum(garr_dst[None, :], np.float32(1.0))
-    feasible = pair_valid & (margin > min_overkill)
-    emit_worth_it = 1.0 if bool(feasible.any()) else 0.0
+    feasible = pair_valid & (margin >= min_overkill)
+
+    if planet_prod is not None:
+        home_pairs, _ = _dst_pair_features_np(
+            planet_x, planet_y, planet_ships, planet_mask, target_mask, remaining,
+            int(home_idx),
+            planet_orbit_phase=planet_orbit_phase,
+            planet_orbit_radius=planet_orbit_radius,
+            planet_is_orbiting=planet_is_orbiting,
+            angular_velocity=angular_velocity,
+            planet_prod=planet_prod,
+        )
+        home_roi_eff = np.clip(
+            pair_roi_effective(home_pairs[:, 5], home_pairs[:, 6]), 0.0, 1.0,
+        )
+        emit_urgency = float(
+            (home_roi_eff * home_pairs[:, 6] * target_mask.astype(np.float32)).max(initial=0.0)
+        )
+        garr_open = float(planet_ships[OPENING_FACTORY_IDX])
+        need_open = float(need_est_from_garr(np.float32(garr_open)))
+        opening_gate = rem_at_home >= need_open
+        ships_home_max = float(ships_at_max_pct(np.float32(rem_at_home)))
+        flip_open = (ships_home_max - garr_open) >= (0.1 * max(garr_open, 1.0))
+    else:
+        emit_urgency = 0.0
+        opening_gate = False
+        flip_open = False
+
+    emit_worth_it = 1.0 if (opening_gate and emit_urgency > EMIT_URGENCY_THRESH) or flip_open else 0.0
 
     margin_masked = np.where(feasible, margin, 0.0)
     best_margin = float(margin_masked.max(initial=0.0))
@@ -291,7 +385,7 @@ def _emit_pair_globals_np(
         [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio,
          feasible_target_count_norm, surplus_ratio, best_lead_dist_norm,
          active_emitter_ratio, top2_src_remain_norm, concentration_ratio,
-         coord_coverage],
+         coord_coverage, emit_urgency],
         dtype=np.float32,
     )
 
@@ -530,6 +624,33 @@ def dst_head(
     return _mask_logits(logits, eff_mask)
 
 
+def dst_economics_head(
+    W: Dict[str, np.ndarray],
+    econ_feats: np.ndarray,
+    planet_mask: np.ndarray,
+    src_idx: int | None = None,
+) -> np.ndarray:
+    """v30 economics-only dst logits."""
+    x = _dense(econ_feats, W["dst_economics_head/fc1/kernel"], W["dst_economics_head/fc1/bias"])
+    x = _gelu(x)
+    logits = _dense(x, W["dst_economics_head/econ_score/kernel"], W["dst_economics_head/econ_score/bias"])[..., 0]
+    eff_mask = planet_mask.astype(bool)
+    if src_idx is not None:
+        eff_mask = eff_mask.copy()
+        eff_mask[src_idx] = False
+    return _mask_logits(logits, eff_mask)
+
+
+def _econ_dst_features_np(
+    pair_feats: np.ndarray,
+    planet_prod: np.ndarray,
+    is_target_mask: np.ndarray,
+) -> np.ndarray:
+    prod_norm = np.clip(planet_prod.astype(np.float32) / np.float32(5.0), 0.0, 1.0)
+    prod_norm = prod_norm * is_target_mask.astype(np.float32)
+    return np.concatenate([pair_feats.astype(np.float32), prod_norm[..., None]], axis=-1)
+
+
 def pct_head(
     W: Dict[str, np.ndarray],
     src_emb: np.ndarray,
@@ -737,6 +858,7 @@ def greedy_multi_action(
     P = planet_emb.shape[0]
     ships = planet_ships.astype(np.int32).copy()
     reserved = np.zeros((P,), dtype=np.int32)
+    used_dst = np.zeros((P,), dtype=bool)
     still_emit = True
 
     src_out, dst_out, pct_out, emit_out = [], [], [], []
@@ -769,6 +891,9 @@ def greedy_multi_action(
         total_remaining_norm = np.float32(np.log1p(total_remaining) / 8.0)
 
         emit_pair_g = None
+        _prod_f = None
+        if planet_prod is not None:
+            _prod_f = np.asarray(planet_prod, dtype=np.float32) * np.float32(5.0)
         if use_pair:
             emit_pair_g = _emit_pair_globals_np(
                 planet_x, planet_y, ships, planet_mask_b,
@@ -779,6 +904,7 @@ def greedy_multi_action(
                 planet_is_orbiting=planet_is_orbiting,
                 angular_velocity=angular_velocity,
                 reserved=reserved,
+                planet_prod=_prod_f,
             )
         emit_worth_it = (emit_pair_g is not None) and (float(emit_pair_g[0]) > 0.0)
         emit_force_stop = (
@@ -823,10 +949,12 @@ def greedy_multi_action(
                 planet_orbit_radius=planet_orbit_radius,
                 planet_is_orbiting=planet_is_orbiting,
                 angular_velocity=angular_velocity,
+                planet_prod=_prod_f,
             )
             if flip_hard_mask:
                 flip_block = _dst_flip_block_mask_np(
                     ships, planet_mask_b, target_mask_b, remaining, src_t,
+                    pair_roi_norm=dst_pair[:, 5] if dst_pair is not None else None,
                 )
         d_logits = dst_head(
             W, planet_emb, src_emb, planet_mask, my_planet_mask,
@@ -834,6 +962,15 @@ def greedy_multi_action(
             reserved_norm=reserved_norm,
             pair_feats=dst_pair, sun_block_mask=sun_block,
             flip_block_mask=flip_block,
+        )
+        if use_pair and "dst_economics_head/fc1/kernel" in W and dst_pair is not None:
+            _prod = np.asarray(planet_prod, dtype=np.float32) if planet_prod is not None else np.zeros(P)
+            econ_feats = _econ_dst_features_np(dst_pair, _prod, target_mask_b.astype(np.float32))
+            d_logits = d_logits + dst_economics_head(
+                W, econ_feats, planet_mask_b, src_idx=src_t,
+            )
+        d_logits = _mask_used_dst_logits_np(
+            d_logits, used_dst, planet_mask_b, src_t,
         )
         dst_t = int(np.argmax(d_logits))
         dst_emb = planet_emb[dst_t]
@@ -883,6 +1020,7 @@ def greedy_multi_action(
             ships_t = max(1, int(np.floor(mult)))
             ships_t = min(ships_t, avail_at_src)
             reserved[src_t] += ships_t
+            used_dst = _mark_dst_used_np(used_dst, dst_t, True)
             src_out.append(src_t)
             dst_out.append(dst_t)
             pct_out.append(pct_t)

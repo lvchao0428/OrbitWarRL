@@ -1,0 +1,137 @@
+loading dataset: data/bc_v20_self_400g.npz
+  113900 samples, shape: src=(113900, 8), planet_feats=(113900, 40, 63)
+  train: 102510  val: 11390
+initialising model...
+  model params: 4,249,749
+
+epoch 0 (random init):
+  loss/total: 9.2920
+  loss/emit: 0.7615
+  acc/src: 0.1371
+  acc/dst: 0.0966
+  acc/pct: 0.1867
+  acc/emit: 0.5188
+  step 0 | loss 9.3572  src 2.216  dst 3.274  pct 2.364  emit 0.751  gn 15.814
+  step 50 | loss 7.5068  src 1.940  dst 2.476  pct 1.899  emit 0.596  gn 2.535
+  step 100 | loss 7.5789  src 1.922  dst 2.448  pct 2.035  emit 0.587  gn 3.446
+  step 150 | loss 7.3091  src 2.026  dst 2.285  pct 1.819  emit 0.590  gn 4.266
+  step 200 | loss 7.3496  src 1.974  dst 2.373  pct 1.886  emit 0.558  gn 4.030
+  step 250 | loss 6.8975  src 1.726  dst 2.234  pct 1.788  emit 0.575  gn 3.961
+  step 300 | loss 7.4553  src 2.068  dst 2.366  pct 1.942  emit 0.540  gn 3.061
+  step 350 | loss 6.6792  src 1.788  dst 2.062  pct 1.665  emit 0.582  gn 3.879
+
+epoch 1/10 (34.2s) train_loss 7.3910  | val acc src 0.281  dst 0.403  pct 0.328  emit 0.718
+
+  step 400 | loss 7.1343  src 2.064  dst 2.252  pct 1.698  emit 0.560  gn 3.099
+  step 450 | loss 6.7179  src 1.805  dst 2.085  pct 1.732  emit 0.548  gn 3.217
+  step 500 | loss 7.1611  src 1.689  dst 2.252  pct 2.039  emit 0.591  gn 4.009
+  step 550 | loss 6.9053  src 1.896  dst 2.139  pct 1.782  emit 0.544  gn 3.218
+  step 600 | loss 6.9011  src 1.887  dst 2.218  pct 1.697  emit 0.550  gn 4.192
+  step 650 | loss 6.7522  src 1.986  dst 2.105  pct 1.565  emit 0.548  gn 3.515
+  step 700 | loss 6.9904  src 1.850  dst 2.232  pct 1.851  emit 0.529  gn 3.406
+  step 750 | loss 6.8938  src 1.965  dst 2.015  pct 1.855  emit 0.530  gn 4.533
+
+epoch 2/10 (14.8s) train_loss 6.8889  | val acc src 0.297  dst 0.434  pct 0.375  emit 0.735
+
+  step 800 | loss 6.6290  src 1.882  dst 2.122  pct 1.594  emit 0.515  gn 5.062
+  step 850 | loss 7.0853  src 2.049  dst 2.130  pct 1.886  emit 0.510  gn 4.379
+  step 900 | loss 6.9825  src 1.942  dst 2.186  pct 1.828  emit 0.513  gn 3.049
+  step 950 | loss 6.1687  src 1.903  dst 1.859  pct 1.374  emit 0.516  gn 3.080
+  step 1000 | loss 6.3679  src 1.912  dst 1.987  pct 1.527  emit 0.471  gn 3.805
+  step 1050 | loss 6.5710  src 1.864  dst 1.899  pct 1.733  emit 0.537  gn 3.561
+  step 1100 | loss 6.5087  src 1.816  dst 1.982  pct 1.719  emit 0.496  gn 4.103
+  step 1150 | loss 6.2954  src 1.762  dst 1.965  pct 1.540  emit 0.514  gn 4.924
+
+epoch 3/10 (14.9s) train_loss 6.6195  | val acc src 0.320  dst 0.452  pct 0.374  emit 0.754
+
+  step 1200 | loss 6.5901  src 1.761  dst 2.051  pct 1.760  emit 0.509  gn 4.006
+  step 1250 | loss 6.6740  src 2.049  dst 2.110  pct 1.514  emit 0.500  gn 4.581
+  step 1300 | loss 6.4849  src 1.749  dst 2.028  pct 1.677  emit 0.516  gn 4.844
+  step 1350 | loss 6.1335  src 1.793  dst 1.768  pct 1.592  emit 0.490  gn 4.360
+  step 1400 | loss 6.0259  src 1.768  dst 1.798  pct 1.481  emit 0.489  gn 3.925
+  step 1450 | loss 6.1576  src 1.620  dst 2.146  pct 1.364  emit 0.514  gn 3.613
+  step 1500 | loss 6.6016  src 1.845  dst 1.863  pct 1.959  emit 0.467  gn 4.221
+  step 1550 | loss 6.5394  src 2.008  dst 2.042  pct 1.554  emit 0.468  gn 3.988
+
+epoch 4/10 (14.9s) train_loss 6.4217  | val acc src 0.330  dst 0.451  pct 0.386  emit 0.764
+
+  step 1600 | loss 6.2658  src 1.861  dst 1.873  pct 1.585  emit 0.474  gn 3.872
+  step 1650 | loss 5.9472  src 1.741  dst 1.836  pct 1.416  emit 0.477  gn 4.307
+  step 1700 | loss 6.1703  src 1.785  dst 1.874  pct 1.494  emit 0.509  gn 5.679
+  step 1750 | loss 6.3207  src 1.766  dst 1.874  pct 1.800  emit 0.441  gn 4.827
+  step 1800 | loss 6.3078  src 1.915  dst 1.902  pct 1.593  emit 0.449  gn 4.558
+  step 1850 | loss 6.4322  src 1.913  dst 1.874  pct 1.658  emit 0.494  gn 4.850
+  step 1900 | loss 6.4871  src 1.827  dst 2.099  pct 1.627  emit 0.467  gn 4.169
+  step 1950 | loss 6.0961  src 1.766  dst 1.803  pct 1.607  emit 0.460  gn 3.499
+
+epoch 5/10 (14.9s) train_loss 6.2623  | val acc src 0.345  dst 0.467  pct 0.401  emit 0.769
+
+  step 2000 | loss 6.0854  src 1.704  dst 1.716  pct 1.728  emit 0.468  gn 4.341
+  step 2050 | loss 6.2538  src 1.722  dst 2.103  pct 1.440  emit 0.494  gn 5.546
+  step 2100 | loss 6.0832  src 1.861  dst 1.947  pct 1.324  emit 0.476  gn 5.481
+  step 2150 | loss 5.8536  src 1.907  dst 1.854  pct 1.122  emit 0.486  gn 4.051
+  step 2200 | loss 5.8058  src 1.773  dst 1.829  pct 1.254  emit 0.475  gn 4.645
+  step 2250 | loss 6.3007  src 1.925  dst 1.853  pct 1.536  emit 0.493  gn 4.664
+  step 2300 | loss 5.7029  src 1.679  dst 1.855  pct 1.209  emit 0.480  gn 4.881
+  step 2350 | loss 6.0638  src 1.690  dst 1.971  pct 1.432  emit 0.485  gn 4.941
+
+epoch 6/10 (14.9s) train_loss 6.0972  | val acc src 0.348  dst 0.472  pct 0.403  emit 0.766
+
+  step 2400 | loss 6.1189  src 1.861  dst 1.880  pct 1.473  emit 0.453  gn 5.452
+  step 2450 | loss 5.9031  src 1.719  dst 1.801  pct 1.408  emit 0.488  gn 4.863
+  step 2500 | loss 5.8870  src 1.777  dst 1.842  pct 1.387  emit 0.441  gn 4.180
+  step 2550 | loss 5.7828  src 1.781  dst 1.933  pct 1.173  emit 0.448  gn 4.651
+  step 2600 | loss 5.8920  src 1.725  dst 1.786  pct 1.452  emit 0.464  gn 5.233
+  step 2650 | loss 5.6251  src 1.716  dst 1.835  pct 1.161  emit 0.456  gn 4.531
+  step 2700 | loss 5.9534  src 1.858  dst 1.779  pct 1.414  emit 0.451  gn 4.689
+  step 2750 | loss 6.1693  src 1.821  dst 1.814  pct 1.591  emit 0.472  gn 5.046
+
+epoch 7/10 (14.9s) train_loss 5.9398  | val acc src 0.367  dst 0.470  pct 0.410  emit 0.770
+
+  step 2800 | loss 5.5172  src 1.636  dst 1.532  pct 1.496  emit 0.426  gn 4.064
+  step 2850 | loss 5.4875  src 1.583  dst 1.615  pct 1.321  emit 0.484  gn 6.423
+  step 2900 | loss 5.3827  src 1.702  dst 1.545  pct 1.241  emit 0.447  gn 5.194
+  step 2950 | loss 5.3773  src 1.718  dst 1.774  pct 1.003  emit 0.441  gn 4.571
+  step 3000 | loss 5.7545  src 1.663  dst 1.727  pct 1.378  emit 0.493  gn 5.934
+  step 3050 | loss 5.9861  src 1.875  dst 1.748  pct 1.511  emit 0.426  gn 5.193
+  step 3100 | loss 6.1465  src 1.791  dst 1.923  pct 1.522  emit 0.455  gn 4.700
+  step 3150 | loss 5.7627  src 1.682  dst 1.774  pct 1.408  emit 0.449  gn 7.900
+
+epoch 8/10 (14.9s) train_loss 5.7481  | val acc src 0.361  dst 0.472  pct 0.396  emit 0.775
+
+  step 3200 | loss 5.4569  src 1.710  dst 1.589  pct 1.341  emit 0.408  gn 5.410
+  step 3250 | loss 5.3955  src 1.563  dst 1.748  pct 1.203  emit 0.441  gn 6.441
+  step 3300 | loss 5.5782  src 1.869  dst 1.639  pct 1.277  emit 0.397  gn 5.935
+  step 3350 | loss 5.5840  src 1.753  dst 1.845  pct 1.099  emit 0.444  gn 6.188
+  step 3400 | loss 5.6485  src 1.715  dst 1.774  pct 1.333  emit 0.413  gn 6.952
+  step 3450 | loss 5.4114  src 1.762  dst 1.724  pct 1.146  emit 0.389  gn 5.731
+  step 3500 | loss 5.4687  src 1.667  dst 1.645  pct 1.192  emit 0.482  gn 7.762
+  step 3550 | loss 5.8742  src 1.793  dst 1.851  pct 1.243  emit 0.494  gn 6.278
+
+epoch 9/10 (14.9s) train_loss 5.5306  | val acc src 0.369  dst 0.474  pct 0.397  emit 0.773
+
+  step 3600 | loss 5.8119  src 1.813  dst 1.829  pct 1.339  emit 0.416  gn 6.158
+  step 3650 | loss 5.4236  src 1.721  dst 1.703  pct 1.140  emit 0.430  gn 6.385
+  step 3700 | loss 5.2258  src 1.770  dst 1.512  pct 1.030  emit 0.457  gn 5.872
+  step 3750 | loss 5.4485  src 1.683  dst 1.801  pct 1.002  emit 0.481  gn 7.262
+  step 3800 | loss 5.3440  src 1.538  dst 1.741  pct 1.197  emit 0.434  gn 6.565
+  step 3850 | loss 5.4102  src 1.765  dst 1.716  pct 1.073  emit 0.428  gn 6.636
+  step 3900 | loss 5.0995  src 1.595  dst 1.504  pct 1.097  emit 0.451  gn 7.457
+  step 3950 | loss 5.1784  src 1.708  dst 1.523  pct 1.074  emit 0.437  gn 7.671
+
+epoch 10/10 (14.9s) train_loss 5.2723  | val acc src 0.371  dst 0.472  pct 0.392  emit 0.775
+
+
+training done in 168.0s (10 epochs, 4000 steps)
+  wrote ckpt_bc_v20/ckpt_final.pkl (51.0 MB)
+
+FINAL val metrics:
+  loss/total: 6.4010
+  loss/src: 1.7802
+  loss/dst: 1.9211
+  loss/pct: 1.7860
+  loss/emit: 0.4568
+  acc/src: 0.3713
+  acc/dst: 0.4717
+  acc/pct: 0.3917
+  acc/emit: 0.7751

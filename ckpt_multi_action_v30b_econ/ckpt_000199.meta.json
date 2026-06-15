@@ -1,0 +1,22 @@
+{
+  "update": 199,
+  "opp_tag": "strn",
+  "export": {
+    "allow_hold": true,
+    "force_emit_worth_it": false,
+    "min_pct_bin": 0,
+    "emit_hard_stop": false,
+    "emit_hard_stop_min_step": 0,
+    "flip_hard_mask": true
+  },
+  "spf": 18.279203414916992,
+  "z0": 0.26416015625,
+  "garr": 78.55221557617188,
+  "emit2_rate": 0.70263671875,
+  "align_spf": 17.848765277862547,
+  "align_e2": 0.681767578125,
+  "align_z0": 0.274091796875,
+  "eval_vs_v20_spf": 17.28,
+  "eval_vs_v20_e2_plus_pct": 20.1,
+  "eval_vs_v20_flip_pct": 13.09
+}

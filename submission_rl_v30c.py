@@ -1,0 +1,1603 @@
+"""Orbit Wars RL v30c — capture_ready + emit_urgency (v21 base + timing features).
+
+Feature dims:
+  - PLANET_FEAT_DIM = 63  (43 base + 5*4 planet spatial hist)
+  - FLEET_FEAT_DIM  = 10
+  - GLOBAL_FEAT_DIM = 427
+  - MAX_FLEETS_PER_TURN = 8
+  - DST_PAIR_DIM = 7  (+capture_ready)
+  - ECON_DST_DIM = 8  (pair dims + prod_norm)
+  - EMIT_PAIR_DIM = 12  (v21 11 + emit_urgency)
+  - PCT_PAIR_DIM  = 7   (v21: +lead_dist_norm)
+
+Hard masks (same as f33/f35):
+  EmitHead  -- ``EMIT_HARD_STOP=1``
+  DstHead   -- ``F31_HARD_MASKS=1``
+
+Weights are injected into the WEIGHTS_B64 line near the bottom of this file
+by ``orbit_wars_rl/scripts/export_submission.py``.
+
+NOTE: do not write the literal assignment ``WEIGHTS_B64 = <quoted-string>``
+form anywhere in this docstring.
+"""
+
+from __future__ import annotations
+
+import base64
+import io
+import math
+import zlib
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+
+
+# --- env constants (mirror orbit_wars_rl.env.constants) -----------------------
+MAX_PLANETS = 40
+MAX_FLEETS = 128
+BOARD = 100.0
+BOARD_HALF = 50.0
+SUN_X = 50.0
+SUN_Y = 50.0
+SUN_RADIUS = 10.0
+SUN_PATH_MARGIN = 1.25
+SUN_GUARD = SUN_RADIUS * SUN_PATH_MARGIN
+SUN_BLOCK_THRESH = 0.9
+MIN_BIN_PCT_FEAT = 1
+F29_SIGNALS = 1
+F31_HARD_MASKS = 1
+F35_SRC_FEATS = 1
+DST_PAIR_DIM = 7
+ECON_DST_DIM = 8
+EMIT_PAIR_DIM = 12
+ROI_NORM = 0.35
+ROI_EXEMPT_THRESHOLD = 0.12
+ROI_READY_BETA = 3.0
+EMIT_URGENCY_THRESH = 0.35
+OPENING_FACTORY_IDX = 20
+MAX_LAUNCH_PCT = 1.0
+NEED_PAD_NEUTRAL = 2.0
+EMIT_HARD_STOP = 1
+EMIT_HARD_STOP_MIN_STEP = 0
+ALLOW_HOLD = 1
+FORCE_EMIT_WORTH_IT = 0
+MIN_PCT_BIN = 2
+NUM_PCT_BINS = 8
+PCT_BIN_VALUES = (0.10, 0.20, 0.30, 0.40, 0.55, 0.70, 0.85, 1.00)
+NEUTRAL_OWNER = -1
+PADDING_OWNER = -2
+
+PLANET_FEAT_DIM = 63
+FLEET_FEAT_DIM = 10
+BASE_GLOBAL_FEAT_DIM = 27
+HIST_LEN = 50
+TEMPORAL_GLOBAL_DIM = 8
+PLANET_HIST_LEN = 5
+PLANET_HIST_DIM = 4
+GLOBAL_FEAT_DIM = 427  # BASE_GLOBAL_FEAT_DIM + HIST_LEN * TEMPORAL_GLOBAL_DIM
+DEFAULT_MAX_SHIP_SPEED = 6.0
+
+# Orbital constants (must mirror env/constants.py).
+ROTATION_RADIUS_LIMIT = 50.0
+ORBIT_OMEGA_MAX = 0.05
+
+# Lead-target prediction times (mirror features/encode.LEAD_TIMES).
+LEAD_TIMES = (15.0, 30.0)
+FLEET_SPEED = 6.0
+ETA_W1 = 5.0
+ETA_W2 = 15.0
+
+DEFAULT_EPISODE_STEPS = 500
+N_LAYERS = 4
+MAX_FLEETS_PER_TURN = 8
+
+_LOG_1000 = float(np.log(1000.0))
+_PCT_BIN_TABLE_NP = None
+_GLOBAL_HIST = np.zeros((HIST_LEN, TEMPORAL_GLOBAL_DIM), dtype=np.float32)
+_PLANET_HIST = np.zeros((PLANET_HIST_LEN, MAX_PLANETS, PLANET_HIST_DIM), dtype=np.float32)
+
+
+def _predict_planet_pos_np(
+    orbit_phase: np.ndarray,
+    orbit_radius: np.ndarray,
+    omega: float,
+    lead_time: np.ndarray,
+    cur_x: np.ndarray,
+    cur_y: np.ndarray,
+    rotate_mask_f: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    new_phase = orbit_phase + np.float32(omega) * lead_time
+    rot_x = SUN_X + orbit_radius * np.cos(new_phase)
+    rot_y = SUN_Y + orbit_radius * np.sin(new_phase)
+    out_x = rotate_mask_f * rot_x + (1.0 - rotate_mask_f) * cur_x
+    out_y = rotate_mask_f * rot_y + (1.0 - rotate_mask_f) * cur_y
+    return out_x.astype(np.float32), out_y.astype(np.float32)
+
+
+def _temporal_global_slice_np(
+    player: int,
+    planet_owner: np.ndarray,
+    planet_ships: np.ndarray,
+    planet_prod: np.ndarray,
+    planet_mask: np.ndarray,
+    fleet_owner: np.ndarray,
+    fleet_ships: np.ndarray,
+    fleet_mask: np.ndarray,
+) -> np.ndarray:
+    """8-dim macro snapshot (mirror features/history.temporal_global_slice)."""
+    opp = 1 - player
+
+    def _ships(p: int) -> float:
+        ps = float(planet_ships[(planet_owner == p) & planet_mask].sum())
+        fs = float(fleet_ships[(fleet_owner == p) & fleet_mask].sum())
+        return ps + fs
+
+    def _prod(p: int) -> float:
+        return float(planet_prod[(planet_owner == p) & planet_mask].sum())
+
+    def _garr(p: int) -> float:
+        return float(planet_ships[(planet_owner == p) & planet_mask].sum())
+
+    my_ships = _ships(player)
+    foe_ships = _ships(opp)
+    my_prod = _prod(player)
+    foe_prod = _prod(opp)
+    my_garr = _garr(player)
+    foe_garr = float(
+        planet_ships[
+            (planet_owner >= 0) & (planet_owner != player) & planet_mask
+        ].sum()
+    )
+    my_fleet = float(fleet_ships[(fleet_owner == player) & fleet_mask].sum())
+    foe_fleet = float(
+        fleet_ships[
+            (fleet_owner >= 0) & (fleet_owner != player) & fleet_mask
+        ].sum()
+    )
+
+    total_ships = max(my_ships + foe_ships, 1.0)
+    total_prod = max(my_prod + foe_prod, 1.0)
+    my_total = max(my_garr + my_fleet, 1.0)
+
+    prod_adv = float(np.clip((my_prod - foe_prod) / total_prod, -1.0, 1.0))
+    garr_adv = float(
+        np.clip((my_garr - foe_garr) / max(my_garr + foe_garr, 1.0), -1.0, 1.0)
+    )
+    fleet_mass = my_fleet / my_total
+    threat = float(np.clip(foe_fleet / max(my_garr, 1.0), 0.0, 2.0) / 2.0)
+
+    return np.array(
+        [
+            my_ships / total_ships,
+            foe_ships / total_ships,
+            my_prod / total_prod,
+            foe_prod / total_prod,
+            prod_adv,
+            garr_adv,
+            fleet_mass,
+            threat,
+        ],
+        dtype=np.float32,
+    )
+
+
+def _planet_hist_slice_np(
+    player: int,
+    planet_owner: np.ndarray,
+    planet_ships: np.ndarray,
+    planet_x: np.ndarray,
+    planet_y: np.ndarray,
+    planet_mask: np.ndarray,
+    fleet_owner: np.ndarray,
+    fleet_x: np.ndarray,
+    fleet_y: np.ndarray,
+    fleet_angle: np.ndarray,
+    fleet_ships: np.ndarray,
+    fleet_mask: np.ndarray,
+    prev_is_mine: np.ndarray,
+) -> np.ndarray:
+    """4-dim per-planet slice (mirror features/history._planet_hist_slice)."""
+    is_mine = ((planet_owner == player) & planet_mask).astype(np.float32)
+    garr_norm = np.log1p(np.maximum(planet_ships, 0).astype(np.float32)) / np.float32(8.0)
+    inbound_foe = _inbound_ships_np(
+        fleet_owner, fleet_x, fleet_y, fleet_angle, fleet_ships, fleet_mask,
+        planet_x, planet_y, planet_mask,
+        owner_keep=1 - player,
+    )
+    inbound_foe_norm = np.log1p(inbound_foe) / np.float32(8.0)
+    was_flipped = (is_mine != prev_is_mine).astype(np.float32)
+    return np.stack([is_mine, garr_norm, inbound_foe_norm, was_flipped], axis=-1)
+
+
+# --- feature encoding (mirror features.encode) --------------------------------
+
+def _inbound_ships_np(
+    fleet_owner, fleet_x, fleet_y, fleet_angle, fleet_ships, fleet_mask,
+    planet_x, planet_y, planet_mask, owner_keep: int,
+) -> np.ndarray:
+    dxn = np.cos(fleet_angle)
+    dyn = np.sin(fleet_angle)
+    rel_x = planet_x[None, :] - fleet_x[:, None]
+    rel_y = planet_y[None, :] - fleet_y[:, None]
+    proj = rel_x * dxn[:, None] + rel_y * dyn[:, None]
+    perp_x = rel_x - proj * dxn[:, None]
+    perp_y = rel_y - proj * dyn[:, None]
+    perp_d2 = perp_x * perp_x + perp_y * perp_y
+    in_front = proj > 0
+    cost = np.where(in_front, perp_d2, np.float32(1e9))
+    cost = np.where(planet_mask[None, :], cost, np.float32(1e9))
+    target_idx = np.argmin(cost, axis=1)
+
+    contributes = fleet_mask & (fleet_owner == owner_keep)
+    ships_keep = np.where(contributes, fleet_ships, 0)
+
+    inbound = np.zeros((MAX_PLANETS,), dtype=np.float32)
+    for fi in range(fleet_owner.shape[0]):
+        if contributes[fi]:
+            inbound[target_idx[fi]] += float(ships_keep[fi])
+    return inbound
+
+
+def _fleet_speed_np(ships: np.ndarray, max_speed: float = 6.0) -> np.ndarray:
+    s = np.maximum(ships.astype(np.float32), 1.0)
+    rel = (np.log(s) / _LOG_1000) ** 1.5
+    return np.minimum(1.0 + (max_speed - 1.0) * rel, max_speed)
+
+
+def _soft_inbound_and_eta_np(
+    fleet_owner, fleet_x, fleet_y, fleet_angle, fleet_ships, fleet_mask,
+    planet_x, planet_y, planet_mask, owner_keep: int, episode_steps: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Inverse-square soft inbound + min ETA (mirror features.encode A1')."""
+    eps = np.float32(1e-4)
+    rel_x = planet_x[None, :] - fleet_x[:, None]
+    rel_y = planet_y[None, :] - fleet_y[:, None]
+    dist2 = rel_x * rel_x + rel_y * rel_y + eps
+    dist = np.sqrt(dist2)
+    speed = _fleet_speed_np(fleet_ships)
+    eta = dist / np.maximum(speed[:, None], eps)
+
+    cos_a = np.cos(fleet_angle)
+    sin_a = np.sin(fleet_angle)
+    proj = rel_x * cos_a[:, None] + rel_y * sin_a[:, None]
+    toward = (proj > 0).astype(np.float32)
+
+    is_owner = ((fleet_owner == owner_keep) & fleet_mask).astype(np.float32)
+    weight = toward * is_owner[:, None] / dist2
+    ships = fleet_ships.astype(np.float32)
+    inbound_soft = (weight * ships[:, None]).sum(axis=0)
+
+    big_eta = np.float32(1e6)
+    eta_masked = np.where(weight > 0, eta, big_eta)
+    eta_min = eta_masked.min(axis=0)
+    eta_min = np.where(eta_min >= big_eta, np.float32(0.0), eta_min)
+    eta_norm = eta_min / np.float32(max(episode_steps, 1))
+    inbound_soft = np.where(planet_mask, inbound_soft, 0.0)
+    eta_norm = np.where(planet_mask, eta_norm, 0.0)
+    return inbound_soft.astype(np.float32), eta_norm.astype(np.float32)
+
+
+def encode_obs(
+    obs: Dict[str, Any],
+    player: int,
+    step: int,
+    episode_steps: int,
+    hist_flat: Optional[np.ndarray] = None,
+    planet_hist_flat: Optional[np.ndarray] = None,
+) -> dict:
+    opp = 1 - player
+
+    raw_planets = list(obs.get("planets") or [])
+    raw_fleets = list(obs.get("fleets") or [])
+
+    planet_owner = np.full((MAX_PLANETS,), PADDING_OWNER, dtype=np.int32)
+    planet_x = np.zeros((MAX_PLANETS,), dtype=np.float32)
+    planet_y = np.zeros((MAX_PLANETS,), dtype=np.float32)
+    planet_radius = np.zeros((MAX_PLANETS,), dtype=np.float32)
+    planet_ships = np.zeros((MAX_PLANETS,), dtype=np.int32)
+    planet_prod = np.zeros((MAX_PLANETS,), dtype=np.int32)
+    planet_mask = np.zeros((MAX_PLANETS,), dtype=bool)
+    for p in raw_planets:
+        pid = int(p[0])
+        if 0 <= pid < MAX_PLANETS:
+            planet_owner[pid] = int(p[1])
+            planet_x[pid] = float(p[2])
+            planet_y[pid] = float(p[3])
+            planet_radius[pid] = float(p[4])
+            planet_ships[pid] = int(p[5])
+            planet_prod[pid] = int(p[6])
+            planet_mask[pid] = True
+
+    fleet_owner = np.full((MAX_FLEETS,), PADDING_OWNER, dtype=np.int32)
+    fleet_x = np.zeros((MAX_FLEETS,), dtype=np.float32)
+    fleet_y = np.zeros((MAX_FLEETS,), dtype=np.float32)
+    fleet_angle = np.zeros((MAX_FLEETS,), dtype=np.float32)
+    fleet_ships = np.zeros((MAX_FLEETS,), dtype=np.int32)
+    fleet_mask = np.zeros((MAX_FLEETS,), dtype=bool)
+    for i, f in enumerate(raw_fleets[:MAX_FLEETS]):
+        fleet_owner[i] = int(f[1])
+        fleet_x[i] = float(f[2])
+        fleet_y[i] = float(f[3])
+        fleet_angle[i] = float(f[4])
+        fleet_ships[i] = int(f[6])
+        fleet_mask[i] = True
+
+    is_mine = (planet_owner == player) & planet_mask
+    is_enemy = (planet_owner >= 0) & (planet_owner != player) & planet_mask
+    is_neutral = (planet_owner == NEUTRAL_OWNER) & planet_mask
+
+    x_norm = (planet_x - BOARD_HALF) / BOARD_HALF
+    y_norm = (planet_y - BOARD_HALF) / BOARD_HALF
+    radius_norm = planet_radius / 5.0
+    log_ships = np.log1p(np.maximum(planet_ships, 0).astype(np.float32)) / 8.0
+    prod_norm = planet_prod.astype(np.float32) / 5.0
+    dist_sun = np.sqrt((planet_x - SUN_X) ** 2 + (planet_y - SUN_Y) ** 2) / BOARD
+
+    in_friend = _inbound_ships_np(
+        fleet_owner, fleet_x, fleet_y, fleet_angle, fleet_ships, fleet_mask,
+        planet_x, planet_y, planet_mask, owner_keep=player,
+    )
+    in_foe = _inbound_ships_np(
+        fleet_owner, fleet_x, fleet_y, fleet_angle, fleet_ships, fleet_mask,
+        planet_x, planet_y, planet_mask, owner_keep=opp,
+    )
+    in_friend_norm = np.log1p(in_friend) / 8.0
+    in_foe_norm = np.log1p(in_foe) / 8.0
+
+    foe_soft, eta_foe_min = _soft_inbound_and_eta_np(
+        fleet_owner, fleet_x, fleet_y, fleet_angle, fleet_ships, fleet_mask,
+        planet_x, planet_y, planet_mask, owner_keep=opp, episode_steps=episode_steps,
+    )
+    friend_soft, _ = _soft_inbound_and_eta_np(
+        fleet_owner, fleet_x, fleet_y, fleet_angle, fleet_ships, fleet_mask,
+        planet_x, planet_y, planet_mask, owner_keep=player, episode_steps=episode_steps,
+    )
+    garr = np.maximum(planet_ships.astype(np.float32), 1.0)
+    threat_ratio = np.clip(foe_soft / garr / 8.0, 0.0, 1.0)
+    net_inbound = np.clip((foe_soft - friend_soft) / garr / 8.0, -1.0, 1.0)
+
+    my_ships_raw = np.where(is_mine, planet_ships.astype(np.float32), 0.0)
+    my_total_garrison = my_ships_raw.sum()
+    my_n_planets = is_mine.astype(np.float32).sum()
+    my_avg_garrison = my_total_garrison / max(my_n_planets, 1.0)
+
+    target_garr = np.where(is_mine, 0.0, planet_ships.astype(np.float32))
+    flip_cost_norm = np.clip(
+        target_garr / max(my_avg_garrison, 1.0) / 3.0, 0.0, 1.0
+    )
+
+    friendly_surplus = (in_friend - planet_ships.astype(np.float32)) / np.maximum(
+        planet_ships.astype(np.float32), 1.0
+    )
+    friendly_surplus = np.clip(friendly_surplus, -1.0, 1.0)
+
+    ships_at_bin3 = np.floor(my_avg_garrison * 0.4)
+    capturable_bin3 = np.where(
+        is_mine,
+        0.0,
+        (ships_at_bin3 > planet_ships.astype(np.float32)).astype(np.float32),
+    )
+
+    my_max_garrison = my_ships_raw.max()
+    needed_pct_norm = np.where(
+        is_mine,
+        0.0,
+        np.clip(target_garr / max(my_max_garrison, 1.0), 0.0, 1.0),
+    )
+
+    ships_at_bin5 = np.floor(my_max_garrison * 0.7)
+    _ = ships_at_bin5  # legacy bin5 removed in v27 (dim26 -> frontier)
+
+    is_capturable_target = (is_enemy | is_neutral).astype(np.float32)
+    inv_strength = np.clip(
+        1.0 - np.log1p(np.maximum(planet_ships, 0).astype(np.float32)) / 8.0,
+        0.0,
+        1.0,
+    )
+    weak_target_score = inv_strength * is_capturable_target
+
+    # === f35: src-quality + v20-style target-score features (dims 28-32) ===
+    my_ships_f = planet_ships.astype(np.float32)
+
+    # [28] garrison_rank
+    my_garr_only = np.where(is_mine, my_ships_f, 0.0)
+    garrison_rank = np.where(
+        is_mine, my_garr_only / max(my_max_garrison, 1.0), 0.0
+    )
+
+    # [29] safe_surplus_norm
+    safe_surplus = (my_ships_f - foe_soft) * is_mine.astype(np.float32)
+    safe_surplus_norm = np.clip(
+        safe_surplus / max(my_total_garrison, 1.0), -1.0, 1.0
+    )
+
+    # [30] capture_need_exact_norm (v27; was is_strong_source)
+
+    # v20 target_score distillation (dst-side)
+    pad = np.where(is_neutral, 2.0, 8.0)
+    need_est = np.maximum(target_garr + pad, 1.0)
+
+    # [31] prod_per_need
+    prod_f = planet_prod.astype(np.float32)
+    prod_per_need = np.where(
+        is_capturable_target > 0,
+        np.clip(prod_f * prod_f / need_est / 8.0, 0.0, 1.0),
+        0.0,
+    )
+
+    # [32] capture_roi_norm: prod / (payback + eta)
+    _ROI_FLEET_SPEED = float(DEFAULT_MAX_SHIP_SPEED)
+    my_x = np.where(is_mine, planet_x, 1e6)
+    my_y = np.where(is_mine, planet_y, 1e6)
+    dx = planet_x[:, None] - my_x[None, :]
+    dy = planet_y[:, None] - my_y[None, :]
+    dist_to_mine = np.sqrt(dx * dx + dy * dy)
+    min_dist_to_mine = dist_to_mine.min(axis=-1)
+    eta_proxy = min_dist_to_mine / _ROI_FLEET_SPEED
+    payback_turns = need_est / np.maximum(prod_f, 1.0)
+    roi_raw = prod_f / np.maximum(payback_turns + eta_proxy, 1.0)
+    capture_roi_norm = np.where(
+        is_capturable_target > 0,
+        np.clip(roi_raw / 1.0, 0.0, 1.0),
+        0.0,
+    )
+
+    is_padding = (~planet_mask).astype(np.float32)
+
+    dx_sun = planet_x - SUN_X
+    dy_sun = planet_y - SUN_Y
+    orbit_radius_np = np.sqrt(dx_sun * dx_sun + dy_sun * dy_sun)
+    orbit_phase_np = np.arctan2(dy_sun, dx_sun)
+    is_orbiting_np = ((orbit_radius_np + planet_radius) < ROTATION_RADIUS_LIMIT) & planet_mask
+    is_orbiting_f = is_orbiting_np.astype(np.float32)
+    orbit_phase_norm = orbit_phase_np.astype(np.float32) / np.float32(np.pi)
+    orbit_radius_norm = orbit_radius_np.astype(np.float32) / BOARD_HALF
+
+    av_raw = float(obs.get("angular_velocity") or 0.0)
+    rotate_mask_f = is_orbiting_f
+    def _lead(t: float):
+        new_phase = orbit_phase_np + av_raw * t
+        rot_x = SUN_X + orbit_radius_np * np.cos(new_phase)
+        rot_y = SUN_Y + orbit_radius_np * np.sin(new_phase)
+        out_x = rotate_mask_f * rot_x + (1.0 - rotate_mask_f) * planet_x
+        out_y = rotate_mask_f * rot_y + (1.0 - rotate_mask_f) * planet_y
+        return out_x.astype(np.float32), out_y.astype(np.float32)
+    lead_x_15, lead_y_15 = _lead(LEAD_TIMES[0])
+    lead_x_30, lead_y_30 = _lead(LEAD_TIMES[1])
+    lead_x_15_norm = (lead_x_15 - BOARD_HALF) / BOARD_HALF
+    lead_y_15_norm = (lead_y_15 - BOARD_HALF) / BOARD_HALF
+    lead_x_30_norm = (lead_x_30 - BOARD_HALF) / BOARD_HALF
+    lead_y_30_norm = (lead_y_30 - BOARD_HALF) / BOARD_HALF
+
+    # === B2: Fleet Arrival Prediction (dims 33-38) ===
+    f_dx_p = planet_x[None, :] - fleet_x[:, None]  # [F, P]
+    f_dy_p = planet_y[None, :] - fleet_y[:, None]
+    f_dist_p = np.sqrt(f_dx_p * f_dx_p + f_dy_p * f_dy_p + 1e-6)
+    f_eta_p = f_dist_p / FLEET_SPEED
+    f_dxn_p = np.cos(fleet_angle)
+    f_dyn_p = np.sin(fleet_angle)
+    f_proj_p = f_dx_p * f_dxn_p[:, None] + f_dy_p * f_dyn_p[:, None]
+    headed_p = (f_proj_p > 0.0) & fleet_mask[:, None]
+    in_w1_p = headed_p & (f_eta_p <= ETA_W1)
+    in_w2_p = headed_p & (f_eta_p <= ETA_W2)
+    f_ships_f = np.maximum(fleet_ships, 0).astype(np.float32)
+    f_is_mine_b = (fleet_owner == player) & fleet_mask
+    f_is_opp_b = (fleet_owner >= 0) & (fleet_owner != player) & fleet_mask
+    friendly_w1 = (f_ships_f[:, None] * in_w1_p * f_is_mine_b[:, None]).sum(axis=0)
+    friendly_eta_w1 = np.log1p(friendly_w1) / 8.0
+    friendly_w2 = (f_ships_f[:, None] * in_w2_p * f_is_mine_b[:, None]).sum(axis=0)
+    friendly_eta_w2 = np.log1p(friendly_w2) / 8.0
+    enemy_w1 = (f_ships_f[:, None] * in_w1_p * f_is_opp_b[:, None]).sum(axis=0)
+    enemy_eta_w1 = np.log1p(enemy_w1) / 8.0
+    enemy_w2 = (f_ships_f[:, None] * in_w2_p * f_is_opp_b[:, None]).sum(axis=0)
+    enemy_eta_w2 = np.log1p(enemy_w2) / 8.0
+    my_ships_at_t5 = np.where(is_mine, planet_ships.astype(np.float32), 0.0) + friendly_w1 - enemy_w1
+    my_total_garr_f = max(float(my_total_garrison), 1.0)
+    net_garrison_t5 = np.clip(my_ships_at_t5 / my_total_garr_f, -1.0, 1.0) * is_mine.astype(np.float32)
+    my_ships_at_t15 = np.where(is_mine, planet_ships.astype(np.float32), 0.0) + friendly_w2 - enemy_w2
+    net_garrison_t15 = np.clip(my_ships_at_t15 / my_total_garr_f, -1.0, 1.0) * is_mine.astype(np.float32)
+
+    # v27 frontier / anti-shuffle / capture precision (dims 26, 30, 41-42)
+    _NEIGHBOR_DIST = np.float32(120.0)
+    dx_n = planet_x[:, None] - planet_x[None, :]
+    dy_n = planet_y[:, None] - planet_y[None, :]
+    dist_n = np.sqrt(dx_n * dx_n + dy_n * dy_n + 1e-6)
+    live_n = planet_mask[:, None] & planet_mask[None, :]
+    neigh_n = (dist_n < _NEIGHBOR_DIST) & live_n & (dist_n > 0.0)
+    expand_n = is_capturable_target > 0
+    n_expand = (neigh_n & expand_n[None, :]).astype(np.float32).sum(axis=-1)
+    n_neigh = neigh_n.astype(np.float32).sum(axis=-1)
+    frontier_score_norm = np.where(
+        planet_mask, n_expand / np.maximum(n_neigh, 1.0), 0.0
+    ).astype(np.float32)
+    interior_planet_bin = (
+        is_mine & (frontier_score_norm <= np.float32(0.05))
+    ).astype(np.float32)
+    remaining_need = np.maximum(need_est - friendly_w2, np.float32(0.0))
+    capture_need_exact_norm = np.where(
+        is_capturable_target > 0,
+        np.clip(remaining_need / np.maximum(need_est, 1.0), 0.0, 1.0),
+        0.0,
+    ).astype(np.float32)
+    low_threat = threat_ratio <= np.float32(0.12)
+    shuffle_dst_risk_norm = np.where(
+        is_mine,
+        (low_threat & (friendly_w2 > np.float32(1.0))).astype(np.float32),
+        0.0,
+    ).astype(np.float32)
+    dist_penalty = np.clip(
+        np.float32(1.0) - eta_proxy / np.float32(20.0), 0.0, 1.0
+    )
+    border_boost = np.float32(0.5) + np.float32(0.5) * frontier_score_norm
+    capture_roi_norm = np.where(
+        is_capturable_target > 0,
+        np.clip(capture_roi_norm * border_boost * dist_penalty, 0.0, 1.0),
+        0.0,
+    ).astype(np.float32)
+
+    prod_f = planet_prod.astype(np.float32)
+    min_reserve = np.maximum(np.float32(8.0), prod_f * np.float32(2.5))
+    safe_emit_margin = np.where(
+        is_mine,
+        np.clip(
+            (my_ships_f - foe_soft - min_reserve) / np.maximum(my_ships_f, np.float32(1.0)),
+            0.0,
+            1.0,
+        ),
+        np.float32(0.0),
+    )
+    my_prod_max = float(prod_f[is_mine].max()) if bool(is_mine.any()) else 0.0
+    hold_value = np.where(
+        is_mine,
+        np.clip(prod_f / max(my_prod_max, np.float32(1.0)), 0.0, 1.0) * safe_emit_margin,
+        np.float32(0.0),
+    )
+
+    # v27 dims 41-42: shuffle_dst_risk + interior_planet_bin
+
+    planet_feats = np.stack(
+        [
+            is_mine.astype(np.float32), is_enemy.astype(np.float32), is_neutral.astype(np.float32),
+            x_norm, y_norm, radius_norm, log_ships, prod_norm, dist_sun,
+            in_friend_norm, in_foe_norm, is_padding,
+            is_orbiting_f, orbit_phase_norm, orbit_radius_norm,
+            lead_x_15_norm, lead_y_15_norm, lead_x_30_norm, lead_y_30_norm,
+            threat_ratio, net_inbound, eta_foe_min,
+            flip_cost_norm, friendly_surplus, capturable_bin3,
+            needed_pct_norm, frontier_score_norm, weak_target_score,
+            garrison_rank, safe_surplus_norm, capture_need_exact_norm,
+            prod_per_need, capture_roi_norm,
+            friendly_eta_w1, friendly_eta_w2, enemy_eta_w1, enemy_eta_w2,
+            net_garrison_t5, net_garrison_t15,
+            safe_emit_margin, hold_value,
+            shuffle_dst_risk_norm, interior_planet_bin,
+        ],
+        axis=-1,
+    ).astype(np.float32)
+    planet_feats *= planet_mask[:, None].astype(np.float32)
+    if planet_hist_flat is None:
+        planet_hist_flat = np.zeros(
+            (MAX_PLANETS, PLANET_HIST_LEN * PLANET_HIST_DIM), dtype=np.float32
+        )
+    planet_feats = np.concatenate([planet_feats, planet_hist_flat], axis=-1)
+
+    f_is_mine = (fleet_owner == player) & fleet_mask
+    f_is_enemy = (fleet_owner >= 0) & (fleet_owner != player) & fleet_mask
+    fx_norm = (fleet_x - BOARD_HALF) / BOARD_HALF
+    fy_norm = (fleet_y - BOARD_HALF) / BOARD_HALF
+    sin_a = np.sin(fleet_angle)
+    cos_a = np.cos(fleet_angle)
+    f_log_ships = np.log1p(np.maximum(fleet_ships, 0).astype(np.float32)) / 8.0
+    zero = np.zeros_like(fx_norm, dtype=np.float32)
+
+    dxn = np.cos(fleet_angle)
+    dyn = np.sin(fleet_angle)
+    rel_x = planet_x[None, :] - fleet_x[:, None]
+    rel_y = planet_y[None, :] - fleet_y[:, None]
+    proj = rel_x * dxn[:, None] + rel_y * dyn[:, None]
+    perp_x = rel_x - proj * dxn[:, None]
+    perp_y = rel_y - proj * dyn[:, None]
+    perp_d2 = perp_x * perp_x + perp_y * perp_y
+    cost = np.where(proj > 0, perp_d2, np.float32(1e9))
+    cost = np.where(planet_mask[None, :], cost, np.float32(1e9))
+    target_idx = np.argmin(cost, axis=1)
+
+    t_dx = planet_x[target_idx] - fleet_x
+    t_dy = planet_y[target_idx] - fleet_y
+    target_dist_norm = np.sqrt(t_dx * t_dx + t_dy * t_dy + 1e-6) / BOARD
+    target_garrison_norm = np.log1p(
+        np.maximum(planet_ships[target_idx].astype(np.float32), 0.0)
+    ) / 8.0
+
+    fleet_feats = np.stack(
+        [
+            f_is_mine.astype(np.float32), f_is_enemy.astype(np.float32), zero,
+            fx_norm, fy_norm, sin_a, cos_a, f_log_ships,
+            target_dist_norm, target_garrison_norm,
+        ],
+        axis=-1,
+    ).astype(np.float32)
+    fleet_feats *= fleet_mask[:, None].astype(np.float32)
+
+    def _player_ships(p_id: int) -> float:
+        return float(planet_ships[(planet_owner == p_id) & planet_mask].sum()) + \
+               float(fleet_ships[(fleet_owner == p_id) & fleet_mask].sum())
+
+    def _player_planets(p_id: int) -> float:
+        return float(((planet_owner == p_id) & planet_mask).sum())
+
+    def _player_prod(p_id: int) -> float:
+        return float(planet_prod[(planet_owner == p_id) & planet_mask].sum())
+
+    total_ships = max(_player_ships(player) + _player_ships(opp), 1.0)
+    total_planets = max(_player_planets(player) + _player_planets(opp), 1.0)
+    total_prod = max(_player_prod(player) + _player_prod(opp), 1.0)
+
+    step_norm = float(step) / float(episode_steps)
+    is_early = float(step_norm < 0.18)
+    is_mid = float(0.18 <= step_norm < 0.64)
+    is_late = float(step_norm >= 0.64)
+    av_norm = av_raw / ORBIT_OMEGA_MAX
+    my_garr_total = float(planet_ships[is_mine].sum())
+    n_fleets_mine = float(f_is_mine.sum())
+    n_fleets_enemy = float(f_is_enemy.sum())
+    max_garr_norm = np.log1p(my_max_garrison) / 10.0
+    roi_mask = (capture_roi_norm > 0.12) * capturable_bin3
+    local_roi_targets_norm = roi_mask.sum() / MAX_PLANETS
+    n_mine_f = max(float(is_mine.sum()), 1.0)
+    frontier_owned_norm = float(
+        (is_mine & (frontier_score_norm > 0.05)).sum() / n_mine_f
+    )
+    prod_thresh = float(prod_f[is_mine].max()) * 0.5 if bool(is_mine.any()) else 0.0
+    high_prod = is_mine & (prod_f >= max(prod_thresh, np.float32(3.0)))
+    home_under_threat = float(
+        np.any(high_prod & (enemy_w1 > np.float32(0.0)))
+    )
+    min_effective_fleet_norm = min(8.0 / max(my_avg_garrison, 1.0), 1.0)
+    # === B1: Temporal proxy globals (dims 18-23) ===
+    my_prod_total = float(_player_prod(player))
+    my_fleet_total = float(fleet_ships[f_is_mine_b].sum()) if f_is_mine_b.any() else 0.0
+    my_total_all = max(my_garr_total + my_fleet_total, 1.0)
+    foe_garr_total = float(planet_ships[is_enemy].sum()) if is_enemy.any() else 0.0
+    foe_prod_total = float(_player_prod(opp))
+    foe_fleet_total = float(fleet_ships[(fleet_owner >= 0) & (fleet_owner != player) & fleet_mask].sum())
+    garr_to_prod = min(my_garr_total / max(my_prod_total * 10.0, 1.0), 1.0)
+    fleet_mass_ratio_g = my_fleet_total / my_total_all
+    prod_advantage_g = float(np.clip((my_prod_total - foe_prod_total) / max(my_prod_total + foe_prod_total, 1.0), -1.0, 1.0))
+    garr_advantage_g = float(np.clip((my_garr_total - foe_garr_total) / max(my_garr_total + foe_garr_total, 1.0), -1.0, 1.0))
+    threat_pressure_g = min(foe_fleet_total / max(my_garr_total, 1.0), 2.0) / 2.0
+
+    base_global = np.array(
+        [
+            step_norm,
+            _player_ships(player) / total_ships, _player_ships(opp) / total_ships,
+            _player_planets(player) / total_planets, _player_planets(opp) / total_planets,
+            _player_prod(player) / total_prod, _player_prod(opp) / total_prod,
+            is_early, is_mid, is_late,
+            av_norm,
+            np.log1p(my_garr_total) / 10.0,
+            n_fleets_mine / MAX_FLEETS,
+            n_fleets_enemy / MAX_FLEETS,
+            max_garr_norm,
+            local_roi_targets_norm,
+            frontier_owned_norm,
+            min_effective_fleet_norm,
+            garr_to_prod,
+            fleet_mass_ratio_g,
+            prod_advantage_g,
+            garr_advantage_g,
+            home_under_threat,
+            threat_pressure_g,
+            0.0,  # match_score_me (always 0 at Kaggle inference — single episode)
+            0.0,  # match_score_opp
+            0.0,  # match_progress
+        ],
+        dtype=np.float32,
+    )
+    if hist_flat is None:
+        hist_flat = np.zeros(HIST_LEN * TEMPORAL_GLOBAL_DIM, dtype=np.float32)
+    global_feats = np.concatenate([base_global, hist_flat.astype(np.float32)])
+
+    # f26: expose planet_x/y so greedy_multi_action can compute pair feats.
+    return dict(
+        planet_feats=planet_feats,
+        planet_mask=planet_mask,
+        fleet_feats=fleet_feats,
+        fleet_mask=fleet_mask,
+        global_feats=global_feats,
+        my_planet_mask=is_mine,
+        planet_ships=planet_ships,
+        planet_x=planet_x,
+        planet_y=planet_y,
+        planet_orbit_phase=orbit_phase_np.astype(np.float32),
+        planet_orbit_radius=orbit_radius_np.astype(np.float32),
+        planet_is_orbiting=is_orbiting_np.astype(bool),
+        angular_velocity=np.float32(av_raw),
+    )
+
+
+# --- f26 pair feature helpers (mirror features/pair.py) ----------------------
+
+def _segment_min_dist_to_point(ax, ay, bx, by, cx, cy):
+    abx = bx - ax
+    aby = by - ay
+    acx = cx - ax
+    acy = cy - ay
+    ab2 = abx * abx + aby * aby + np.float32(1e-6)
+    t = (acx * abx + acy * aby) / ab2
+    t = np.clip(t, 0.0, 1.0)
+    px = ax + t * abx
+    py = ay + t * aby
+    dx = cx - px
+    dy = cy - py
+    return np.sqrt(dx * dx + dy * dy + np.float32(1e-6))
+
+
+def _capture_ready_from_slack(slack):
+    s = slack.astype(np.float32)
+    return np.where(
+        s < np.float32(0.0),
+        np.float32(0.0),
+        np.where(
+            s <= np.float32(2.0),
+            np.float32(1.0),
+            np.where(s <= np.float32(5.0), np.float32(0.5), np.float32(0.0)),
+        ),
+    )
+
+
+def _pair_roi_effective(roi, capture_ready):
+    return roi * (np.float32(1.0) + np.float32(ROI_READY_BETA) * capture_ready)
+
+
+def _dst_pair_features(planet_x, planet_y, planet_ships, planet_mask,
+                       is_target_mask, remaining, src_idx, *,
+                       planet_orbit_phase=None, planet_orbit_radius=None,
+                       planet_is_orbiting=None, angular_velocity=None,
+                       fleet_speed=DEFAULT_MAX_SHIP_SPEED, planet_prod=None):
+    P = planet_x.shape[0]
+    src_x = float(planet_x[src_idx])
+    src_y = float(planet_y[src_idx])
+    rem_src = float(max(int(remaining[src_idx]), 1))
+
+    dx = planet_x - src_x
+    dy = planet_y - src_y
+    dist = np.sqrt(dx * dx + dy * dy + 1e-6)
+
+    if (
+        planet_orbit_phase is not None
+        and planet_orbit_radius is not None
+        and planet_is_orbiting is not None
+        and angular_velocity is not None
+    ):
+        spd = np.float32(max(float(fleet_speed), 0.5))
+        eta = dist / spd
+        rotate_mask_f = planet_is_orbiting.astype(np.float32)
+        lead_x, lead_y = _predict_planet_pos_np(
+            planet_orbit_phase.astype(np.float32),
+            planet_orbit_radius.astype(np.float32),
+            float(angular_velocity),
+            eta.astype(np.float32),
+            planet_x.astype(np.float32),
+            planet_y.astype(np.float32),
+            rotate_mask_f,
+        )
+        dx_lead = lead_x - src_x
+        dy_lead = lead_y - src_y
+        dist_lead = np.sqrt(dx_lead * dx_lead + dy_lead * dy_lead + 1e-6)
+        use_lead = rotate_mask_f > np.float32(0.0)
+        dist = np.where(use_lead, dist_lead, dist)
+        planet_x_eff = np.where(use_lead, lead_x, planet_x)
+        planet_y_eff = np.where(use_lead, lead_y, planet_y)
+    else:
+        planet_x_eff = planet_x
+        planet_y_eff = planet_y
+
+    dist_norm = (dist / BOARD).astype(np.float32)
+
+    min_to_sun = _segment_min_dist_to_point(src_x, src_y, planet_x_eff, planet_y_eff,
+                                            SUN_X, SUN_Y)
+    self_pair = np.arange(P) == src_idx
+    sun_risk = np.clip(1.0 - min_to_sun / SUN_GUARD, 0.0, 1.0).astype(np.float32)
+    sun_risk = np.where(self_pair, np.float32(0.0), sun_risk)
+
+    garr_dst = planet_ships.astype(np.float32)
+    ships_needed_norm = np.clip((garr_dst + 1.0) / rem_src, 0.0, 1.0).astype(np.float32)
+    ships_at_max = np.floor(rem_src * np.float32(MAX_LAUNCH_PCT))
+    pair_flip_bin5 = ((ships_at_max > garr_dst).astype(np.float32)
+                      * is_target_mask.astype(np.float32))
+    margin = (ships_at_max - garr_dst) / rem_src
+    pair_margin_norm = (np.clip(margin, 0.0, 1.0).astype(np.float32)
+                        * is_target_mask.astype(np.float32))
+
+    if planet_prod is None:
+        pair_roi_norm = np.zeros((P,), dtype=np.float32)
+    else:
+        prod_f = planet_prod.astype(np.float32)
+        need_est = np.maximum(garr_dst + np.float32(NEED_PAD_NEUTRAL), np.float32(1.0))
+        spd = np.float32(max(float(fleet_speed), 0.5))
+        payback = need_est / np.maximum(prod_f, np.float32(1.0))
+        eta = dist.astype(np.float32) / spd
+        roi_raw = prod_f / np.maximum(payback + eta, np.float32(1.0))
+        pair_roi_norm = (
+            np.clip(roi_raw / np.float32(ROI_NORM), 0.0, 1.0).astype(np.float32)
+            * is_target_mask.astype(np.float32)
+        )
+
+    slack = ships_at_max - garr_dst
+    capture_ready = _capture_ready_from_slack(slack) * is_target_mask.astype(np.float32)
+
+    pair_feats = np.stack(
+        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5, pair_margin_norm,
+         pair_roi_norm, capture_ready],
+        axis=-1,
+    ).astype(np.float32)
+    pair_feats *= planet_mask.astype(np.float32)[:, None]
+
+    sun_block_mask = (sun_risk >= SUN_BLOCK_THRESH) & planet_mask & np.logical_not(self_pair)
+    return pair_feats, sun_block_mask
+
+
+def _mask_used_dst_logits(
+    dst_logits: np.ndarray,
+    used_dst: np.ndarray,
+    planet_mask: np.ndarray,
+    src_idx: int,
+) -> np.ndarray:
+    P = dst_logits.shape[0]
+    idx = np.arange(P)
+    self_pair = idx == src_idx
+    block = used_dst | np.logical_not(planet_mask) | self_pair
+    masked = np.where(block, np.float32(-1e9), dst_logits.astype(np.float32))
+    if masked.max() <= np.float32(-1e9 * 0.5):
+        return dst_logits.astype(np.float32)
+    return masked
+
+
+def _mark_dst_used(used_dst: np.ndarray, dst_idx: int, emit: bool) -> np.ndarray:
+    if not emit:
+        return used_dst
+    out = used_dst.copy()
+    out[dst_idx] = True
+    return out
+
+
+def _dst_flip_block_mask(
+    planet_ships: np.ndarray,
+    planet_mask: np.ndarray,
+    is_target_mask: np.ndarray,
+    remaining: np.ndarray,
+    src_idx: int,
+    pair_roi_norm: np.ndarray | None = None,
+) -> np.ndarray:
+    rem_src = float(max(int(remaining[src_idx]), 1))
+    ships_at_max = float(np.floor(rem_src * MAX_LAUNCH_PCT))
+    garr_dst = planet_ships.astype(np.float32)
+    flip_ok = ships_at_max > garr_dst
+    if pair_roi_norm is not None:
+        flip_ok = flip_ok | (pair_roi_norm >= np.float32(ROI_EXEMPT_THRESHOLD))
+    return (
+        np.logical_not(flip_ok) & is_target_mask.astype(bool) & planet_mask.astype(bool)
+    )
+
+
+def _emit_pair_globals(planet_x, planet_y, planet_ships, planet_mask, my_mask,
+                       target_mask, remaining, home_idx, home_init, total_init,
+                       *, planet_orbit_phase=None, planet_orbit_radius=None,
+                       planet_is_orbiting=None, angular_velocity=None,
+                       reserved=None, planet_prod=None):
+    P = planet_x.shape[0]
+    rem_my = np.where(my_mask, remaining, 0).astype(np.float32)
+    rem_at_home = float(rem_my[home_idx]) if 0 <= home_idx < P else 0.0
+    ships_at_max_src = np.floor(rem_my * np.float32(MAX_LAUNCH_PCT))
+    garr_dst = planet_ships.astype(np.float32)
+
+    margin = ships_at_max_src[:, None] - garr_dst[None, :]
+    pair_valid = (my_mask[:, None] & target_mask[None, :]
+                  & planet_mask[:, None] & planet_mask[None, :])
+    min_overkill = np.float32(0.1) * np.maximum(garr_dst[None, :], np.float32(1.0))
+    feasible = pair_valid & (margin >= min_overkill)
+
+    if planet_prod is not None:
+        home_pairs, _ = _dst_pair_features(
+            planet_x, planet_y, planet_ships, planet_mask, target_mask, remaining,
+            int(home_idx),
+            planet_orbit_phase=planet_orbit_phase,
+            planet_orbit_radius=planet_orbit_radius,
+            planet_is_orbiting=planet_is_orbiting,
+            angular_velocity=angular_velocity,
+            planet_prod=planet_prod,
+        )
+        home_roi_eff = np.clip(
+            _pair_roi_effective(home_pairs[:, 5], home_pairs[:, 6]), 0.0, 1.0,
+        )
+        emit_urgency = float(
+            (home_roi_eff * home_pairs[:, 6] * target_mask.astype(np.float32)).max(initial=0.0)
+        )
+        garr_open = float(planet_ships[OPENING_FACTORY_IDX])
+        need_open = max(garr_open + NEED_PAD_NEUTRAL, 1.0)
+        opening_gate = rem_at_home >= need_open
+        ships_home_max = float(np.floor(rem_at_home * MAX_LAUNCH_PCT))
+        flip_open = (ships_home_max - garr_open) >= (0.1 * max(garr_open, 1.0))
+    else:
+        emit_urgency = 0.0
+        opening_gate = False
+        flip_open = False
+
+    emit_worth_it = 1.0 if (opening_gate and emit_urgency > EMIT_URGENCY_THRESH) or flip_open else 0.0
+
+    margin_masked = np.where(feasible, margin, 0.0)
+    best_margin = float(margin_masked.max(initial=0.0))
+    best_margin = max(best_margin, 0.0)
+    best_margin_norm = float(min(np.log1p(best_margin) / 8.0, 1.0))
+
+    home_remain_ratio = float(min(rem_at_home / max(home_init, 1.0), 1.0))
+    total_remaining = float(rem_my.sum())
+    total_remain_ratio = float(min(total_remaining / max(total_init, 1.0), 1.0))
+
+    dst_flippable = feasible.any(axis=0)
+    feasible_count = float(dst_flippable.astype(np.float32).sum())
+    feasible_target_count_norm = float(min(feasible_count / MAX_PLANETS, 1.0))
+
+    target_need = (garr_dst + np.float32(1.0)) * target_mask.astype(np.float32)
+    flippable_need = target_need * dst_flippable.astype(np.float32)
+    sum_min_needs = float(flippable_need.sum())
+    surplus_ratio = float(
+        min(max((total_remaining - sum_min_needs) / max(total_remaining, 1.0), 0.0), 1.0)
+    )
+
+    src_x = planet_x[:, None]
+    src_y = planet_y[:, None]
+    dst_x = planet_x[None, :]
+    dst_y = planet_y[None, :]
+    dx = dst_x - src_x
+    dy = dst_y - src_y
+    dist = np.sqrt(dx * dx + dy * dy + 1e-6)
+    if (
+        planet_orbit_phase is not None
+        and planet_orbit_radius is not None
+        and planet_is_orbiting is not None
+        and angular_velocity is not None
+    ):
+        spd = np.float32(max(float(DEFAULT_MAX_SHIP_SPEED), 0.5))
+        eta = dist / spd
+        rotate_mask_f = planet_is_orbiting.astype(np.float32)
+        av = float(angular_velocity)
+        phase_dst = planet_orbit_phase[None, :]
+        radius_dst = planet_orbit_radius[None, :]
+        new_phase = phase_dst + av * eta
+        lead_x = SUN_X + radius_dst * np.cos(new_phase)
+        lead_y = SUN_Y + radius_dst * np.sin(new_phase)
+        dx_lead = lead_x - src_x
+        dy_lead = lead_y - src_y
+        dist_lead = np.sqrt(dx_lead * dx_lead + dy_lead * dy_lead + 1e-6)
+        use_lead = rotate_mask_f[None, :] > np.float32(0.0)
+        dist = np.where(use_lead, dist_lead, dist)
+    dist_norm = dist / BOARD
+    big = np.float32(1e6)
+    dist_masked = np.where(feasible, dist_norm, big)
+    best_lead_dist_norm = float(np.clip(dist_masked.min(), 0.0, 1.0))
+
+    my_count = float(my_mask.astype(np.float32).sum())
+    my_count_safe = max(my_count, 1.0)
+    if reserved is not None:
+        reserved_f = np.where(my_mask, reserved, 0).astype(np.float32)
+        has_emitted = (reserved_f > 0.5) & my_mask
+        active_emitter_ratio = float(
+            min(has_emitted.astype(np.float32).sum() / my_count_safe, 1.0)
+        )
+        coord_coverage = active_emitter_ratio
+    else:
+        active_emitter_ratio = 0.0
+        coord_coverage = 0.0
+
+    rem_sorted = np.sort(rem_my)[::-1]
+    top2_mean = (rem_sorted[0] + rem_sorted[1]) / 2.0 if P >= 2 else rem_sorted[0]
+    top2_src_remain_norm = float(min(np.log1p(top2_mean) / 8.0, 1.0))
+    concentration_ratio = float(
+        min(rem_sorted[0] / max(total_remaining, 1.0), 1.0)
+    )
+
+    return np.array(
+        [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio,
+         feasible_target_count_norm, surplus_ratio, best_lead_dist_norm,
+         active_emitter_ratio, top2_src_remain_norm, concentration_ratio,
+         coord_coverage, emit_urgency],
+        dtype=np.float32,
+    )
+
+
+def _get_pct_bin_table():
+    global _PCT_BIN_TABLE_NP
+    if _PCT_BIN_TABLE_NP is None or len(_PCT_BIN_TABLE_NP) != NUM_PCT_BINS:
+        _PCT_BIN_TABLE_NP = np.array(PCT_BIN_VALUES, dtype=np.float32)
+    return _PCT_BIN_TABLE_NP
+
+
+def _pct_min_bin_index(garr_dst, remaining_src):
+    rem = max(float(remaining_src), 1.0)
+    pct_bins = _get_pct_bin_table()
+    ships_at_bins = np.floor(rem * pct_bins)
+    flip_at_bin = ships_at_bins > float(garr_dst)
+    if bool(flip_at_bin.any()):
+        return int(np.argmax(flip_at_bin))
+    return len(pct_bins) - 1
+
+
+def _pct_low_bin_mask(min_bin, num_bins=None):
+    if num_bins is None:
+        num_bins = NUM_PCT_BINS
+    return np.arange(num_bins, dtype=np.int32) >= int(min_bin)
+
+
+def _pct_pair_features(garr_dst, remaining_src, *,
+                       enemy_inbound_norm=0.0,
+                       net_garrison_t15_dst=0.0,
+                       src_prod_ratio=0.0,
+                       fleet_count_norm=0.0,
+                       lead_dist_norm=0.0,
+                       extended=False):
+    min_bin = _pct_min_bin_index(garr_dst, remaining_src)
+    min_bin_norm = min_bin / max(NUM_PCT_BINS - 1, 1)
+    rem = max(float(remaining_src), 1.0)
+    ships_at_bin5 = float(np.floor(rem * 0.7))
+    pair_flip_bin5 = 1.0 if ships_at_bin5 > float(garr_dst) else 0.0
+    if extended:
+        return np.array([min_bin_norm, pair_flip_bin5,
+                         enemy_inbound_norm, net_garrison_t15_dst,
+                         src_prod_ratio, fleet_count_norm, lead_dist_norm], dtype=np.float32)
+    return np.array([min_bin_norm, pair_flip_bin5], dtype=np.float32)
+
+
+# --- numpy forward (mirror inference.numpy_forward) ---------------------------
+
+def _layer_norm(x, scale, bias, eps=1e-6):
+    mean = x.mean(axis=-1, keepdims=True)
+    var = x.var(axis=-1, keepdims=True)
+    return (x - mean) / np.sqrt(var + eps) * scale + bias
+
+
+def _gelu(x):
+    c = np.float32(np.sqrt(2.0 / np.pi))
+    return 0.5 * x * (1.0 + np.tanh(c * (x + 0.044715 * (x ** 3))))
+
+
+def _dense(x, W, b):
+    return x @ W + b
+
+
+def _project_qkv(x, kernel, bias):
+    return np.einsum("td,dhe->the", x, kernel) + bias
+
+
+def _attention(q, k, v, key_mask):
+    depth = q.shape[-1]
+    q = q / np.sqrt(depth, dtype=q.dtype)
+    w = np.einsum("qhd,khd->hqk", q, k)
+    neg = np.finfo(q.dtype).min
+    w = np.where(key_mask[None, None, :], w, neg)
+    w = w - w.max(axis=-1, keepdims=True)
+    w = np.exp(w)
+    w = w / w.sum(axis=-1, keepdims=True)
+    return np.einsum("hqk,khd->qhd", w, v)
+
+
+def _attention_out(attn, kernel, bias):
+    return np.einsum("thd,hde->te", attn, kernel) + bias
+
+
+def _self_attn_block(x, key_mask, W, prefix):
+    h = _layer_norm(x, W[f"{prefix}/ln1/scale"], W[f"{prefix}/ln1/bias"])
+    q = _project_qkv(h, W[f"{prefix}/attn/query/kernel"], W[f"{prefix}/attn/query/bias"])
+    k = _project_qkv(h, W[f"{prefix}/attn/key/kernel"], W[f"{prefix}/attn/key/bias"])
+    v = _project_qkv(h, W[f"{prefix}/attn/value/kernel"], W[f"{prefix}/attn/value/bias"])
+    attn = _attention(q, k, v, key_mask)
+    out = _attention_out(attn, W[f"{prefix}/attn/out/kernel"], W[f"{prefix}/attn/out/bias"])
+    x = x + out
+
+    h = _layer_norm(x, W[f"{prefix}/ln2/scale"], W[f"{prefix}/ln2/bias"])
+    h = _dense(h, W[f"{prefix}/mlp/fc1/kernel"], W[f"{prefix}/mlp/fc1/bias"])
+    h = _gelu(h)
+    h = _dense(h, W[f"{prefix}/mlp/fc2/kernel"], W[f"{prefix}/mlp/fc2/bias"])
+    return x + h
+
+
+def _encode_tokens(W, enc) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    pf = enc["planet_feats"]
+    pm = enc["planet_mask"]
+    ff = enc["fleet_feats"]
+    fm = enc["fleet_mask"]
+    gf = enc["global_feats"]
+
+    planet_tok = _dense(pf, W["encoder/planet_proj/kernel"], W["encoder/planet_proj/bias"])
+    fleet_tok = _dense(ff, W["encoder/fleet_proj/kernel"], W["encoder/fleet_proj/bias"])
+    global_tok = _dense(gf, W["encoder/global_proj/kernel"], W["encoder/global_proj/bias"])[None, :]
+
+    te = W["encoder/type_embed"]
+    global_tok = global_tok + te[0:1]
+    planet_tok = planet_tok + te[1:2]
+    fleet_tok = fleet_tok + te[2:3]
+
+    tokens = np.concatenate([global_tok, planet_tok, fleet_tok], axis=0)
+    key_mask = np.concatenate([np.ones((1,), dtype=bool), pm.astype(bool), fm.astype(bool)])
+
+    for i in range(N_LAYERS):
+        tokens = _self_attn_block(tokens, key_mask, W, prefix=f"encoder/block{i}")
+    tokens = _layer_norm(tokens, W["encoder/ln_out/scale"], W["encoder/ln_out/bias"])
+
+    P = pf.shape[0]
+    global_emb = tokens[0]
+    planet_emb = tokens[1:1 + P]
+    fleet_emb = tokens[1 + P:]
+    p_mask_f = pm.astype(np.float32)[:, None]
+    planet_pool = (planet_emb * p_mask_f).sum(axis=0) / max(float(p_mask_f.sum()), 1.0)
+    f_mask_f = fm.astype(np.float32)[:, None]
+    fleet_pool = (fleet_emb * f_mask_f).sum(axis=0) / max(float(f_mask_f.sum()), 1.0)
+    return global_emb, planet_emb, fleet_emb, planet_pool, fleet_pool
+
+
+_NEG = -1e9
+
+
+def _mask_logits(logits, mask):
+    return np.where(mask, logits, _NEG).astype(np.float32)
+
+
+def _src_head(W, planet_emb, my_mask, remaining_norm=None):
+    if remaining_norm is not None:
+        x = np.concatenate(
+            [planet_emb, remaining_norm.astype(np.float32)[..., None]], axis=-1,
+        )
+    else:
+        x = planet_emb
+    x = _dense(x, W["src_head/fc1/kernel"], W["src_head/fc1/bias"])
+    x = _gelu(x)
+    logits = _dense(x, W["src_head/src_score/kernel"], W["src_head/src_score/bias"])[..., 0]
+    return _mask_logits(logits, my_mask.astype(bool))
+
+
+def _dst_head(W, planet_emb, src_emb, planet_mask, my_mask, src_idx=None,
+              reserved_norm=None, pair_feats=None, sun_block_mask=None,
+              flip_block_mask=None):
+    del my_mask  # owned planets allowed as dst (reinforcement); only mask padding
+    q = _project_qkv(src_emb[None, :], W["dst_head/cross_attn/query/kernel"], W["dst_head/cross_attn/query/bias"])
+    k = _project_qkv(planet_emb, W["dst_head/cross_attn/key/kernel"], W["dst_head/cross_attn/key/bias"])
+    v = _project_qkv(planet_emb, W["dst_head/cross_attn/value/kernel"], W["dst_head/cross_attn/value/bias"])
+    attended = _attention(q, k, v, planet_mask.astype(bool))
+    cond = _attention_out(attended, W["dst_head/cross_attn/out/kernel"], W["dst_head/cross_attn/out/bias"])[0]
+    extras = []
+    if reserved_norm is not None:
+        extras.append(reserved_norm.astype(np.float32)[..., None])
+    if pair_feats is not None:
+        extras.append(pair_feats.astype(np.float32))
+    if extras:
+        planet_rows = np.concatenate([planet_emb] + extras, axis=-1)
+    else:
+        planet_rows = planet_emb
+    joined = np.concatenate(
+        [planet_rows, np.broadcast_to(cond, (planet_rows.shape[0], cond.shape[0]))], axis=-1
+    )
+    x = _dense(joined, W["dst_head/dst_fc1/kernel"], W["dst_head/dst_fc1/bias"])
+    x = _gelu(x)
+    logits = _dense(x, W["dst_head/dst_score/kernel"], W["dst_head/dst_score/bias"])[..., 0]
+    eff_mask = planet_mask.astype(bool)
+    if src_idx is not None:
+        eff_mask = eff_mask.copy()
+        eff_mask[src_idx] = False
+    if sun_block_mask is not None:
+        allowed = eff_mask & np.logical_not(sun_block_mask.astype(bool))
+        if bool(allowed.any()):
+            eff_mask = allowed
+    if flip_block_mask is not None:
+        allowed = eff_mask & np.logical_not(flip_block_mask.astype(bool))
+        if bool(allowed.any()):
+            eff_mask = allowed
+    return _mask_logits(logits, eff_mask)
+
+
+def _dst_economics_head(W, econ_feats, planet_mask, src_idx=None):
+    x = _dense(econ_feats, W["dst_economics_head/fc1/kernel"], W["dst_economics_head/fc1/bias"])
+    x = _gelu(x)
+    logits = _dense(x, W["dst_economics_head/econ_score/kernel"], W["dst_economics_head/econ_score/bias"])[..., 0]
+    eff_mask = planet_mask.astype(bool)
+    if src_idx is not None:
+        eff_mask = eff_mask.copy()
+        eff_mask[src_idx] = False
+    return _mask_logits(logits, eff_mask)
+
+
+def _econ_dst_features(pair_feats, planet_prod, is_target_mask):
+    prod_norm = np.clip(planet_prod.astype(np.float32) / np.float32(5.0), 0.0, 1.0)
+    prod_norm = prod_norm * is_target_mask.astype(np.float32)
+    return np.concatenate([pair_feats.astype(np.float32), prod_norm[..., None]], axis=-1)
+
+
+def _pct_head(W, src_emb, dst_emb, global_emb, src_remaining_norm=None,
+              pair_feats=None, pct_low_bin_mask=None):
+    feats = [src_emb, dst_emb, global_emb]
+    if src_remaining_norm is not None:
+        s = np.asarray(src_remaining_norm, dtype=np.float32).reshape(())
+        feats.append(np.array([s], dtype=np.float32))
+    if pair_feats is not None:
+        feats.append(np.asarray(pair_feats, dtype=np.float32))
+    px = np.concatenate(feats, axis=-1)
+    px = _dense(px, W["pct_head/fc1/kernel"], W["pct_head/fc1/bias"])
+    px = _gelu(px)
+    logits = _dense(px, W["pct_head/logits/kernel"], W["pct_head/logits/bias"])
+    if pct_low_bin_mask is not None:
+        allowed = pct_low_bin_mask.astype(bool)
+        if bool(allowed.any()):
+            logits = _mask_logits(logits, allowed)
+    return logits
+
+
+def _emit_head(W, global_emb, planet_pool, step_idx, max_steps=MAX_FLEETS_PER_TURN,
+               total_remaining_norm=None, pair_feats_g=None, emit_force_stop=False):
+    step_oh = np.zeros((max_steps,), dtype=np.float32)
+    if 0 <= step_idx < max_steps:
+        step_oh[step_idx] = 1.0
+    feats = [global_emb, planet_pool, step_oh]
+    if total_remaining_norm is not None:
+        t = np.asarray(total_remaining_norm, dtype=np.float32).reshape(())
+        feats.append(np.array([t], dtype=np.float32))
+    if pair_feats_g is not None:
+        feats.append(np.asarray(pair_feats_g, dtype=np.float32))
+    x = np.concatenate(feats, axis=-1)
+    x = _dense(x, W["emit_head/fc1/kernel"], W["emit_head/fc1/bias"])
+    x = _gelu(x)
+    logits = _dense(x, W["emit_head/logits/kernel"], W["emit_head/logits/bias"])
+    if emit_force_stop:
+        logits = logits.copy()
+        logits[1] = _NEG
+    return logits
+
+
+def greedy_multi_action(W, enc, home_idx: int = 0) -> Tuple[List[int], List[int], List[int]]:
+    """Run the K-step greedy autoregressive policy with f26 pair features.
+
+    Returns (src_list, dst_list, pct_list) of equal length, containing only
+    the emitted launches.
+    """
+    global_emb, planet_emb, _f, planet_pool, _fp = _encode_tokens(W, enc)
+    my_mask = enc["my_planet_mask"].astype(bool)
+    planet_mask = enc["planet_mask"].astype(bool)
+    target_mask = planet_mask & np.logical_not(my_mask)
+    ships = enc["planet_ships"].astype(np.int32).copy()
+    planet_x = enc["planet_x"].astype(np.float32)
+    planet_y = enc["planet_y"].astype(np.float32)
+    P = planet_emb.shape[0]
+    reserved = np.zeros((P,), dtype=np.int32)
+    used_dst = np.zeros((P,), dtype=bool)
+    still_emit = True
+
+    ships_my_f = np.where(my_mask, ships, 0).astype(np.float32)
+    total_init = float(ships_my_f.sum())
+    home_init = float(ships_my_f[home_idx]) if 0 <= home_idx < P else 0.0
+    planet_prod = enc["planet_feats"][:, 7].astype(np.float32) * np.float32(5.0)
+
+    src_out: List[int] = []
+    dst_out: List[int] = []
+    pct_out: List[int] = []
+
+    for t in range(MAX_FLEETS_PER_TURN):
+        remaining = ships - reserved
+        avail_mask = my_mask & (remaining > 0)
+        any_avail = bool(avail_mask.any())
+        no_options = not any_avail
+        eff_mask = avail_mask if any_avail else my_mask
+
+        # v7: reserved-aware features (must match training: log1p(.)/8)
+        remaining_clip = np.maximum(remaining, 0).astype(np.float32)
+        reserved_f = np.maximum(reserved, 0).astype(np.float32)
+        remaining_norm = np.log1p(remaining_clip) / 8.0
+        reserved_norm = np.log1p(reserved_f) / 8.0
+        total_remaining = float((remaining_clip * my_mask.astype(np.float32)).sum())
+        total_remaining_norm = np.float32(np.log1p(total_remaining) / 8.0)
+
+        # f26: emit pair globals (depend on reserved, not on chosen src/dst).
+        emit_pair_g = _emit_pair_globals(
+            planet_x, planet_y, ships, planet_mask, my_mask, target_mask,
+            remaining, home_idx, home_init, total_init,
+            planet_orbit_phase=enc.get("planet_orbit_phase"),
+            planet_orbit_radius=enc.get("planet_orbit_radius"),
+            planet_is_orbiting=enc.get("planet_is_orbiting"),
+            angular_velocity=enc.get("angular_velocity"),
+            reserved=reserved,
+            planet_prod=planet_prod,
+        )
+        emit_worth_it = float(emit_pair_g[0]) > 0.0
+        emit_force_stop = (
+            bool(EMIT_HARD_STOP)
+            and (t >= EMIT_HARD_STOP_MIN_STEP)
+            and (not emit_worth_it)
+        )
+        e_logits = _emit_head(
+            W, global_emb, planet_pool, t,
+            total_remaining_norm=total_remaining_norm,
+            pair_feats_g=emit_pair_g,
+            emit_force_stop=emit_force_stop,
+        )
+        if (
+            t == 0
+            and (not no_options)
+            and (
+                (not ALLOW_HOLD)
+                or (FORCE_EMIT_WORTH_IT and emit_worth_it)
+            )
+        ):
+            decision = True
+        else:
+            emit_pred = int(np.argmax(e_logits))
+            decision = (emit_pred == 1) and (not no_options)
+
+
+        emit_t = decision and still_emit
+
+        s_logits = _src_head(W, planet_emb, eff_mask, remaining_norm)
+        src_t = int(np.argmax(s_logits))
+        src_emb = planet_emb[src_t]
+        # f26: dst pair features depend on chosen src.
+        dst_pair, sun_block = _dst_pair_features(
+            planet_x, planet_y, ships, planet_mask, target_mask,
+            remaining, src_t,
+            planet_orbit_phase=enc.get("planet_orbit_phase"),
+            planet_orbit_radius=enc.get("planet_orbit_radius"),
+            planet_is_orbiting=enc.get("planet_is_orbiting"),
+            angular_velocity=enc.get("angular_velocity"),
+            planet_prod=planet_prod,
+        )
+        flip_block = None
+        if F31_HARD_MASKS:
+            flip_block = _dst_flip_block_mask(
+                ships, planet_mask, target_mask, remaining, src_t,
+                pair_roi_norm=dst_pair[:, 5],
+            )
+        d_logits = _dst_head(
+            W, planet_emb, src_emb, planet_mask, my_mask,
+            src_idx=src_t,
+            reserved_norm=reserved_norm,
+            pair_feats=dst_pair, sun_block_mask=sun_block,
+            flip_block_mask=flip_block,
+        )
+        if "dst_economics_head/fc1/kernel" in W:
+            econ_feats = _econ_dst_features(dst_pair, planet_prod, target_mask.astype(np.float32))
+            d_logits = d_logits + _dst_economics_head(W, econ_feats, planet_mask, src_idx=src_t)
+        d_logits = _mask_used_dst_logits(d_logits, used_dst, planet_mask, src_t)
+        dst_t = int(np.argmax(d_logits))
+        dst_emb = planet_emb[dst_t]
+        src_remaining_norm = float(remaining_norm[src_t])
+        garr = float(ships[dst_t])
+        rem = float(remaining[src_t])
+        ext_kw: dict = {}
+        if _PCT_PAIR_DIM >= 6:
+            pf = enc["planet_feats"]
+            _ein = float(pf[dst_t, 10])
+            _ngt = float(pf[dst_t, 38])
+            _sp_val = float(pf[src_t, 7])
+            _my_prod = float((pf[:, 7] * my_mask.astype(np.float32)).sum())
+            ext_kw = dict(
+                enemy_inbound_norm=_ein,
+                net_garrison_t15_dst=_ngt,
+                src_prod_ratio=_sp_val / max(_my_prod, 1e-6),
+                fleet_count_norm=float(t) / max(MAX_FLEETS_PER_TURN - 1, 1),
+                lead_dist_norm=float(dst_pair[dst_t, 0]) if dst_pair is not None else 0.0,
+                extended=True,
+            )
+        pct_pair = _pct_pair_features(garr, rem, **ext_kw)
+        min_bin = _pct_min_bin_index(garr, rem)
+        pct_mask = _pct_low_bin_mask(min_bin)
+        p_logits = _pct_head(
+            W, src_emb, dst_emb, global_emb,
+            src_remaining_norm=src_remaining_norm,
+            pair_feats=pct_pair,
+            pct_low_bin_mask=pct_mask,
+        )
+        p_logits[:MIN_PCT_BIN] = -1e9
+        pct_t = int(np.argmax(p_logits))
+
+        if emit_t:
+            avail_at_src = max(int(ships[src_t]) - int(reserved[src_t]), 0)
+            mult = np.float32(avail_at_src) * _get_pct_bin_table()[pct_t]
+            ships_t = max(1, int(np.floor(mult)))
+            ships_t = min(ships_t, avail_at_src)
+            reserved[src_t] += ships_t
+            used_dst = _mark_dst_used(used_dst, dst_t, True)
+            src_out.append(src_t)
+            dst_out.append(dst_t)
+            pct_out.append(pct_t)
+        else:
+            still_emit = False
+
+    return src_out, dst_out, pct_out
+
+
+# --- action decoding to Kaggle format -----------------------------------------
+
+def decode_multi_to_kaggle_moves(
+    obs: Dict[str, Any],
+    src_list: List[int],
+    dst_list: List[int],
+    pct_list: List[int],
+    player: int,
+) -> List[List[float]]:
+    planets_by_id: Dict[int, Any] = {int(p[0]): p for p in (obs.get("planets") or [])}
+    reserved: Dict[int, int] = {}
+    moves: List[List[float]] = []
+    for src_idx, dst_idx, pct_bin in zip(src_list, dst_list, pct_list):
+        if src_idx not in planets_by_id or dst_idx not in planets_by_id or src_idx == dst_idx:
+            continue
+        src = planets_by_id[src_idx]
+        dst = planets_by_id[dst_idx]
+        if int(src[1]) != player:
+            continue
+        avail = int(src[5]) - reserved.get(src_idx, 0)
+        if avail <= 0:
+            continue
+        pct_bin = max(0, min(NUM_PCT_BINS - 1, int(pct_bin)))
+        pct = PCT_BIN_VALUES[pct_bin]
+        ships_to_send = max(1, int(math.floor(avail * pct)))
+        ships_to_send = min(ships_to_send, avail)
+        angle = math.atan2(float(dst[3]) - float(src[3]), float(dst[2]) - float(src[2]))
+        moves.append([int(src_idx), float(angle), int(ships_to_send)])
+        reserved[src_idx] = reserved.get(src_idx, 0) + ships_to_send
+    return moves
+
+
+# --- weights (filled in by orbit_wars_rl/scripts/export_submission.py) --------
+
+WEIGHTS_B64 = "__WEIGHTS_B64__"
+_PARAMS_CACHE: Optional[Dict[str, np.ndarray]] = None
+_PCT_PAIR_DIM = 2
+
+
+def _load_weights() -> Dict[str, np.ndarray]:
+    global _PARAMS_CACHE, _PCT_PAIR_DIM
+    if _PARAMS_CACHE is not None:
+        return _PARAMS_CACHE
+    if WEIGHTS_B64 == "__WEIGHTS_B64__":
+        raise RuntimeError(
+            "submission_rl_v11.py: WEIGHTS_B64 placeholder is not filled in. "
+            "Run: python -m orbit_wars_rl.scripts.export_submission "
+            "--template submission_rl_v11.py --ckpt <path>"
+        )
+    raw = zlib.decompress(base64.b64decode(WEIGHTS_B64))
+    with np.load(io.BytesIO(raw)) as data:
+        _PARAMS_CACHE = {k: np.asarray(data[k], dtype=np.float32) for k in data.files}
+    pct_k = "pct_head/fc1/kernel"
+    if pct_k in _PARAMS_CACHE:
+        pct_in = int(_PARAMS_CACHE[pct_k].shape[0])
+        d_model = int(_PARAMS_CACHE["encoder/planet_proj/kernel"].shape[-1])
+        extra = pct_in - 3 * d_model - 1
+        _PCT_PAIR_DIM = max(extra, 0)
+    pct_logits_k = "pct_head/logits/kernel"
+    if pct_logits_k in _PARAMS_CACHE:
+        global NUM_PCT_BINS, PCT_BIN_VALUES, MIN_PCT_BIN
+        detected_bins = int(_PARAMS_CACHE[pct_logits_k].shape[-1])
+        if detected_bins != NUM_PCT_BINS:
+            NUM_PCT_BINS = detected_bins
+        if detected_bins == 16:
+            PCT_BIN_VALUES = (
+                0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40,
+                0.45, 0.50, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00,
+            )
+    return _PARAMS_CACHE
+
+
+# --- Kaggle entry -------------------------------------------------------------
+
+_LAST_INITIAL_PLANET_KEY: Optional[Tuple] = None
+_STEP_COUNTER: int = 0
+_HOME_IDX: int = 0
+
+
+def _detect_new_episode(obs: Dict[str, Any]) -> bool:
+    global _LAST_INITIAL_PLANET_KEY
+    ip = obs.get("initial_planets") or []
+    key = tuple((int(p[0]), float(p[2]), float(p[3])) for p in ip[:8])
+    if key != _LAST_INITIAL_PLANET_KEY:
+        _LAST_INITIAL_PLANET_KEY = key
+        return True
+    return False
+
+
+def _resolve_home_idx(obs: Dict[str, Any], player: int) -> int:
+    """Locate this player's home planet slot. Prefer ``initial_planets`` (only
+    populated on turn 0 but persistent) else fall back to whichever owned
+    planet has the highest production at turn-start. Default 0 on failure.
+    """
+    for p in (obs.get("initial_planets") or []):
+        if int(p[1]) == player:
+            pid = int(p[0])
+            if 0 <= pid < MAX_PLANETS:
+                return pid
+    # Fallback: highest-prod owned planet.
+    best_pid = 0
+    best_prod = -1
+    for p in (obs.get("planets") or []):
+        if int(p[1]) == player:
+            pid = int(p[0])
+            prod = int(p[6])
+            if prod > best_prod and 0 <= pid < MAX_PLANETS:
+                best_prod = prod
+                best_pid = pid
+    return best_pid
+
+
+def agent(obs, config=None):
+    """Kaggle-required entry. Returns list of [src_id, angle, ships] moves."""
+    global _STEP_COUNTER, _HOME_IDX, _GLOBAL_HIST, _PLANET_HIST
+    try:
+        if _detect_new_episode(obs):
+            _STEP_COUNTER = 0
+            _HOME_IDX = _resolve_home_idx(obs, int(obs.get("player", 0)))
+            _GLOBAL_HIST = np.zeros((HIST_LEN, TEMPORAL_GLOBAL_DIM), dtype=np.float32)
+            _PLANET_HIST = np.zeros((PLANET_HIST_LEN, MAX_PLANETS, PLANET_HIST_DIM), dtype=np.float32)
+        else:
+            _STEP_COUNTER += 1
+
+        player = int(obs.get("player", 0))
+        episode_steps = int((config or {}).get("episodeSteps", DEFAULT_EPISODE_STEPS))
+
+        planets = list(obs.get("planets") or [])
+        if not any(int(p[1]) == player for p in planets):
+            return []
+
+        hist_flat = _GLOBAL_HIST.reshape(-1)
+        planet_hist_flat = _PLANET_HIST.transpose(1, 0, 2).reshape(MAX_PLANETS, -1)
+        if _STEP_COUNTER > 0:
+            planet_owner = np.full((MAX_PLANETS,), PADDING_OWNER, dtype=np.int32)
+            planet_x = np.zeros((MAX_PLANETS,), dtype=np.float32)
+            planet_y = np.zeros((MAX_PLANETS,), dtype=np.float32)
+            planet_ships = np.zeros((MAX_PLANETS,), dtype=np.int32)
+            planet_prod = np.zeros((MAX_PLANETS,), dtype=np.int32)
+            planet_mask = np.zeros((MAX_PLANETS,), dtype=bool)
+            for p in planets:
+                pid = int(p[0])
+                if 0 <= pid < MAX_PLANETS:
+                    planet_owner[pid] = int(p[1])
+                    planet_x[pid] = float(p[2])
+                    planet_y[pid] = float(p[3])
+                    planet_ships[pid] = int(p[5])
+                    planet_prod[pid] = int(p[6])
+                    planet_mask[pid] = True
+            fleet_owner = np.full((MAX_FLEETS,), PADDING_OWNER, dtype=np.int32)
+            fleet_x = np.zeros((MAX_FLEETS,), dtype=np.float32)
+            fleet_y = np.zeros((MAX_FLEETS,), dtype=np.float32)
+            fleet_angle = np.zeros((MAX_FLEETS,), dtype=np.float32)
+            fleet_ships = np.zeros((MAX_FLEETS,), dtype=np.int32)
+            fleet_mask = np.zeros((MAX_FLEETS,), dtype=bool)
+            for i, f in enumerate(list(obs.get("fleets") or [])[:MAX_FLEETS]):
+                fleet_owner[i] = int(f[1])
+                fleet_x[i] = float(f[2])
+                fleet_y[i] = float(f[3])
+                fleet_angle[i] = float(f[4])
+                fleet_ships[i] = int(f[6])
+                fleet_mask[i] = True
+            sl = _temporal_global_slice_np(
+                player, planet_owner, planet_ships, planet_prod, planet_mask,
+                fleet_owner, fleet_ships, fleet_mask,
+            )
+            _GLOBAL_HIST = np.roll(_GLOBAL_HIST, -1, axis=0)
+            _GLOBAL_HIST[-1] = sl
+            hist_flat = _GLOBAL_HIST.reshape(-1)
+            prev_is_mine = _PLANET_HIST[-1, :, 0]
+            ph_slice = _planet_hist_slice_np(
+                player, planet_owner, planet_ships, planet_x, planet_y, planet_mask,
+                fleet_owner, fleet_x, fleet_y, fleet_angle, fleet_ships, fleet_mask,
+                prev_is_mine,
+            )
+            _PLANET_HIST = np.roll(_PLANET_HIST, -1, axis=0)
+            _PLANET_HIST[-1] = ph_slice
+            planet_hist_flat = _PLANET_HIST.transpose(1, 0, 2).reshape(MAX_PLANETS, -1)
+
+        W = _load_weights()
+        enc = encode_obs(
+            obs, player=player, step=_STEP_COUNTER, episode_steps=episode_steps,
+            hist_flat=hist_flat, planet_hist_flat=planet_hist_flat,
+        )
+        if not bool(enc["my_planet_mask"].any()):
+            return []
+        src_list, dst_list, pct_list = greedy_multi_action(W, enc, home_idx=_HOME_IDX)
+        return decode_multi_to_kaggle_moves(obs, src_list, dst_list, pct_list, player=player)
+    except Exception:
+        return []

@@ -18,6 +18,9 @@ Provided:
       True for dst whose src->dst segment crosses the sun. Used both as a
       head input (sun_risk float) and as a hard logit mask in DstHead.
 
+  v29: ``pair_roi_norm`` (dim 5) — capture ROI from chosen src using
+      prod/(need/prod + dist/speed); fixes dst-head aim vs planet-only dim32.
+
   ``emit_pair_globals(planet_x, planet_y, planet_ships, planet_mask,
                        my_mask, target_mask, remaining,
                        home_remaining, home_init,
@@ -25,9 +28,11 @@ Provided:
       -> (g: (4,)) per-step global scalar that summarises feasibility / budget.
 
   ``dst_flip_block_mask(planet_ships, planet_mask, is_target_mask,
-                       remaining, src_idx)``
-      -> (..., P) bool -- True iff dst cannot be flipped with floor(rem*0.7)
-      at ``src_idx`` (enemy/neutral only; f31 hard mask).
+                       remaining, src_idx, pair_roi_norm=None)``
+      -> (..., P) bool -- True iff dst cannot be flipped with floor(rem*max_pct)
+      at ``src_idx``. High-ROI targets (>= ROI_EXEMPT_THRESHOLD) are never blocked.
+
+  v30: ``econ_dst_features`` -> (P, ECON_DST_DIM) for DstEconomicsHead.
 
   ``pct_pair_features(garr_dst, remaining_src)``
       -> (2,) [min_bin_norm, pair_flip_bin5] given chosen (src, dst).
@@ -47,6 +52,23 @@ import jax
 import jax.numpy as jnp
 
 from orbit_wars_rl.env import constants
+from orbit_wars_rl.features.capture_roi_util import (
+    EMIT_URGENCY_THRESH,
+    OPENING_FACTORY_IDX,
+    ROI_EXEMPT_THRESHOLD,
+    ROI_NORM,
+    capture_ready_from_slack,
+    capture_roi_from_src,
+    flip_margin_at_max_pct,
+    flip_ok_at_max_pct,
+    need_est_from_garr,
+    pair_roi_effective,
+    ships_at_max_pct,
+)
+
+# v30: dedicated DstEconomicsHead input (pair dims + prod_norm).
+# v30c: +capture_ready -> ECON_DST_DIM=8
+ECON_DST_DIM: int = 8
 from orbit_wars_rl.features.encode import _predict_planet_pos
 
 
@@ -98,16 +120,18 @@ def dst_pair_features(
     planet_is_orbiting: jnp.ndarray | None = None,
     angular_velocity: jnp.ndarray | None = None,
     fleet_speed: jnp.ndarray | float | None = None,
+    planet_prod: jnp.ndarray | None = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Per-candidate-dst features given a chosen src.
 
     Returns:
-      pair_feats: (P, 5) float32 in [0, 1]:
+      pair_feats: (P, 6) float32 in [0, 1]:
         [0] dist_src_dst / BOARD
         [1] sun_risk = clip(1 - min_dist / SUN_GUARD, 0, 1)  (1 = path through sun)
         [2] ships_needed_norm = (garr[dst]+1) / remaining[src]  clip [0,1]
         [3] pair_flip_bin5 = float( floor(remaining[src]*0.7) > garr[dst] ) AND target
         [4] pair_margin_norm = clip((floor(rem*0.7)-garr)/rem, 0, 1) AND target
+        [5] pair_roi_norm = payback ROI from this src (v29)
       sun_block_mask: (P,) bool -- True iff sun_risk >= 0.9 (hard mask candidate)
     """
     P = planet_x.shape[0]
@@ -166,15 +190,36 @@ def dst_pair_features(
     ships_needed = (garr_dst + 1.0) / rem_src
     ships_needed_norm = jnp.clip(ships_needed, 0.0, 1.0)
 
-    ships_at_bin5 = jnp.floor(rem_src * jnp.float32(0.7))
-    pair_flip_bin5 = (ships_at_bin5 > garr_dst).astype(jnp.float32) * is_target_mask.astype(
-        jnp.float32
-    )
-    margin = (ships_at_bin5 - garr_dst) / rem_src
+    ships_at_max = ships_at_max_pct(rem_src)
+    flip_ok = flip_ok_at_max_pct(rem_src, garr_dst)
+    pair_flip_bin5 = flip_ok.astype(jnp.float32) * is_target_mask.astype(jnp.float32)
+    margin = flip_margin_at_max_pct(rem_src, garr_dst) / rem_src
     pair_margin_norm = jnp.clip(margin, 0.0, 1.0) * is_target_mask.astype(jnp.float32)
 
+    if planet_prod is None:
+        pair_roi_norm = jnp.zeros((P,), dtype=jnp.float32)
+    else:
+        prod_f = planet_prod.astype(jnp.float32)
+        need_est = need_est_from_garr(garr_dst)
+        roi_raw = capture_roi_from_src(
+            prod_f, need_est, dist, fleet_speed=fleet_speed, norm=ROI_NORM,
+        )
+        pair_roi_norm = jnp.clip(roi_raw, 0.0, 1.0) * is_target_mask.astype(jnp.float32)
+
+    slack = ships_at_max - garr_dst
+    capture_ready = capture_ready_from_slack(slack) * is_target_mask.astype(jnp.float32)
+
     pair_feats = jnp.stack(
-        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5, pair_margin_norm], axis=-1
+        [
+            dist_norm,
+            sun_risk,
+            ships_needed_norm,
+            pair_flip_bin5,
+            pair_margin_norm,
+            pair_roi_norm,
+            capture_ready,
+        ],
+        axis=-1,
     )
     # Zero rows for padding planets so they cannot leak through the MLP.
     pair_feats = pair_feats * planet_mask[:, None].astype(jnp.float32)
@@ -197,6 +242,7 @@ def dst_pair_features_batched(
     planet_is_orbiting: jnp.ndarray | None = None,
     angular_velocity: jnp.ndarray | None = None,
     fleet_speed: jnp.ndarray | float | None = None,
+    planet_prod: jnp.ndarray | None = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Same as ``dst_pair_features`` with arbitrary leading batch dims.
 
@@ -211,6 +257,7 @@ def dst_pair_features_batched(
             planet_is_orbiting=planet_is_orbiting,
             angular_velocity=angular_velocity,
             fleet_speed=fleet_speed,
+            planet_prod=planet_prod,
         )
     P = planet_x.shape[-1]
     src_idx_e = src_idx[..., None]
@@ -270,20 +317,75 @@ def dst_pair_features_batched(
     ships_needed = (garr_dst + 1.0) / rem_at_src
     ships_needed_norm = jnp.clip(ships_needed, 0.0, 1.0)
 
-    ships_at_bin5 = jnp.floor(rem_at_src * jnp.float32(0.7))
-    pair_flip_bin5 = (ships_at_bin5 > garr_dst).astype(jnp.float32) * is_target_mask.astype(
-        jnp.float32
-    )
-    margin = (ships_at_bin5 - garr_dst) / rem_at_src
+    rem_scalar = rem_at_src[..., 0]
+    flip_ok = flip_ok_at_max_pct(rem_scalar, garr_dst)
+    pair_flip_bin5 = flip_ok.astype(jnp.float32) * is_target_mask.astype(jnp.float32)
+    margin = flip_margin_at_max_pct(rem_scalar, garr_dst) / jnp.maximum(rem_at_src, jnp.float32(1.0))
     pair_margin_norm = jnp.clip(margin, 0.0, 1.0) * is_target_mask.astype(jnp.float32)
 
+    if planet_prod is None:
+        pair_roi_norm = jnp.zeros(planet_x.shape, dtype=jnp.float32)
+    else:
+        prod_f = planet_prod.astype(jnp.float32)
+        need_est = need_est_from_garr(garr_dst)
+        roi_raw = capture_roi_from_src(
+            prod_f, need_est, dist, fleet_speed=fleet_speed, norm=ROI_NORM,
+        )
+        pair_roi_norm = jnp.clip(roi_raw, 0.0, 1.0) * is_target_mask.astype(jnp.float32)
+
+    slack = ships_at_max_pct(rem_scalar)[..., None] - garr_dst
+    capture_ready = capture_ready_from_slack(slack) * is_target_mask.astype(jnp.float32)
+
     pair_feats = jnp.stack(
-        [dist_norm, sun_risk, ships_needed_norm, pair_flip_bin5, pair_margin_norm], axis=-1
+        [
+            dist_norm,
+            sun_risk,
+            ships_needed_norm,
+            pair_flip_bin5,
+            pair_margin_norm,
+            pair_roi_norm,
+            capture_ready,
+        ],
+        axis=-1,
     )
     pair_feats = pair_feats * planet_mask[..., None].astype(jnp.float32)
 
     sun_block_mask = (sun_risk >= _SUN_BLOCK_THRESH) & planet_mask & jnp.logical_not(self_pair)
     return pair_feats, sun_block_mask
+
+
+_LOGIT_NEG_INF = jnp.float32(-1e9)
+
+
+def mask_used_dst_logits(
+    dst_logits: jnp.ndarray,
+    used_dst: jnp.ndarray,
+    planet_mask: jnp.ndarray,
+    src_idx: jnp.ndarray,
+) -> jnp.ndarray:
+    """Block dst already chosen this turn; fallback if every candidate blocked."""
+    p = dst_logits.shape[-1]
+    idx = jnp.arange(p)
+    if src_idx.ndim == 0:
+        self_pair = idx == src_idx
+    else:
+        self_pair = idx[(None,) * (src_idx.ndim)] == src_idx[..., None]
+    block = used_dst | jnp.logical_not(planet_mask) | self_pair
+    masked = jnp.where(block, _LOGIT_NEG_INF, dst_logits)
+    all_blocked = masked.max(axis=-1, keepdims=True) <= (_LOGIT_NEG_INF * jnp.float32(0.5))
+    return jnp.where(all_blocked, dst_logits, masked)
+
+
+def mark_dst_used(
+    used_dst: jnp.ndarray,
+    dst_idx: jnp.ndarray,
+    emit: jnp.ndarray,
+) -> jnp.ndarray:
+    """Set used_dst[dst_idx]=True for steps where emit is True."""
+    one_hot = jax.nn.one_hot(dst_idx, used_dst.shape[-1], dtype=jnp.float32)
+    if emit.ndim < one_hot.ndim:
+        emit = emit[..., None]
+    return used_dst | (one_hot > jnp.float32(0.5)) & emit.astype(jnp.bool_)
 
 
 def dst_flip_block_mask(
@@ -292,22 +394,62 @@ def dst_flip_block_mask(
     is_target_mask: jnp.ndarray,  # (..., P) bool -- enemy | neutral
     remaining: jnp.ndarray,       # (..., P) int -- remaining at each src
     src_idx: jnp.ndarray,         # (...,) int
+    pair_roi_norm: jnp.ndarray | None = None,
 ) -> jnp.ndarray:
-    """Hard mask: block dst that cannot be flipped with 70% of remaining at src.
+    """Hard mask: block dst that cannot be flipped with max-pct send at src.
 
-    Returns (..., P) bool where True means **forbidden** (same convention as
-    ``sun_block_mask``). Owned planets are never blocked (``is_target_mask``
-    is false for mine).
+    High-ROI targets (>= ``ROI_EXEMPT_THRESHOLD``) stay legal so opening
+    factories like id=20 are not forced into weak-mite-only candidate sets.
+
+    Returns (..., P) bool where True means **forbidden**.
     """
     rem_at_src = jnp.take_along_axis(
         remaining.astype(jnp.float32), src_idx[..., None], axis=-1
     )
     rem_at_src = jnp.maximum(rem_at_src, jnp.float32(1.0))
-    ships_at_bin5 = jnp.floor(rem_at_src * jnp.float32(0.7))[..., 0]
     garr_dst = planet_ships.astype(jnp.float32)
-    flip_ok = ships_at_bin5[..., None] > garr_dst
+    flip_ok = flip_ok_at_max_pct(rem_at_src[..., 0], garr_dst)
+    if pair_roi_norm is not None:
+        high_roi = pair_roi_norm >= jnp.float32(ROI_EXEMPT_THRESHOLD)
+        flip_ok = flip_ok | high_roi
     block = jnp.logical_not(flip_ok) & is_target_mask & planet_mask
     return block
+
+
+def econ_dst_features(
+    pair_feats: jnp.ndarray,       # (..., P, 6)
+    planet_prod: jnp.ndarray,      # (..., P) or (P,)
+    planet_mask: jnp.ndarray,      # (..., P)
+    is_target_mask: jnp.ndarray,   # (..., P)
+) -> jnp.ndarray:
+    """Build v30 DstEconomicsHead inputs: pair feats + prod_norm."""
+    prod_norm = jnp.clip(planet_prod.astype(jnp.float32) / jnp.float32(5.0), 0.0, 1.0)
+    prod_norm = prod_norm * is_target_mask.astype(jnp.float32)
+    if pair_feats.ndim == 2:
+        return jnp.concatenate([pair_feats, prod_norm[..., None]], axis=-1)
+    return jnp.concatenate([pair_feats, prod_norm[..., None]], axis=-1)
+
+
+def roi_teacher_dst(
+    pair_feats: jnp.ndarray,       # (..., P, 7+)
+    planet_mask: jnp.ndarray,      # (..., P)
+    is_target_mask: jnp.ndarray,   # (..., P)
+    src_idx: jnp.ndarray,          # (...,)
+) -> jnp.ndarray:
+    """Argmax roi_eff among legal capturable dst (teacher for aux CE)."""
+    roi = pair_feats[..., 5]
+    ready = pair_feats[..., 6] if pair_feats.shape[-1] > 6 else jnp.float32(0.0)
+    roi = pair_roi_effective(roi, ready)
+    valid = planet_mask & is_target_mask
+    p = roi.shape[-1]
+    idx = jnp.arange(p)
+    if src_idx.ndim == 0:
+        self_pair = idx == src_idx
+    else:
+        self_pair = idx[(None,) * (src_idx.ndim)] == src_idx[..., None]
+    valid = valid & jnp.logical_not(self_pair)
+    masked = jnp.where(valid, roi, _LOGIT_NEG_INF)
+    return jnp.argmax(masked, axis=-1).astype(jnp.int32)
 
 
 def emit_pair_globals(
@@ -327,12 +469,13 @@ def emit_pair_globals(
     planet_is_orbiting: jnp.ndarray | None = None,
     angular_velocity: jnp.ndarray | None = None,
     reserved: jnp.ndarray | None = None,
+    planet_prod: jnp.ndarray | None = None,
 ) -> jnp.ndarray:
-    """11 scalar features describing remaining attack budget, emit stop signal,
+    """12 scalar features describing remaining attack budget, emit stop signal,
     and multi-planet coordination state.
 
-    Returns (..., 11):
-      [0] emit_worth_it           -- 1.0 iff any (src,dst) pair has margin>0 with current remaining
+    Returns (..., 12):
+      [0] emit_worth_it           -- 1.0 iff any feasible pair OR home capture urgency
       [1] best_pair_margin_norm   -- log1p(max over feasible pairs of margin) / log1p(MAX_PLANET_SHIPS)
       [2] home_remain_ratio       -- remaining[home] / max(home_init, 1)  clip [0,1]
       [3] total_remain_ratio      -- (sum remaining over mine) / max(total_init, 1) clip [0,1]
@@ -343,15 +486,18 @@ def emit_pair_globals(
       [8] top2_src_remain_norm    -- mean remaining of top-2 strongest src planets, log1p/8
       [9] concentration_ratio     -- max(remaining) / total_remaining (1=all on one planet, low=spread)
       [10] coord_coverage         -- emitted src count / my planet count (how broadly we're attacking)
+      [11] emit_urgency           -- max home->dst roi_eff with capture_ready>0 (gated)
     """
     P = planet_x.shape[-1]
 
     rem_my = jnp.where(my_mask, remaining, jnp.int32(0)).astype(jnp.float32)
-    ships_at_bin5_per_src = jnp.floor(rem_my * jnp.float32(0.7))  # (..., P)
+    home_idx_e = home_idx[..., None]
+    rem_at_home = jnp.take_along_axis(rem_my, home_idx_e, axis=-1)[..., 0]
+    ships_at_max_per_src = ships_at_max_pct(rem_my)  # (..., P)
     garr_dst = planet_ships.astype(jnp.float32)                   # (..., P)
 
     # Pair feasibility: shape (..., P, P)
-    margin = ships_at_bin5_per_src[..., :, None] - garr_dst[..., None, :]
+    margin = ships_at_max_per_src[..., :, None] - garr_dst[..., None, :]
     # Restrict to src in mine, dst in target, both masked valid.
     pair_valid = (
         my_mask[..., :, None]
@@ -362,8 +508,42 @@ def emit_pair_globals(
     # Require 10% overkill margin for emit_worth_it.
     # Not too high (causes turtle) nor zero (causes spam).
     min_overkill = jnp.float32(0.1) * jnp.maximum(garr_dst[..., None, :], jnp.float32(1.0))
-    feasible = pair_valid & (margin > min_overkill)
-    emit_worth_it = feasible.any(axis=(-2, -1)).astype(jnp.float32)
+    feasible = pair_valid & (margin >= min_overkill)
+
+    if planet_prod is not None:
+        home_pairs, _ = dst_pair_features_batched(
+            planet_x, planet_y, planet_ships, planet_mask,
+            target_mask, remaining, home_idx,
+            planet_orbit_phase=planet_orbit_phase,
+            planet_orbit_radius=planet_orbit_radius,
+            planet_is_orbiting=planet_is_orbiting,
+            angular_velocity=angular_velocity,
+            planet_prod=planet_prod,
+        )
+        home_roi = home_pairs[..., 5]
+        home_ready = home_pairs[..., 6]
+        home_roi_eff = jnp.clip(pair_roi_effective(home_roi, home_ready), 0.0, 1.0)
+        # Only count dst in active capture window (avoids static ROI firing at t=0).
+        emit_urgency = (
+            home_roi_eff * home_ready * target_mask.astype(jnp.float32)
+        ).max(axis=-1)
+        garr_open = planet_ships[..., OPENING_FACTORY_IDX].astype(jnp.float32)
+        need_open = need_est_from_garr(garr_open)
+        opening_gate = (rem_at_home >= need_open).astype(jnp.float32)
+        ships_home_max = ships_at_max_pct(rem_at_home)
+        min_ok_open = jnp.float32(0.1) * jnp.maximum(garr_open, jnp.float32(1.0))
+        flip_open = (ships_home_max - garr_open) >= min_ok_open
+    else:
+        emit_urgency = jnp.zeros(rem_my.shape[:-1], dtype=jnp.float32)
+        opening_gate = jnp.zeros(rem_my.shape[:-1], dtype=jnp.float32)
+        flip_open = jnp.zeros(rem_my.shape[:-1], dtype=jnp.float32)
+
+    # v30d: force emit only when home can afford opening factory (need id=20).
+    urgency_on = (emit_urgency > jnp.float32(EMIT_URGENCY_THRESH)).astype(jnp.float32)
+    emit_worth_it = jnp.maximum(
+        opening_gate * urgency_on,
+        flip_open.astype(jnp.float32),
+    )
 
     # Best margin (set non-feasible to 0).
     margin_masked = jnp.where(feasible, margin, jnp.float32(0.0))
@@ -373,8 +553,6 @@ def emit_pair_globals(
     best_margin_norm = jnp.clip(best_margin_norm, 0.0, 1.0)
 
     # Home / total ratio.
-    home_idx_e = home_idx[..., None]
-    rem_at_home = jnp.take_along_axis(rem_my, home_idx_e, axis=-1)[..., 0]
     home_remain_ratio = jnp.clip(
         rem_at_home / jnp.maximum(home_init, jnp.float32(1.0)), 0.0, 1.0
     )
@@ -474,7 +652,7 @@ def emit_pair_globals(
         [emit_worth_it, best_margin_norm, home_remain_ratio, total_remain_ratio,
          feasible_target_count_norm, surplus_ratio, best_lead_dist_norm,
          active_emitter_ratio, top2_src_remain_norm, concentration_ratio,
-         coord_coverage],
+         coord_coverage, emit_urgency],
         axis=-1,
     )
 
@@ -552,7 +730,7 @@ def pct_pair_features(
 
 
 # --------------------- public constants for sanity checks ---------------------
-DST_PAIR_DIM = 5
-EMIT_PAIR_DIM = 11
+DST_PAIR_DIM = 7
+EMIT_PAIR_DIM = 12
 PCT_PAIR_DIM = 7
 SUN_BLOCK_THRESH = float(_SUN_BLOCK_THRESH)

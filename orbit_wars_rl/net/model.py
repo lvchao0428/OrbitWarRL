@@ -38,13 +38,17 @@ from orbit_wars_rl.features import EncodedObs
 from orbit_wars_rl.features.pair import (
     dst_pair_features_batched,
     dst_flip_block_mask,
+    econ_dst_features,
     emit_pair_globals,
+    mark_dst_used,
+    mask_used_dst_logits,
     pct_pair_features,
     pct_min_bin_index,
     pct_low_bin_mask,
+    roi_teacher_dst,
 )
 from orbit_wars_rl.net.transformer import EntityTransformer
-from orbit_wars_rl.net.heads import SrcHead, DstHead, PctHead, ValueHead, ZeroSumValueHead, EmitHead
+from orbit_wars_rl.net.heads import SrcHead, DstHead, DstEconomicsHead, PctHead, ValueHead, ZeroSumValueHead, EmitHead
 
 
 _PCT_BIN_TABLE = jnp.array(constants.PCT_BIN_VALUES, dtype=jnp.float32)
@@ -58,6 +62,8 @@ class ActorCriticOutput(NamedTuple):
     pct_logits: jnp.ndarray         # (..., K, num_pct_bins)
     emit_logits: jnp.ndarray        # (..., K, 2)
     value: jnp.ndarray              # (...,)
+    dst_econ_logits: jnp.ndarray    # (..., K, P) v30 economics head
+    roi_teacher: jnp.ndarray        # (..., K) int32 teacher dst for aux CE
 
 
 class SampledMultiAction(NamedTuple):
@@ -208,6 +214,7 @@ class ActorCritic(nn.Module):
         )
         self.src_head = SrcHead()
         self.dst_head = DstHead(d_model=self.d_model, n_heads=self.n_heads)
+        self.dst_economics_head = DstEconomicsHead()
         self.pct_head = PctHead(num_bins=self.num_pct_bins)
         self.emit_head = EmitHead(max_steps=self.max_fleets_per_turn)
         if self.zero_sum_value:
@@ -216,6 +223,36 @@ class ActorCritic(nn.Module):
             )
         else:
             self.value_head = ValueHead(d_model=self.d_model, n_heads=self.n_heads)
+
+    def _combine_dst_logits(
+        self,
+        attn_logits: jnp.ndarray,
+        pair_feats: jnp.ndarray,
+        planet_prod: jnp.ndarray,
+        planet_mask: jnp.ndarray,
+        target_mask: jnp.ndarray,
+        src_idx: jnp.ndarray,
+        *,
+        freeze_attn: bool = False,
+    ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        """Merge cross-attn dst logits with economics head; return teacher too."""
+        econ_feats = econ_dst_features(
+            pair_feats, planet_prod, planet_mask, target_mask,
+        )
+        econ_logits = self.dst_economics_head(
+            econ_feats, planet_mask, src_idx=src_idx,
+        )
+        attn_term = jax.lax.cond(
+            freeze_attn,
+            lambda x: jax.lax.stop_gradient(x),
+            lambda x: x,
+            attn_logits,
+        )
+        combined = attn_term + econ_logits
+        teacher = roi_teacher_dst(
+            pair_feats, planet_mask, target_mask, src_idx,
+        )
+        return combined, econ_logits, teacher
 
     def _encode(self, obs: EncodedObs) -> dict:
         return self.encoder(
@@ -244,6 +281,7 @@ class ActorCritic(nn.Module):
         planet_is_orbiting: jnp.ndarray | None = None,
         angular_velocity: jnp.ndarray | None = None,
         opp_obs: EncodedObs | None = None,
+        freeze_dst_attn: bool = False,
     ) -> ActorCriticOutput:
         """Compute per-step logits + value given pre-chosen K-step actions.
 
@@ -295,9 +333,13 @@ class ActorCritic(nn.Module):
         # for-loop so flax can build the heads exactly once. The running
         # ``reserved`` buffer is updated each iter using the *given* action.
         reserved = jnp.zeros_like(ships_raw_b)  # (..., P)
+        used_dst = jnp.zeros_like(obs_pmask)  # (..., P) v29: same-turn dedup
+        planet_prod = obs.planet_feats[..., 7].astype(jnp.float32) * jnp.float32(5.0)
 
         src_logits_list = []
         dst_logits_list = []
+        dst_econ_logits_list = []
+        roi_teacher_list = []
         pct_logits_list = []
         emit_logits_list = []
 
@@ -328,6 +370,7 @@ class ActorCritic(nn.Module):
                 planet_is_orbiting=planet_is_orbiting,
                 angular_velocity=angular_velocity,
                 reserved=reserved,
+                planet_prod=planet_prod,
             )
             dst_pair, sun_block = dst_pair_features_batched(
                 planet_x, planet_y, ships_raw_b, obs_pmask,
@@ -336,10 +379,12 @@ class ActorCritic(nn.Module):
                 planet_orbit_radius=planet_orbit_radius,
                 planet_is_orbiting=planet_is_orbiting,
                 angular_velocity=angular_velocity,
+                planet_prod=planet_prod,
             )
             flip_block = (
                 dst_flip_block_mask(
                     ships_raw_b, obs_pmask, target_mask, remaining, src_t,
+                    pair_roi_norm=dst_pair[..., 5],
                 )
                 if self.flip_hard_mask
                 else None
@@ -358,11 +403,18 @@ class ActorCritic(nn.Module):
                 emit_force_stop=emit_force_stop,
             )
             src_emb_t = _gather_planet_emb(planet_emb, src_t)
-            dst_logits_t = self.dst_head(
+            attn_dst_t = self.dst_head(
                 planet_emb, src_emb_t, obs_pmask, obs_my,
                 src_idx=src_t, reserved_norm=reserved_norm,
                 pair_feats=dst_pair, sun_block_mask=sun_block,
                 flip_block_mask=flip_block,
+            )
+            dst_logits_t, econ_dst_t, roi_teacher_t = self._combine_dst_logits(
+                attn_dst_t, dst_pair, planet_prod, obs_pmask, target_mask, src_t,
+                freeze_attn=freeze_dst_attn,
+            )
+            dst_logits_t = mask_used_dst_logits(
+                dst_logits_t, used_dst, obs_pmask, src_t,
             )
             dst_emb_t = _gather_planet_emb(planet_emb, dst_t)
             # src_remaining_norm: scalar (per leading batch) = remaining at src
@@ -406,12 +458,15 @@ class ActorCritic(nn.Module):
 
             src_logits_list.append(src_logits_t)
             dst_logits_list.append(dst_logits_t)
+            dst_econ_logits_list.append(econ_dst_t)
+            roi_teacher_list.append(roi_teacher_t)
             pct_logits_list.append(pct_logits_t)
             emit_logits_list.append(emit_logits_t)
 
             ships_t = _ships_to_send_for_step_batched(ships_raw_b, reserved, src_t, pct_t)
             ships_eff = jnp.where(emit_mask[..., t], ships_t, jnp.int32(0))
             reserved = _scatter_add(reserved, src_t, ships_eff)
+            used_dst = mark_dst_used(used_dst, dst_t, emit_mask[..., t])
 
         # Stack along a new K axis.
         s_logits = jnp.stack(src_logits_list, axis=-2)  # (..., K, P)
@@ -425,6 +480,8 @@ class ActorCritic(nn.Module):
             pct_logits=p_logits,
             emit_logits=e_logits,
             value=value,
+            dst_econ_logits=jnp.stack(dst_econ_logits_list, axis=-2),
+            roi_teacher=jnp.stack(roi_teacher_list, axis=-1),
         )
 
     # ---- sample (rollout): produce K-step action stochastically
@@ -488,6 +545,8 @@ class ActorCritic(nn.Module):
             )
 
         reserved = jnp.zeros_like(ships_raw)  # (..., P) int32
+        used_dst = jnp.zeros_like(obs_pmask)  # (..., P) v29: same-turn dedup
+        planet_prod = obs.planet_feats[..., 7].astype(jnp.float32) * jnp.float32(5.0)
         # still_emitting is a per-batch bool; if rank=0 keep scalar.
         leading_shape = ships_raw.shape[:-1]
         still_emitting = jnp.ones(leading_shape, dtype=jnp.bool_) if leading_shape else jnp.bool_(True)
@@ -524,6 +583,7 @@ class ActorCritic(nn.Module):
                 planet_is_orbiting=planet_is_orbiting,
                 angular_velocity=angular_velocity,
                 reserved=reserved,
+                planet_prod=planet_prod,
             )
             src_logits_t = self.src_head(planet_emb, eff_mask, remaining_norm)
             emit_worth_it = emit_pair_g[..., 0] > 0
@@ -549,10 +609,7 @@ class ActorCritic(nn.Module):
             emit_pred_bool = emit_pred == 1
             force_first = jnp.bool_(t == 0) & jnp.logical_not(no_options) & (
                 jnp.logical_not(jnp.bool_(self.allow_hold))
-                | (
-                    jnp.bool_(self.force_emit_worth_it)
-                    & emit_worth_it
-                )
+                | (jnp.bool_(self.force_emit_worth_it) & emit_worth_it)
             )
             decision = jnp.where(force_first, jnp.bool_(True), emit_pred_bool)
             decision = decision & jnp.logical_not(no_options)
@@ -584,19 +641,27 @@ class ActorCritic(nn.Module):
                 planet_orbit_radius=planet_orbit_radius,
                 planet_is_orbiting=planet_is_orbiting,
                 angular_velocity=angular_velocity,
+                planet_prod=planet_prod,
             )
             flip_block = (
                 dst_flip_block_mask(
                     ships_raw, obs_pmask, target_mask, remaining, src_t,
+                    pair_roi_norm=dst_pair[..., 5],
                 )
                 if self.flip_hard_mask
                 else None
             )
-            dst_logits_t = self.dst_head(
+            attn_dst_t = self.dst_head(
                 planet_emb, src_emb_t, obs_pmask, obs_my,
                 src_idx=src_t, reserved_norm=reserved_norm,
                 pair_feats=dst_pair, sun_block_mask=sun_block,
                 flip_block_mask=flip_block,
+            )
+            dst_logits_t, _, _ = self._combine_dst_logits(
+                attn_dst_t, dst_pair, planet_prod, obs_pmask, target_mask, src_t,
+            )
+            dst_logits_t = mask_used_dst_logits(
+                dst_logits_t, used_dst, obs_pmask, src_t,
             )
             if deterministic:
                 dst_t = jnp.argmax(dst_logits_t, axis=-1).astype(jnp.int32)
@@ -655,6 +720,7 @@ class ActorCritic(nn.Module):
             ships_t = _ships_to_send_for_step_batched(ships_raw, reserved, src_t, pct_t)
             ships_eff = jnp.where(emit_t, ships_t, jnp.int32(0))
             reserved = _scatter_add(reserved, src_t, ships_eff)
+            used_dst = mark_dst_used(used_dst, dst_t, emit_t)
             still_emitting = still_emitting & emit_t
 
             src_list.append(src_t)

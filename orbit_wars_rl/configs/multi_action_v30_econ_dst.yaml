@@ -1,0 +1,81 @@
+# v30: unified ROI + DstEconomicsHead + flip max-pct + ROI aux CE; extend v29 u3999 (~3.5h).
+#
+# Init   : ckpt_003999 (v29 aim+dedup)
+# No BC  : smoke -> PPO 4000u
+# Opp    : strong(v29 u3999) 40% + frozen 30% + rand 30%
+# Accept : u3999 seed=0 — first attack id=20, no dup (src,dst), flip >= 35%
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 4000
+  num_groups: 5
+  episode_steps: 500
+  wins_needed: 1
+  eval_every: 400
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v30_econ
+  ckpt_every: 400
+  log_every: 1
+  seed: 3000
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: false
+  emit_hard_stop_min_step: 0
+  flip_hard_mask: true
+  allow_hold: true
+  force_emit_worth_it: false
+  min_pct_bin: 0
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 10
+  eval_ckpt_keep: true
+  symmetric_selfplay: false
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ./ckpt_multi_action_v29_aim/ckpt_003999.pkl
+  bc_anchor_ckpt: ./ckpt_multi_action_v29_aim/ckpt_003999.pkl
+
+ppo:
+  lr_peak: 0.00002
+  lr_warmup_steps: 50
+  lr_decay_steps: 100000
+  lr_floor: 0.000005
+  clip_eps: 0.10
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.0002
+  ent_coef_dst: 0.0002
+  ent_coef_pct: 0.0002
+  ent_coef_emit: 0.0004
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.85
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.02
+  kl_ref_coef: 0.04
+  kl_ref_coef_end: 0.015
+  kl_ref_decay_updates: 4000
+  roi_aux_coef: 0.08
+
+selfplay:
+  enabled: true
+  warmup_updates: 0
+  snapshot_every: 300
+  pool_capacity: 10
+  frozen_ratio: 0.30
+  eval_vs_frozen: true
+  strong_ckpt_path: ./ckpt_multi_action_v29_aim/ckpt_003999.pkl
+  strong_ratio: 0.40
+  pool_seed_paths:
+    - ./ckpt_multi_action_v29_aim/ckpt_003999.pkl
+    - ./ckpt_multi_action_v28_roi/ckpt_003999.pkl
+    - ./ckpt_multi_action_v27_frontier/ckpt_003999.pkl
+  snapshot_current: true
+  buffer_path: ./data/top10_winner_states.npz
+  buffer_reset_ratio: 0.20
+  buffer_rollout_ratio: 0.0

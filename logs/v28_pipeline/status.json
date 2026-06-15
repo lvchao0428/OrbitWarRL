@@ -1,0 +1,11 @@
+{
+  "stage": "done",
+  "updated_at": "2026-06-14T07:22:36.728071Z",
+  "gates": {
+    "gate1_bc_collect": "pass",
+    "gate2_bc_train": "pass",
+    "gate3_ppo_train": "pass",
+    "gate4_post_train": "pass"
+  },
+  "exit_code": 0
+}

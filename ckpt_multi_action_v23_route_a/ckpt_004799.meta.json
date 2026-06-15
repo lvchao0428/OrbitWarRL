@@ -1,0 +1,22 @@
+{
+  "update": 4799,
+  "opp_tag": "frzn",
+  "export": {
+    "allow_hold": true,
+    "force_emit_worth_it": false,
+    "min_pct_bin": 5,
+    "emit_hard_stop": true,
+    "emit_hard_stop_min_step": 2,
+    "flip_hard_mask": false
+  },
+  "spf": 14.450972557067871,
+  "z0": 0.365234375,
+  "garr": 102.33155822753906,
+  "emit2_rate": 0.56640625,
+  "align_spf": 15.308258895874024,
+  "align_e2": 0.55384765625,
+  "align_z0": 0.374140625,
+  "eval_vs_v20_spf": 20.89,
+  "eval_vs_v20_e2_plus_pct": 6.5,
+  "eval_vs_v20_flip_pct": 12.5
+}

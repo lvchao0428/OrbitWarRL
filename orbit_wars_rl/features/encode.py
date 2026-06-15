@@ -406,14 +406,6 @@ def _encode_planets(
         ),
     )
 
-    # [26] capturable_bin5: 70% from my max planet flips this (0 for mine)
-    ships_at_bin5 = jnp.floor(my_max_garrison * jnp.float32(0.7))
-    capturable_bin5 = jnp.where(
-        is_mine,
-        jnp.float32(0.0),
-        (ships_at_bin5 > state.planet_ships.astype(jnp.float32)).astype(jnp.float32),
-    )
-
     # [27] weak_target_score: soft per-planet weakness score for enemies/neutrals
     is_capturable_target = (is_enemy | is_neutral).astype(jnp.float32)
     inv_strength = jnp.clip(
@@ -454,12 +446,6 @@ def _encode_planets(
         1.0,
     )
 
-    # [30] is_strong_source: my planet whose garrison exceeds my average.
-    #   Binary nudge toward launching from above-average stockpiles.
-    is_strong_source = (
-        is_mine & (my_ships_f > my_avg_garrison)
-    ).astype(jnp.float32)
-
     # --- v20 target_score distillation (dst-side, enemy/neutral only) ---
     #   need ~= target garrison + padding (mirror capture_need's first pass).
     pad = jnp.where(is_neutral, jnp.float32(2.0), jnp.float32(8.0))
@@ -474,24 +460,26 @@ def _encode_planets(
         jnp.float32(0.0),
     )
 
-    # [32] v20_target_score_norm: distance-decayed value minus cost. Uses ETA
-    #   proxy from distance to my CLOSEST planet (cheaper than per-src eta but
-    #   captures "near targets dominate"). distance_decay = 1/(1+eta*0.1).
-    my_x = jnp.where(is_mine, state.planet_x, jnp.float32(1e6))
-    my_y = jnp.where(is_mine, state.planet_y, jnp.float32(1e6))
-    #   min distance from each planet to any of my planets.
-    dx = state.planet_x[:, None] - my_x[None, :]
-    dy = state.planet_y[:, None] - my_y[None, :]
-    dist_to_mine = jnp.sqrt(dx * dx + dy * dy)  # (P, P)
-    min_dist_to_mine = dist_to_mine.min(axis=-1)  # (P,)
-    eta_proxy = min_dist_to_mine / jnp.float32(2.0)  # ~speed of a small fleet
-    distance_decay = 1.0 / (1.0 + eta_proxy * jnp.float32(0.10))
-    prod_value = prod_f * jnp.float32(20.0)  # prod * horizon proxy
-    target_value = (prod_value + weak_target_score * 30.0) * distance_decay
-    cost_term = need_est * jnp.float32(0.5)
-    v20_target_score = jnp.where(
+    # [32] capture_roi_norm: prod / (payback + eta). Calibrated on v27 u3999 s0
+    #   (id=20 nearby prod=3 factory beats id=22 far / id=16 weak). See
+    #   test_capture_roi_seed_u3999.
+    from orbit_wars_rl.features import capture_roi_util  # noqa: PLC0415
+
+    min_dist_to_mine = capture_roi_util.min_dist_to_owned(
+        state.planet_x, state.planet_y, is_mine
+    )
+    _ROI_HORIZON = jnp.float32(20.0)
+    eta_proxy = min_dist_to_mine / jnp.float32(constants.DEFAULT_MAX_SHIP_SPEED)
+    need_est_roi = capture_roi_util.need_est_from_garr(
+        target_garr,
+        is_neutral=is_neutral.astype(jnp.bool_),
+    )
+    roi_raw = capture_roi_util.capture_roi_planet_level(
+        prod_f, need_est_roi, min_dist_to_mine,
+    )
+    capture_roi_norm = jnp.where(
         is_capturable_target > 0,
-        jnp.clip((target_value - cost_term) / jnp.float32(100.0), -1.0, 1.0),
+        jnp.clip(roi_raw, 0.0, 1.0),
         jnp.float32(0.0),
     )
 
@@ -579,26 +567,28 @@ def _encode_planets(
         jnp.float32(0.0),
     )
 
-    # v21 dims 41-42: future garrison / ownership prediction over 15 steps.
-    my_garr_f = state.planet_ships.astype(jnp.float32)
-    future_owner_flip_risk = jnp.where(
-        is_mine,
-        jnp.clip(
-            enemy_w2 / jnp.maximum(my_garr_f + friendly_w2, jnp.float32(1.0)),
-            0.0,
-            1.0,
-        ),
-        jnp.clip(
-            friendly_w2 / jnp.maximum(my_garr_f + enemy_w2, jnp.float32(1.0)),
-            0.0,
-            1.0,
-        ),
+    # v27 dims 26, 30, 41-42: frontier / anti-shuffle / capture precision.
+    from orbit_wars_rl.features import frontier_util  # noqa: PLC0415
+
+    frontier_score_norm = frontier_util.frontier_score_per_planet(state, player)
+    interior_planet_bin = frontier_util.interior_planet_bin(
+        state, player, frontier_score_norm
     )
-    future_garrison_growth = jnp.clip(
-        prod_f * jnp.float32(15.0) / jnp.maximum(my_garr_f, jnp.float32(1.0)),
-        0.0,
-        2.0,
-    ) / jnp.float32(2.0)
+    capture_need_exact_norm = frontier_util.capture_need_exact_norm(
+        state, player, need_est, friendly_w2
+    )
+    shuffle_dst_risk_norm = frontier_util.shuffle_dst_risk_norm(
+        state, player, threat_ratio, friendly_w2
+    )
+    dist_penalty = jnp.clip(
+        jnp.float32(1.0) - eta_proxy / _ROI_HORIZON, jnp.float32(0.0), jnp.float32(1.0)
+    )
+    border_boost = jnp.float32(0.5) + jnp.float32(0.5) * frontier_score_norm
+    capture_roi_norm = jnp.where(
+        is_capturable_target > 0,
+        jnp.clip(capture_roi_norm * border_boost * dist_penalty, 0.0, 1.0),
+        jnp.float32(0.0),
+    )
 
     feats = jnp.stack(
         [
@@ -628,13 +618,13 @@ def _encode_planets(
             friendly_surplus,
             capturable_bin3,
             needed_pct_norm,
-            capturable_bin5,
+            frontier_score_norm,
             weak_target_score,
             garrison_rank,
             safe_surplus_norm,
-            is_strong_source,
+            capture_need_exact_norm,
             prod_per_need,
-            v20_target_score,
+            capture_roi_norm,
             friendly_eta_w1,
             friendly_eta_w2,
             enemy_eta_w1,
@@ -643,8 +633,8 @@ def _encode_planets(
             net_garrison_t15,
             safe_emit_margin,
             hold_value,
-            future_owner_flip_risk,
-            future_garrison_growth,
+            shuffle_dst_risk_norm,
+            interior_planet_bin,
         ],
         axis=-1,
     )
@@ -653,11 +643,22 @@ def _encode_planets(
     feats = feats * state.planet_mask[:, None].astype(jnp.float32)
 
     # Aux scalars for the global encoder.
+    n_mine = jnp.maximum(is_mine.astype(jnp.float32).sum(), jnp.float32(1.0))
+    frontier_owned_norm = (
+        (is_mine & (frontier_score_norm > jnp.float32(0.05))).astype(jnp.float32).sum()
+        / n_mine
+    )
+    home_under_threat = frontier_util.home_under_threat_flag(state, player, enemy_w1)
+
     aux = {
         "my_max_garrison": my_max_garrison,
         "my_avg_garrison": my_avg_garrison,
         "weak_target_score": weak_target_score,
         "target_garr": target_garr,
+        "capture_roi_norm": capture_roi_norm,
+        "capturable_bin3": capturable_bin3.astype(jnp.float32),
+        "frontier_owned_norm": frontier_owned_norm,
+        "home_under_threat": home_under_threat,
     }
     return feats, is_mine, is_enemy, is_neutral, aux
 
@@ -788,15 +789,21 @@ def _encode_global(
     # big-fleet + multi-route globals (dims 14-16)
     if aux is None:
         max_garr_norm = jnp.float32(0.0)
-        n_weak_targets_norm = jnp.float32(0.0)
-        ships_to_capture_all_weak_norm = jnp.float32(0.0)
+        local_roi_targets_norm = jnp.float32(0.0)
+        frontier_owned_norm = jnp.float32(0.0)
+        home_under_threat = jnp.float32(0.0)
         min_effective_fleet_norm = jnp.float32(1.0)
     else:
         max_garr_norm = jnp.log1p(aux["my_max_garrison"]) / jnp.float32(10.0)
-        weak_mask = (aux["weak_target_score"] > jnp.float32(0.3)).astype(jnp.float32)
-        n_weak_targets_norm = weak_mask.sum() / jnp.float32(constants.MAX_PLANETS)
-        total_weak_garr = (weak_mask * aux["target_garr"]).sum()
-        ships_to_capture_all_weak_norm = jnp.log1p(total_weak_garr) / jnp.float32(10.0)
+        roi_mask = (
+            (aux["capture_roi_norm"] > jnp.float32(0.12))
+            * aux["capturable_bin3"]
+        )
+        local_roi_targets_norm = roi_mask.sum() / jnp.float32(constants.MAX_PLANETS)
+        frontier_owned_norm = aux.get(
+            "frontier_owned_norm", jnp.float32(0.0)
+        )
+        home_under_threat = aux.get("home_under_threat", jnp.float32(0.0))
         # [17] min viable fleet as fraction of avg garrison (v20 ABS_MIN_BATCH=8)
         min_effective_fleet_norm = jnp.clip(
             jnp.float32(8.0) / jnp.maximum(aux["my_avg_garrison"], jnp.float32(1.0)),
@@ -874,14 +881,14 @@ def _encode_global(
             n_fleets_mine,
             n_fleets_enemy,
             max_garr_norm,
-            n_weak_targets_norm,
-            ships_to_capture_all_weak_norm,
+            local_roi_targets_norm,
+            frontier_owned_norm,
             min_effective_fleet_norm,
             garr_to_prod,
             fleet_mass_ratio,
             prod_advantage,
             garr_advantage,
-            growth_potential,
+            home_under_threat,
             threat_pressure,
             match_score_me,
             match_score_opp,

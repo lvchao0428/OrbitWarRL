@@ -102,6 +102,7 @@ class TrainConfig:
     # Inline mini replay vs v20 on CPU at eval_every (ground-truth gate).
     eval_vs_v20: bool = False
     eval_vs_v20_num_games: int = 3
+    eval_ckpt_keep: bool = False
 
     # Symmetric self-play (Frog Parade style): same params for both players.
     # When True, ignores all SelfPlayConfig settings (no frozen/strong/buffer).
@@ -116,6 +117,9 @@ class TrainConfig:
     min_pct_bin: int = 0
     # Resume from a checkpoint (path to .pkl file).
     resume_ckpt: str = ""
+    # v24: frozen reference policy for the KL anchor (path to .pkl file,
+    # typically the BC clone of v20). Effective when ppo.kl_ref_coef > 0.
+    bc_anchor_ckpt: str = ""
     # v15 multi-match series: number of match wins needed to win a series.
     # 1 = legacy single-match (every match end resets to new map).
     # 2 = Best-of-3 (same map, match-level terminal ±1).
@@ -214,6 +218,71 @@ def load_checkpoint(path: str):
         return pickle.load(f)
 
 
+def _unflatten_params(flat_dict, target_params):
+    """Rebuild nested param tree matching ``target_params`` layout."""
+    import jax.numpy as jnp
+
+    root = {}
+    for path, arr in flat_dict.items():
+        parts = path.split("/")
+        node = root
+        for p in parts[:-1]:
+            node = node.setdefault(p, {})
+        node[parts[-1]] = jnp.asarray(arr)
+    if isinstance(target_params, dict) and set(target_params.keys()) == {"params"}:
+        return {"params": root}
+    return root
+
+
+def _merge_ckpt_params(target_params, ckpt_params, *, label: str = "resume"):
+    """Load ckpt weights into ``target_params``, keeping target init for new layers.
+
+    Supports v29->v30 resume where ``dst_economics_head`` is absent in ckpt, and
+    zero-pads tensors when only feature dims grew within shared keys.
+    """
+    import numpy as np
+    from orbit_wars_rl.inference.weights import flatten_params
+
+    target_flat = flatten_params(target_params)
+    ckpt_flat = flatten_params(ckpt_params)
+    merged: dict[str, np.ndarray] = {}
+    padded: list[str] = []
+    fresh: list[str] = []
+
+    for key, t_arr in target_flat.items():
+        if key not in ckpt_flat:
+            merged[key] = np.asarray(t_arr)
+            fresh.append(key)
+            continue
+        t_shape = np.asarray(t_arr).shape
+        s_shape = np.asarray(ckpt_flat[key]).shape
+        if t_shape == s_shape:
+            merged[key] = np.asarray(ckpt_flat[key])
+        elif len(t_shape) == len(s_shape) and all(s <= t for s, t in zip(s_shape, t_shape)):
+            pad_widths = [(0, t - s) for s, t in zip(s_shape, t_shape)]
+            merged[key] = np.pad(np.asarray(ckpt_flat[key]), pad_widths, mode="constant")
+            padded.append(f"  {key}: {s_shape} -> {t_shape}")
+        else:
+            return None
+
+    if not padded and not fresh:
+        return None
+
+    if padded:
+        print(f"[{label}] zero-padded tensors:", flush=True)
+        for m in padded:
+            print(m, flush=True)
+    if fresh:
+        n_fresh = len(fresh)
+        sample = fresh[0].split("/")[0] if fresh else "?"
+        print(
+            f"[{label}] kept target init for {n_fresh} new tensor(s) "
+            f"(e.g. {sample}/...)",
+            flush=True,
+        )
+    return _unflatten_params(merged, target_params)
+
+
 def _adapt_strong_params(target_params, strong_params):
     """Zero-pad strong ckpt weights to match current model when only feature dims differ.
 
@@ -232,7 +301,7 @@ def _adapt_strong_params(target_params, strong_params):
     strong_flat = flatten_params(strong_params)
 
     if set(target_flat.keys()) != set(strong_flat.keys()):
-        return None
+        return _merge_ckpt_params(target_params, strong_params, label="shape-adapter")
 
     adapted = {}
     mismatches = []
@@ -264,22 +333,7 @@ def _adapt_strong_params(target_params, strong_params):
     for m in mismatches:
         print(m, flush=True)
 
-    # Unflatten back into the nested dict structure matching target_params
-    def _unflatten(flat_dict):
-        root = {}
-        for path, arr in flat_dict.items():
-            parts = path.split("/")
-            node = root
-            for p in parts[:-1]:
-                node = node.setdefault(p, {})
-            node[parts[-1]] = jnp.asarray(arr)
-        return root
-
-    unflat = _unflatten(adapted)
-    # Re-wrap with outer "params" key if target_params has it
-    if isinstance(target_params, dict) and set(target_params.keys()) == {"params"}:
-        unflat = {"params": unflat}
-    return unflat
+    return _unflatten_params(adapted, target_params)
 
 
 class Logger:
@@ -310,6 +364,14 @@ class Logger:
                 self.tb.close()
             except Exception:
                 pass
+
+
+def _kl_ref_coef_for_update(cfg: PPOConfig, update: int) -> float:
+    decay = int(cfg.kl_ref_decay_updates)
+    if decay <= 0:
+        return float(cfg.kl_ref_coef)
+    t = min(1.0, update / decay)
+    return float(cfg.kl_ref_coef * (1.0 - t) + cfg.kl_ref_coef_end * t)
 
 
 def train(
@@ -410,7 +472,9 @@ def train(
             params = ckpt["params"]
             print(f"[resume] loaded params from {resume_from} (step={ckpt.get('step', '?')})")
         except Exception as exc:  # noqa: BLE001
-            adapted = _adapt_strong_params(params, ckpt["params"])
+            adapted = _merge_ckpt_params(params, ckpt["params"], label="resume")
+            if adapted is None:
+                adapted = _adapt_strong_params(params, ckpt["params"])
             if adapted is None:
                 raise RuntimeError(
                     f"resume params shape mismatch with {resume_from}: {exc}. "
@@ -493,7 +557,32 @@ def train(
     if cfg.selfplay.enabled:
         pool = FrozenAgentPool(capacity=cfg.selfplay.pool_capacity)
 
-    train_step = make_train_step(model, cfg.ppo, optimizer)
+    ref_params = None
+    if cfg.bc_anchor_ckpt:
+        anchor = load_checkpoint(cfg.bc_anchor_ckpt)
+        try:
+            chex.assert_trees_all_equal_shapes(params, anchor["params"])
+            ref_params = jax.tree_util.tree_map(jnp.asarray, anchor["params"])
+            print(
+                f"[bc_anchor] loaded reference policy from {cfg.bc_anchor_ckpt} "
+                f"(kl_ref_coef={cfg.ppo.kl_ref_coef})",
+                flush=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            adapted = _adapt_strong_params(params, anchor["params"])
+            if adapted is None:
+                raise RuntimeError(
+                    f"bc_anchor params shape mismatch with {cfg.bc_anchor_ckpt}: {exc}. "
+                    "Refusing to silently drop layers."
+                ) from exc
+            ref_params = jax.tree_util.tree_map(jnp.asarray, adapted)
+            print(
+                f"[bc_anchor] shape-adapted reference policy from {cfg.bc_anchor_ckpt} "
+                f"(kl_ref_coef={cfg.ppo.kl_ref_coef})",
+                flush=True,
+            )
+
+    train_step = make_train_step(model, cfg.ppo, optimizer, ref_params=ref_params)
 
     logger = Logger(log_dir=log_dir)
     history: list[dict] = []
@@ -604,13 +693,17 @@ def train(
         else:
             states, env_rngs, rollout = rollout_fn(params, states, env_rngs)
 
-        params, opt_state, metrics = train_step(params, opt_state, rollout, r_step)
+        params, opt_state, metrics = train_step(
+            params, opt_state, rollout, r_step,
+            jnp.float32(_kl_ref_coef_for_update(cfg.ppo, update)),
+            jnp.bool_(update < cfg.ppo.freeze_dst_attn_updates),
+        )
         params = jax.tree_util.tree_map(jnp.asarray, params)
         metrics_py = {k: float(v) for k, v in metrics.items()}
         total_env_steps += cfg.num_envs * cfg.rollout_length
         elapsed = time.time() - t_start
         metrics_py["sps"] = total_env_steps / max(elapsed, 1e-6)
-        metrics_py["update"] = update
+        metrics_py["kl_ref_coef"] = _kl_ref_coef_for_update(cfg.ppo, update)
         metrics_py["total_env_steps"] = total_env_steps
         metrics_py["opp_tag"] = opp_tag
         metrics_py["opp_frozen"] = 1.0 if opp_tag == "frzn" else 0.0
@@ -690,10 +783,26 @@ def train(
                     print(f"[eval_vs_v20] WARN failed: {exc}", flush=True)
                 finally:
                     if os.path.isfile(eval_ckpt):
-                        os.remove(eval_ckpt)
-                    meta_sidecar = eval_ckpt.replace(".pkl", ".meta.json")
-                    if os.path.isfile(meta_sidecar):
-                        os.remove(meta_sidecar)
+                        if cfg.eval_ckpt_keep:
+                            import shutil
+
+                            eval_dir = os.path.join(cfg.ckpt_dir, "eval")
+                            os.makedirs(eval_dir, exist_ok=True)
+                            dest = os.path.join(
+                                eval_dir, f"ckpt_eval_u{update:06d}.pkl"
+                            )
+                            shutil.move(eval_ckpt, dest)
+                            meta_sidecar = eval_ckpt.replace(".pkl", ".meta.json")
+                            if os.path.isfile(meta_sidecar):
+                                shutil.move(
+                                    meta_sidecar,
+                                    dest.replace(".pkl", ".meta.json"),
+                                )
+                        else:
+                            os.remove(eval_ckpt)
+                            meta_sidecar = eval_ckpt.replace(".pkl", ".meta.json")
+                            if os.path.isfile(meta_sidecar):
+                                os.remove(meta_sidecar)
 
         if update % cfg.log_every == 0:
             wr_rand = metrics_py.get("eval/win_rate")
@@ -742,7 +851,8 @@ def train(
                 f"tG {t_garr:.0f}  e2 {emit2:.2f}  nF {n_fleets:.1f}  "
                 f"pS {pshare:.2f}  ptS {ptshare:.2f}  fLog {flog:.2f}  "
                 f"pdΔ {pdelta:+.4f}  pkR {pk_ratio:.2f}  "
-                f"clip {metrics_py['clip_frac']:.2f}  kl {metrics_py['approx_kl']:+.3f}"
+                f"clip {metrics_py['clip_frac']:.2f}  kl {metrics_py['approx_kl']:+.3f}  "
+                f"klR {metrics_py.get('kl_ref', 0.0):.3f}  klC {metrics_py.get('kl_ref_coef', 0.0):.3f}"
                 + align_str
                 + wr_str
             )

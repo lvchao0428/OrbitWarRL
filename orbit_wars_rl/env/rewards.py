@@ -141,6 +141,32 @@ SHAPING_EMIT_LOG: float = float(_os.environ.get("ORBITWARS_SHAPING_EMIT_LOG", "0
 SHAPING_RELEASE: float = float(_os.environ.get("ORBITWARS_SHAPING_RELEASE", "0.0"))
 SHAPING_RELEASE_K: float = float(_os.environ.get("ORBITWARS_SHAPING_RELEASE_K", "20.0"))
 SHAPING_CAPTURE: float = float(_os.environ.get("ORBITWARS_SHAPING_CAPTURE", "0.0"))
+# v26+: ROI-weighted capture — prod / (payback + eta) with early bonus.
+SHAPING_CAPTURE_ROI: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_CAPTURE_ROI", "0.0")
+)
+CAPTURE_PROD_FLOOR: float = float(
+    _os.environ.get("ORBITWARS_CAPTURE_PROD_FLOOR", "3.0")
+)
+CAPTURE_EARLY_BONUS: float = float(
+    _os.environ.get("ORBITWARS_CAPTURE_EARLY_BONUS", "0.5")
+)
+CAPTURE_ROI_NORM: float = float(
+    _os.environ.get("ORBITWARS_CAPTURE_ROI_NORM", "50.0")
+)
+CAPTURE_ROI_REWARD_NORM: float = float(
+    _os.environ.get("ORBITWARS_CAPTURE_ROI_REWARD_NORM", "10.0")
+)
+CAPTURE_ROI_HORIZON: float = float(
+    _os.environ.get("ORBITWARS_CAPTURE_ROI_HORIZON", "20.0")
+)
+# v27: penalize launches to safe owned destinations (friendly shuffle).
+SHAPING_FRIENDLY_SHUFFLE: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_FRIENDLY_SHUFFLE", "0.0")
+)
+FRIENDLY_SHUFFLE_NORM: float = float(
+    _os.environ.get("ORBITWARS_FRIENDLY_SHUFFLE_NORM", "100.0")
+)
 # When 1, emit_log only applies if at least one valid launch has release_factor>0.
 SHAPING_EMIT_GATED: float = float(_os.environ.get("ORBITWARS_SHAPING_EMIT_GATED", "0.0"))
 
@@ -197,6 +223,9 @@ SHAPING_MULTI_EMIT: float = float(
 )
 SHAPING_MULTI_EMIT_MIN_SHIPS: float = float(
     _os.environ.get("ORBITWARS_SHAPING_MULTI_EMIT_MIN_SHIPS", "8.0")
+)
+SHAPING_MULTI_EMIT_MIN_HOME_GARR: float = float(
+    _os.environ.get("ORBITWARS_SHAPING_MULTI_EMIT_MIN_HOME_GARR", "0.0")
 )
 
 
@@ -545,13 +574,19 @@ def capture_fleet_scale_reward(
 
 
 def multi_emit_gated_bonus_reward(
-    valid_mask: jnp.ndarray, ships_per_launch: jnp.ndarray
+    valid_mask: jnp.ndarray,
+    ships_per_launch: jnp.ndarray,
+    state=None,
+    player: int = 0,
 ) -> jnp.ndarray:
     """Bonus for 2+ valid launches when the largest fleet is substantial.
 
     0/1 gate style: no reward for idle or single-launch turns; no reward for
     multi-trickle (all launches <= MIN_SHIPS). Aligns with Vadasz "one big
     burst + secondary routes" without ONE_SHIP_PENALTY punishing small 2nd legs.
+
+    When ``SHAPING_MULTI_EMIT_MIN_HOME_GARR > 0``, also require home garrison
+    above the threshold (prevents u3399-style multi-spam on thin reserves).
     """
     if SHAPING_MULTI_EMIT <= 0.0:
         return jnp.float32(0.0)
@@ -561,8 +596,13 @@ def multi_emit_gated_bonus_reward(
     max_ships = jnp.max(jnp.where(valid_mask, ships_f, jnp.float32(0.0)))
     multi = n_valid >= jnp.float32(2.0)
     substantial = max_ships >= jnp.float32(SHAPING_MULTI_EMIT_MIN_SHIPS)
+    home_ok = jnp.bool_(True)
+    if SHAPING_MULTI_EMIT_MIN_HOME_GARR > 0.0:
+        home_idx = state.home_planet_idx[player]
+        home_garr = state.planet_ships[home_idx].astype(jnp.float32)
+        home_ok = home_garr >= jnp.float32(SHAPING_MULTI_EMIT_MIN_HOME_GARR)
     return jnp.float32(SHAPING_MULTI_EMIT) * jnp.where(
-        multi & substantial, jnp.float32(1.0), jnp.float32(0.0)
+        multi & substantial & home_ok, jnp.float32(1.0), jnp.float32(0.0)
     )
 
 
@@ -617,6 +657,135 @@ def set_curriculum(
     SHAPING_CAPTURE = cap0 * (1.0 - t)
     # Keep a mild defense signal into sparse phase (Frog: sparse win only at end).
     SHAPING_DEFENSE_EMPTY = def0 * (1.0 - t * 0.5)
+
+
+def _capture_need_for_planets(
+    garr: jnp.ndarray,
+    owners: jnp.ndarray,
+    player: int,
+    planet_mask: jnp.ndarray,
+) -> jnp.ndarray:
+    """Garrison + pad(neutral=2, enemy=8) for each live planet."""
+    is_neutral = (owners == constants.NEUTRAL_OWNER) & planet_mask
+    is_enemy = (owners >= 0) & (owners != player) & planet_mask
+    pad = jnp.where(
+        is_neutral,
+        jnp.float32(2.0),
+        jnp.where(is_enemy, jnp.float32(8.0), jnp.float32(0.0)),
+    )
+    return jnp.maximum(garr.astype(jnp.float32) + pad, jnp.float32(1.0))
+
+
+def capture_roi_hist_reward(
+    prev_state: EnvState,
+    next_state: EnvState,
+    player: int,
+    episode_steps: int,
+) -> jnp.ndarray:
+    """Flip-gated capture shaped by payback ROI (matches planet dim32).
+
+    roi = prod / (need/prod + eta); early-game multiplier on top.
+    """
+    if SHAPING_CAPTURE_ROI <= 0.0:
+        return jnp.float32(0.0)
+    prev_mine = (prev_state.planet_owner == player) & prev_state.planet_mask
+    next_mine = (next_state.planet_owner == player) & next_state.planet_mask
+    gained = next_mine & jnp.logical_not(prev_mine)
+
+    prod_f = next_state.planet_prod.astype(jnp.float32)
+    need = _capture_need_for_planets(
+        prev_state.planet_ships,
+        prev_state.planet_owner,
+        player,
+        prev_state.planet_mask,
+    )
+    from orbit_wars_rl.features import capture_roi_util  # noqa: PLC0415
+
+    min_dist = capture_roi_util.min_dist_to_owned(
+        prev_state.planet_x, prev_state.planet_y, prev_mine
+    )
+    roi_base = capture_roi_util.capture_roi_raw(
+        prod_f, need, min_dist, norm=capture_roi_util.ROI_NORM,
+    )
+    step_f = prev_state.step.astype(jnp.float32)
+    ep_f = jnp.float32(max(episode_steps, 1))
+    early = jnp.float32(1.0) + jnp.float32(CAPTURE_EARLY_BONUS) * (
+        jnp.float32(1.0) - step_f / ep_f
+    )
+    per_planet = roi_base * early
+    from orbit_wars_rl.features import frontier_util  # noqa: PLC0415
+
+    frontier = frontier_util.frontier_score_per_planet(next_state, player)
+    per_planet = per_planet * (jnp.float32(0.5) + jnp.float32(0.5) * frontier)
+    garr_on_gain = jnp.where(gained, next_state.planet_ships.astype(jnp.float32), jnp.float32(0.0))
+    need_on_gain = jnp.where(gained, need, jnp.float32(1.0))
+    precision = jnp.clip(
+        jnp.float32(1.0)
+        - jnp.abs(garr_on_gain - need_on_gain) / jnp.maximum(need_on_gain, jnp.float32(1.0)),
+        jnp.float32(0.0),
+        jnp.float32(1.0),
+    )
+    per_planet = per_planet * precision
+    roi_sum = jnp.where(gained, per_planet, jnp.float32(0.0)).sum()
+    base = jnp.float32(SHAPING_CAPTURE_ROI) * roi_sum / jnp.float32(
+        max(CAPTURE_ROI_REWARD_NORM, 1.0)
+    )
+
+    from orbit_wars_rl.features.history import TGF_GARR_ADV  # noqa: PLC0415
+
+    trail = next_state.global_hist[player, -10:, TGF_GARR_ADV]
+    stability = jnp.clip(trail.mean() + jnp.float32(0.5), jnp.float32(0.5), jnp.float32(1.5))
+    return base * stability
+
+
+def friendly_shuffle_penalty_reward(
+    valid_mask: jnp.ndarray,
+    dst_idx: jnp.ndarray,
+    ships_per_launch: jnp.ndarray,
+    state: EnvState,
+    player: int,
+) -> jnp.ndarray:
+    """Penalize valid launches toward safe owned planets (v27 anti-shuffle)."""
+    if SHAPING_FRIENDLY_SHUFFLE <= 0.0:
+        return jnp.float32(0.0)
+    from orbit_wars_rl.features import frontier_util  # noqa: PLC0415
+
+    valid_f = valid_mask.astype(jnp.float32)
+    ships_f = ships_per_launch.astype(jnp.float32)
+    dst_safe = jnp.clip(dst_idx, 0, constants.MAX_PLANETS - 1)
+    is_mine_dst = (state.planet_owner[dst_safe] == player) & valid_mask
+    interior = frontier_util.interior_planet_bin(state, player)
+    # Recompute threat + inbound for shuffle risk (encode dims not available here).
+    _FLEET_SPEED = jnp.float32(constants.DEFAULT_MAX_SHIP_SPEED)
+    _ETA_W2 = jnp.float32(15.0)
+    f_dx = state.planet_x[None, :] - state.fleet_x[:, None]
+    f_dy = state.planet_y[None, :] - state.fleet_y[:, None]
+    f_dist = jnp.sqrt(f_dx * f_dx + f_dy * f_dy + jnp.float32(1e-6))
+    f_eta = f_dist / _FLEET_SPEED
+    f_dxn = jnp.cos(state.fleet_angle)
+    f_dyn = jnp.sin(state.fleet_angle)
+    f_proj = f_dx * f_dxn[:, None] + f_dy * f_dyn[:, None]
+    headed = state.fleet_mask[:, None] & (f_proj > jnp.float32(0.0))
+    in_w2 = headed & (f_eta <= _ETA_W2)
+    fleet_ships_f = jnp.maximum(state.fleet_ships, 0).astype(jnp.float32)
+    is_my = (state.fleet_owner == player) & state.fleet_mask
+    is_opp = (state.fleet_owner >= 0) & (state.fleet_owner != player) & state.fleet_mask
+    friendly_w2 = (fleet_ships_f[:, None] * in_w2 * is_my[:, None]).sum(axis=0)
+    foe_soft = (fleet_ships_f[:, None] * in_w2 * is_opp[:, None]).sum(axis=0)
+    garr_f = state.planet_ships.astype(jnp.float32)
+    threat_ratio = jnp.clip(
+        foe_soft / jnp.maximum(garr_f, jnp.float32(1.0)), 0.0, 2.0
+    ) / jnp.float32(2.0)
+    shuffle_risk = frontier_util.shuffle_dst_risk_norm(
+        state, player, threat_ratio, friendly_w2
+    )
+    risk_at_dst = jnp.maximum(interior[dst_safe], shuffle_risk[dst_safe])
+    penalty = (valid_f * is_mine_dst.astype(jnp.float32) * risk_at_dst * ships_f).sum()
+    return (
+        -jnp.float32(SHAPING_FRIENDLY_SHUFFLE)
+        * penalty
+        / jnp.float32(max(FRIENDLY_SHUFFLE_NORM, 1.0))
+    )
 
 
 def capture_hist_balance_reward(

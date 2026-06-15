@@ -51,6 +51,17 @@ class PPOConfig(NamedTuple):
     update_epochs: int = 4
     num_minibatches: int = 4
     target_kl: float = 0.0
+    # v24: KL(pi_theta || pi_ref) anchor toward a frozen reference policy
+    # (e.g. a BC clone of v20). 0 disables. Applied per-head on the same
+    # masks as the entropy terms, so scale is comparable to ent_coef.
+    kl_ref_coef: float = 0.0
+    # v25: optional linear decay of kl_ref_coef over kl_ref_decay_updates.
+    kl_ref_coef_end: float = 0.0
+    kl_ref_decay_updates: int = 0
+    # v30: auxiliary CE toward argmax pair_roi teacher (economics head).
+    roi_aux_coef: float = 0.0
+    # v30b: stop-gradient on cross-attn dst for first N updates; aux targets combined logits.
+    freeze_dst_attn_updates: int = 0
 
 
 def make_optimizer(cfg: PPOConfig) -> optax.GradientTransformation:
@@ -152,6 +163,23 @@ def _turn_logp_sum(
     return triple_sum + emit_sum
 
 
+def _masked_head_kl(
+    new_logits: jnp.ndarray,   # (..., K, C)
+    ref_logits: jnp.ndarray,   # (..., K, C)
+    mask: jnp.ndarray,         # (..., K) bool/float
+) -> jnp.ndarray:
+    """Mean KL(new || ref) over masked steps. Both logit sets may contain
+    -inf rows from action masks; we clamp ref log-probs so a state where
+    the masks differ doesn't produce inf gradients."""
+    new_logp = jax.nn.log_softmax(new_logits, axis=-1)
+    ref_logp = jax.nn.log_softmax(ref_logits, axis=-1)
+    ref_logp = jnp.maximum(ref_logp, jnp.float32(-30.0))
+    new_p = jnp.exp(new_logp)
+    kl = (new_p * (new_logp - ref_logp)).sum(axis=-1)  # (..., K)
+    mask_f = mask.astype(kl.dtype)
+    return (kl * mask_f).sum() / jnp.maximum(mask_f.sum(), jnp.float32(1.0))
+
+
 def ppo_loss(
     params,
     model: ActorCritic,
@@ -159,12 +187,19 @@ def ppo_loss(
     advantages: jnp.ndarray,
     returns: jnp.ndarray,
     cfg: PPOConfig,
+    ref_params=None,
+    *,
+    freeze_dst_attn: jnp.ndarray | bool = False,
 ) -> tuple[jnp.ndarray, dict]:
-    """Single-minibatch PPO loss. Rollout fields are [N, ...] (flat over T*B)."""
+    """Single-minibatch PPO loss. Rollout fields are [N, ...] (flat over T*B).
+
+    ``ref_params``: frozen reference policy params (BC anchor). When given
+    and ``cfg.kl_ref_coef > 0``, adds kl_ref_coef * KL(pi_theta || pi_ref)
+    summed over the four heads, evaluated on the rollout's chosen actions.
+    """
     obs = _stack_obs_from_rollout(rollout)
     opp_obs = _stack_opp_obs_from_rollout(rollout)
-    out = model.apply(
-        params,
+    eval_args = (
         obs,
         rollout.src_idx,
         rollout.dst_idx,
@@ -179,7 +214,10 @@ def ppo_loss(
         rollout.planet_is_orbiting_raw,
         rollout.angular_velocity_raw,
         opp_obs,
-        method=ActorCritic.evaluate,
+    )
+    frz = jnp.asarray(freeze_dst_attn, dtype=jnp.bool_)
+    out = model.apply(
+        params, *eval_args, freeze_dst_attn=frz, method=ActorCritic.evaluate,
     )
 
     src_logp_new_k, src_ent_k = _logp_entropy(out.src_logits, rollout.src_idx)
@@ -259,7 +297,44 @@ def ppo_loss(
         + cfg.ent_coef_emit * ent_emit
     )
 
-    total_loss = pg_loss + cfg.value_coef * v_loss + entropy_loss
+    # v24: KL anchor toward the frozen reference (BC) policy. The reference
+    # logits are recomputed on the same rollout actions; stop_gradient keeps
+    # the anchor one-directional.
+    kl_ref = jnp.float32(0.0)
+    if ref_params is not None:
+        ref_out = model.apply(ref_params, *eval_args, method=ActorCritic.evaluate)
+        sg = jax.lax.stop_gradient
+        dst_kl_full = _masked_head_kl(out.dst_logits, sg(ref_out.dst_logits), mask_emit)
+        dst_kl = jnp.where(frz, jnp.float32(0.0), dst_kl_full)
+        kl_ref = (
+            _masked_head_kl(out.src_logits, sg(ref_out.src_logits), mask_emit)
+            + dst_kl
+            + _masked_head_kl(out.pct_logits, sg(ref_out.pct_logits), mask_emit)
+            + _masked_head_kl(out.emit_logits, sg(ref_out.emit_logits), free_f)
+        )
+
+    # v30: ROI auxiliary CE (teacher = argmax pair_roi).
+    # v30b: while attn frozen, supervise combined dst logits so econ alone drives argmax.
+    roi_aux_loss = jnp.float32(0.0)
+    roi_aux_acc = jnp.float32(0.0)
+    if cfg.roi_aux_coef > 0.0:
+        aux_logits = jnp.where(frz[..., None, None], out.dst_logits, out.dst_econ_logits)
+        econ_logp = jax.nn.log_softmax(aux_logits, axis=-1)
+        teacher = out.roi_teacher
+        picked = jnp.take_along_axis(
+            econ_logp, teacher[..., None], axis=-1,
+        )[..., 0]
+        roi_aux_loss = -(picked * mask_emit).sum() / n_emit
+        pred = jnp.argmax(aux_logits, axis=-1)
+        roi_aux_acc = ((pred == teacher).astype(jnp.float32) * mask_emit).sum() / n_emit
+
+    total_loss = (
+        pg_loss
+        + cfg.value_coef * v_loss
+        + entropy_loss
+        + cfg.kl_ref_coef * kl_ref
+        + cfg.roi_aux_coef * roi_aux_loss
+    )
     clip_frac = jnp.mean((jnp.abs(ratio - 1.0) > cfg.clip_eps).astype(jnp.float32))
     approx_kl = jnp.mean(old_turn_logp - new_turn_logp)
 
@@ -340,6 +415,10 @@ def ppo_loss(
     metrics = dict(
         pg_loss=pg_loss,
         v_loss=v_loss,
+        kl_ref=kl_ref,
+        roi_aux_loss=roi_aux_loss,
+        roi_aux_acc=roi_aux_acc,
+        dst_attn_frozen=frz.astype(jnp.float32),
         explained_variance=explained_variance,
         ent_src=ent_src,
         ent_dst=ent_dst,
@@ -475,7 +554,7 @@ def _gather_minibatch(rollout: Rollout, advs: jnp.ndarray, rets: jnp.ndarray, id
 
 
 _ZERO_METRICS_KEYS = (
-    "pg_loss", "v_loss", "explained_variance",
+    "pg_loss", "v_loss", "kl_ref", "explained_variance",
     "ent_src", "ent_dst", "ent_pct", "ent_emit",
     "clip_frac", "approx_kl", "ratio_mean", "value_mean", "return_mean",
     "adv_mean", "adv_std", "mean_emits_per_turn",
@@ -485,6 +564,7 @@ _ZERO_METRICS_KEYS = (
     # Day 5 (post-top10) metrics
     "prod_share_delta", "peak_over_mean_garr",
     "total_garrison_my", "emit2_rate", "fleets_in_flight",
+    "roi_aux_loss", "roi_aux_acc", "dst_attn_frozen",
     *(f"pct_bin{b}" for b in range(env_constants.NUM_PCT_BINS)),
     "loss", "grad_norm",
 )
@@ -494,12 +574,36 @@ def _zero_metrics_dict():
     return {k: jnp.float32(0.0) for k in _ZERO_METRICS_KEYS}
 
 
-def make_train_step(model: ActorCritic, cfg: PPOConfig, optimizer: optax.GradientTransformation):
-    """Returns ``train_step(params, opt_state, rollout, rng) -> (params, opt_state, metrics)``."""
+def make_train_step(
+    model: ActorCritic,
+    cfg: PPOConfig,
+    optimizer: optax.GradientTransformation,
+    ref_params=None,
+):
+    """Returns ``train_step(params, opt_state, rollout, rng) -> (params, opt_state, metrics)``.
 
-    grad_fn = jax.value_and_grad(ppo_loss, has_aux=True)
+    ``ref_params``: optional frozen reference policy for the KL anchor
+    (closed over; becomes a constant in the jitted trace).
+    """
 
-    def train_step(params, opt_state, rollout: Rollout, rng: jnp.ndarray):
+    def _loss(params, model, rollout, advantages, returns, kl_ref_coef, freeze_dst_attn):
+        eff_cfg = cfg._replace(kl_ref_coef=kl_ref_coef)
+        return ppo_loss(
+            params, model, rollout, advantages, returns, eff_cfg,
+            ref_params=ref_params,
+            freeze_dst_attn=freeze_dst_attn,
+        )
+
+    grad_fn = jax.value_and_grad(_loss, has_aux=True)
+
+    def train_step(
+        params,
+        opt_state,
+        rollout: Rollout,
+        rng: jnp.ndarray,
+        kl_ref_coef: jnp.ndarray,
+        freeze_dst_attn: jnp.ndarray,
+    ):
         T = rollout.reward.shape[0]
         B = rollout.reward.shape[1]
         advs, rets = compute_gae(
@@ -519,7 +623,10 @@ def make_train_step(model: ActorCritic, cfg: PPOConfig, optimizer: optax.Gradien
                 start = mb_idx * minibatch_size
                 idx = jax.lax.dynamic_slice_in_dim(perm, start, minibatch_size)
                 sub_rollout, sub_advs, sub_rets = _gather_minibatch(flat_rollout, advs_f, rets_f, idx)
-                (loss_val, metrics), grads = grad_fn(params_m, model, sub_rollout, sub_advs, sub_rets, cfg)
+                (loss_val, metrics), grads = grad_fn(
+                    params_m, model, sub_rollout, sub_advs, sub_rets,
+                    kl_ref_coef, freeze_dst_attn,
+                )
 
                 def do_update(_):
                     updates, os_new = optimizer.update(grads, opt_state_m, params_m)

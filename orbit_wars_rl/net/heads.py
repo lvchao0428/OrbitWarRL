@@ -92,6 +92,7 @@ class DstHead(nn.Module):
         f26: ``pair_feats`` (..., P, 4) appended to planet rows
         (dist_src_dst, sun_risk, ships_needed, pair_flip_bin5). When
         f29: ``pair_feats`` (..., P, 5) adds pair_margin_norm.
+        v29: ``pair_feats`` (..., P, 6) adds pair_roi_norm.
         ``sun_block_mask`` (..., P) is provided, dst whose src->dst path
         crosses the sun guard are hard-masked to ``-inf`` logits *unless*
         every candidate is blocked (fallback to standard mask). That
@@ -162,6 +163,48 @@ class DstHead(nn.Module):
             allowed_after_flip = eff_mask & jnp.logical_not(flip_block_mask)
             any_allowed = allowed_after_flip.any(axis=-1, keepdims=True)
             eff_mask = jnp.where(any_allowed, allowed_after_flip, eff_mask)
+        logits = _mask_logits(logits, eff_mask)
+        if not is_batched:
+            logits = jnp.squeeze(logits, axis=0)
+        return logits
+
+
+class DstEconomicsHead(nn.Module):
+    """v30: dst scoring from economics-only features (no cross-attn).
+
+    Input per planet: ``econ_dst_features`` (..., P, 7) =
+    pair_feats[6] + prod_norm. Trained end-to-end; logits add to DstHead.
+    """
+
+    hidden: int = 48
+
+    @nn.compact
+    def __call__(
+        self,
+        econ_feats: jnp.ndarray,
+        planet_mask: jnp.ndarray,
+        src_idx: jnp.ndarray | None = None,
+    ) -> jnp.ndarray:
+        is_batched = econ_feats.ndim == 3
+        if not is_batched:
+            econ_feats = econ_feats[None, ...]
+            planet_mask = planet_mask[None, ...]
+            if src_idx is not None and src_idx.ndim == 0:
+                src_idx = src_idx[None]
+
+        x = nn.Dense(self.hidden, name="fc1")(econ_feats)
+        x = nn.gelu(x)
+        logits = nn.Dense(1, name="econ_score")(x)[..., 0]
+
+        eff_mask = planet_mask
+        if src_idx is not None:
+            p = logits.shape[-1]
+            idx = jnp.arange(p)
+            if src_idx.ndim == 0:
+                self_pair = idx == src_idx
+            else:
+                self_pair = idx[(None,) * (src_idx.ndim)] == src_idx[..., None]
+            eff_mask = eff_mask & jnp.logical_not(self_pair)
         logits = _mask_logits(logits, eff_mask)
         if not is_batched:
             logits = jnp.squeeze(logits, axis=0)

@@ -1,0 +1,15 @@
+{
+  "bc": {
+    "data": "data/bc_v20_self_400g.npz",
+    "epochs": 10,
+    "lr": 0.0003
+  },
+  "export": {
+    "allow_hold": true,
+    "force_emit_worth_it": false,
+    "min_pct_bin": 0,
+    "emit_hard_stop": false,
+    "emit_hard_stop_min_step": 0,
+    "flip_hard_mask": false
+  }
+}

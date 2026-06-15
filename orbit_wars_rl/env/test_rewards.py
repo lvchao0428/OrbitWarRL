@@ -309,6 +309,48 @@ def main() -> int:
     assert "constants.NUM_PLAYERS" in src_pl, "planet_share_reward must use constants.NUM_PLAYERS"
     print("[OK ] prod_share / planet_share use constants.NUM_PLAYERS (no hard-coded 2.0)")
 
+    # --- capture_roi_hist_reward: nearby factory > weak mop -----------------
+    rewards.SHAPING_CAPTURE_ROI = 0.025
+    rewards.SHAPING_CAPTURE = 0.0
+    try:
+        s0 = state.empty_state(constants.MAX_PLANETS, constants.MAX_FLEETS)
+        s0 = s0.replace(
+            planet_mask=s0.planet_mask.at[0].set(True).at[1].set(True).at[2].set(True),
+            planet_owner=s0.planet_owner.at[0].set(0).at[1].set(constants.NEUTRAL_OWNER).at[2].set(
+                constants.NEUTRAL_OWNER
+            ),
+            planet_x=s0.planet_x.at[0].set(0.0).at[1].set(5.0).at[2].set(6.0),
+            planet_y=s0.planet_y.at[0].set(0.0).at[1].set(0.0).at[2].set(0.0),
+            planet_ships=s0.planet_ships.at[0].set(100).at[1].set(2).at[2].set(18),
+            planet_prod=s0.planet_prod.at[0].set(5).at[1].set(1).at[2].set(4),
+            step=jnp.int32(50),
+        )
+        prev = s0
+
+        next_weak = s0.replace(
+            planet_owner=s0.planet_owner.at[1].set(0),
+            planet_ships=s0.planet_ships.at[1].set(5),
+        )
+        next_factory = s0.replace(
+            planet_owner=s0.planet_owner.at[2].set(0),
+            planet_ships=s0.planet_ships.at[2].set(22),
+        )
+        r_weak = float(rewards.capture_roi_hist_reward(prev, next_weak, 0, 500))
+        r_factory = float(rewards.capture_roi_hist_reward(prev, next_factory, 0, 500))
+        print(f"[check] ROI reward weak={r_weak:.5f} factory={r_factory:.5f}")
+        if r_factory <= r_weak:
+            raise AssertionError(
+                f"factory capture ROI reward should exceed weak: {r_factory} <= {r_weak}"
+            )
+        print("[OK ] capture_roi_hist_reward: nearby factory > weak mop")
+    finally:
+        rewards.SHAPING_CAPTURE_ROI = float(
+            __import__("os").environ.get("ORBITWARS_SHAPING_CAPTURE_ROI", "0.0")
+        )
+        rewards.SHAPING_CAPTURE = float(
+            __import__("os").environ.get("ORBITWARS_SHAPING_CAPTURE", "0.0")
+        )
+
     print("\n[ALL PASS] reward function matches kaggle rules.")
     return 0
 

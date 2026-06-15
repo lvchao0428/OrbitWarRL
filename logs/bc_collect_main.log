@@ -1,0 +1,16 @@
+[bc_collect] python: /home/charlie/anaconda3/bin/python
+[bc_collect] 8 procs x 50 games -> data/bc_v20_self_400g.npz (shards in data/bc_shards_20260612_234228)
+  shard 0: pid 4143006 seed 1000 log logs/bc_collect/shard_0.log
+  shard 1: pid 4143007 seed 2000 log logs/bc_collect/shard_1.log
+  shard 2: pid 4143008 seed 3000 log logs/bc_collect/shard_2.log
+  shard 3: pid 4143009 seed 4000 log logs/bc_collect/shard_3.log
+  shard 4: pid 4143010 seed 5000 log logs/bc_collect/shard_4.log
+  shard 5: pid 4143011 seed 6000 log logs/bc_collect/shard_5.log
+  shard 6: pid 4143012 seed 7000 log logs/bc_collect/shard_6.log
+  shard 7: pid 4143013 seed 8000 log logs/bc_collect/shard_7.log
+merged 8 shards -> 113900 samples
+  hold rate (0 emits): 60.6%
+  e2+ rate           : 20.5%
+  planet_feats (113900, 40, 63)  global (113900, 427)
+wrote data/bc_v20_self_400g.npz (200.2 MB)
+[bc_collect] done

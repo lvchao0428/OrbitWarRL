@@ -1,0 +1,74 @@
+# v23 Route A: fresh train — v21 features + v18 emit chain + mixed opp (no buffer)
+#
+# Features: planet 63 + global 427 (hist50) + ETA-lead on Pct/Emit heads
+# Opponents: strong v16a u3399 25% + frozen pool 25% + rand 50%
+# Reward: flip-gated capture 0.02 + fleet_scale 0.01 + multi_emit 0.02 + anti_hoard 0.04
+# No buffer / no symm / no defense_empty / no prod_delta
+
+train:
+  num_envs: 64
+  rollout_length: 32
+  num_updates: 8000
+  num_groups: 5
+  episode_steps: 500
+  wins_needed: 2
+  eval_every: 100
+  eval_num_envs: 32
+  ckpt_dir: ./ckpt_multi_action_v23_route_a
+  ckpt_every: 200
+  log_every: 1
+  seed: 2300
+  d_model: 256
+  n_layers: 4
+  n_heads: 8
+  ff_dim: 1024
+  max_fleets_per_turn: 8
+  emit_hard_stop: true
+  emit_hard_stop_min_step: 2
+  flip_hard_mask: false
+  allow_hold: true
+  force_emit_worth_it: false
+  min_pct_bin: 5
+  align_roll_window: 50
+  eval_vs_v20: true
+  eval_vs_v20_num_games: 5
+  symmetric_selfplay: false
+  symmetric_warmup: 0
+  zero_sum_value: true
+  resume_ckpt: ""
+
+ppo:
+  lr_peak: 0.00008
+  lr_warmup_steps: 200
+  lr_decay_steps: 80000
+  lr_floor: 0.00001
+  clip_eps: 0.12
+  value_clip_eps: 0.20
+  value_coef: 0.5
+  ent_coef_src: 0.0005
+  ent_coef_dst: 0.0005
+  ent_coef_pct: 0.0005
+  ent_coef_emit: 0.001
+  max_grad_norm: 0.5
+  gamma: 0.9999
+  gae_lambda: 0.85
+  update_epochs: 1
+  num_minibatches: 8
+  target_kl: 0.03
+
+selfplay:
+  enabled: true
+  warmup_updates: 0
+  snapshot_every: 400
+  pool_capacity: 8
+  frozen_ratio: 0.25
+  eval_vs_frozen: true
+  strong_ckpt_path: ./ckpt_multi_action_v16a_capture/ckpt_003399.pkl
+  strong_ratio: 0.25
+  pool_seed_paths:
+    - ./ckpt_multi_action_v16a_capture/ckpt_003399.pkl
+    - ./ckpt_multi_action_v16a_capture/ckpt_003199.pkl
+  snapshot_current: false
+  buffer_path: ""
+  buffer_reset_ratio: 0.0
+  buffer_rollout_ratio: 0.0

@@ -1,0 +1,165 @@
+loading agent: submission_v20_0513.py
+loading opponent: submission_v20_0513.py
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: Successfully loaded OpenSpiel environments: 23.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_amazons
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_backgammon
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_checkers
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_chess
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_clobber
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_coin_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_connect_four
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_dark_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_gin_rummy
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_go
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_goofspiel
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hearts
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_lines_of_action
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_matching_pennies_3p
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_oshi_zumo
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_othello
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_tic_tac_toe
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_y
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_universal_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_python_repeated_pokerkit
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: OpenSpiel games skipped: 1.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    snake
+  game 1/100: 250 samples emits/game=350 | total=250 (21.3s)
+  game 2/100: 198 samples emits/game=80 | total=448 (39.6s)
+  game 3/100: 434 samples emits/game=650 | total=882 (78.3s)
+  game 4/100: 192 samples emits/game=76 | total=1074 (94.3s)
+  game 5/100: 562 samples emits/game=846 | total=1636 (158.9s)
+  game 6/100: 304 samples emits/game=417 | total=1940 (193.9s)
+  game 7/100: 220 samples emits/game=159 | total=2160 (219.6s)
+  game 8/100: 310 samples emits/game=299 | total=2470 (271.6s)
+  game 9/100: 288 samples emits/game=287 | total=2758 (320.9s)
+  game 10/100: 330 samples emits/game=497 | total=3088 (370.2s)
+  game 11/100: 460 samples emits/game=535 | total=3548 (433.2s)
+  game 12/100: 410 samples emits/game=237 | total=3958 (484.9s)
+  game 13/100: 294 samples emits/game=367 | total=4252 (522.6s)
+  game 14/100: 294 samples emits/game=374 | total=4546 (563.2s)
+  game 15/100: 298 samples emits/game=303 | total=4844 (591.0s)
+  game 16/100: 230 samples emits/game=289 | total=5074 (609.4s)
+  game 17/100: 218 samples emits/game=188 | total=5292 (624.5s)
+  game 18/100: 258 samples emits/game=128 | total=5550 (645.1s)
+  game 19/100: 288 samples emits/game=244 | total=5838 (666.5s)
+  game 20/100: 286 samples emits/game=336 | total=6124 (684.1s)
+  game 21/100: 314 samples emits/game=364 | total=6438 (723.6s)
+  game 22/100: 414 samples emits/game=473 | total=6852 (786.1s)
+  game 23/100: 254 samples emits/game=196 | total=7106 (808.8s)
+  game 24/100: 218 samples emits/game=296 | total=7324 (824.4s)
+  game 25/100: 326 samples emits/game=441 | total=7650 (861.0s)
+  game 26/100: 388 samples emits/game=224 | total=8038 (892.4s)
+  game 27/100: 240 samples emits/game=189 | total=8278 (912.2s)
+  game 28/100: 354 samples emits/game=452 | total=8632 (953.0s)
+  game 29/100: 230 samples emits/game=147 | total=8862 (970.8s)
+  game 30/100: 298 samples emits/game=506 | total=9160 (1016.7s)
+  game 31/100: 328 samples emits/game=440 | total=9488 (1067.1s)
+  game 32/100: 348 samples emits/game=436 | total=9836 (1105.2s)
+  game 33/100: 146 samples emits/game=65 | total=9982 (1117.9s)
+  game 34/100: 310 samples emits/game=373 | total=10292 (1153.0s)
+  game 35/100: 198 samples emits/game=32 | total=10490 (1164.8s)
+  game 36/100: 226 samples emits/game=246 | total=10716 (1188.6s)
+  game 37/100: 280 samples emits/game=234 | total=10996 (1231.1s)
+  game 38/100: 248 samples emits/game=273 | total=11244 (1267.1s)
+  game 39/100: 220 samples emits/game=179 | total=11464 (1285.9s)
+  game 40/100: 552 samples emits/game=614 | total=12016 (1338.5s)
+  game 41/100: 338 samples emits/game=344 | total=12354 (1366.0s)
+  game 42/100: 286 samples emits/game=192 | total=12640 (1400.3s)
+  game 43/100: 218 samples emits/game=230 | total=12858 (1419.1s)
+  game 44/100: 344 samples emits/game=466 | total=13202 (1478.0s)
+  game 45/100: 134 samples emits/game=42 | total=13336 (1483.9s)
+  game 46/100: 230 samples emits/game=155 | total=13566 (1495.9s)
+  game 47/100: 332 samples emits/game=475 | total=13898 (1532.3s)
+  game 48/100: 258 samples emits/game=223 | total=14156 (1557.5s)
+  game 49/100: 172 samples emits/game=105 | total=14328 (1566.4s)
+  game 50/100: 444 samples emits/game=579 | total=14772 (1638.8s)
+  game 51/100: 652 samples emits/game=848 | total=15424 (1780.1s)
+  game 52/100: 272 samples emits/game=199 | total=15696 (1795.0s)
+  game 53/100: 210 samples emits/game=142 | total=15906 (1814.1s)
+  game 54/100: 238 samples emits/game=188 | total=16144 (1846.2s)
+  game 55/100: 252 samples emits/game=441 | total=16396 (1882.3s)
+  game 56/100: 142 samples emits/game=60 | total=16538 (1890.2s)
+  game 57/100: 180 samples emits/game=110 | total=16718 (1905.7s)
+  game 58/100: 304 samples emits/game=351 | total=17022 (1926.9s)
+  game 59/100: 240 samples emits/game=315 | total=17262 (1958.2s)
+  game 60/100: 252 samples emits/game=93 | total=17514 (1975.7s)
+  game 61/100: 298 samples emits/game=302 | total=17812 (2005.0s)
+  game 62/100: 380 samples emits/game=515 | total=18192 (2063.7s)
+  game 63/100: 310 samples emits/game=274 | total=18502 (2093.3s)
+  game 64/100: 102 samples emits/game=20 | total=18604 (2098.5s)
+  game 65/100: 278 samples emits/game=441 | total=18882 (2152.4s)
+  game 66/100: 242 samples emits/game=143 | total=19124 (2179.1s)
+  game 67/100: 150 samples emits/game=53 | total=19274 (2190.4s)
+  game 68/100: 454 samples emits/game=817 | total=19728 (2233.8s)
+  game 69/100: 286 samples emits/game=412 | total=20014 (2272.1s)
+  game 70/100: 218 samples emits/game=91 | total=20232 (2284.4s)
+  game 71/100: 188 samples emits/game=50 | total=20420 (2291.2s)
+  game 72/100: 306 samples emits/game=121 | total=20726 (2331.7s)
+  game 73/100: 488 samples emits/game=561 | total=21214 (2400.7s)
+  game 74/100: 236 samples emits/game=134 | total=21450 (2433.6s)
+  game 75/100: 310 samples emits/game=317 | total=21760 (2477.5s)
+  game 76/100: 268 samples emits/game=216 | total=22028 (2503.1s)
+  game 77/100: 210 samples emits/game=54 | total=22238 (2518.4s)
+  game 78/100: 386 samples emits/game=629 | total=22624 (2619.1s)
+  game 79/100: 224 samples emits/game=161 | total=22848 (2630.7s)
+  game 80/100: 378 samples emits/game=400 | total=23226 (2684.7s)
+  game 81/100: 262 samples emits/game=135 | total=23488 (2718.9s)
+  game 82/100: 264 samples emits/game=193 | total=23752 (2756.5s)
+  game 83/100: 270 samples emits/game=291 | total=24022 (2791.6s)
+  game 84/100: 288 samples emits/game=354 | total=24310 (2866.7s)
+  game 85/100: 218 samples emits/game=149 | total=24528 (2887.9s)
+  game 86/100: 332 samples emits/game=399 | total=24860 (2947.9s)
+  game 87/100: 270 samples emits/game=262 | total=25130 (2979.2s)
+  game 88/100: 130 samples emits/game=51 | total=25260 (2987.9s)
+  game 89/100: 998 samples emits/game=0 | total=26258 (3150.6s)
+  game 90/100: 254 samples emits/game=176 | total=26512 (3171.3s)
+  game 91/100: 268 samples emits/game=222 | total=26780 (3200.6s)
+  game 92/100: 284 samples emits/game=245 | total=27064 (3221.1s)
+  game 93/100: 250 samples emits/game=266 | total=27314 (3248.1s)
+  game 94/100: 338 samples emits/game=460 | total=27652 (3306.3s)
+  game 95/100: 160 samples emits/game=172 | total=27812 (3320.1s)
+  game 96/100: 254 samples emits/game=235 | total=28066 (3338.7s)
+  game 97/100: 398 samples emits/game=193 | total=28464 (3382.2s)
+  game 98/100: 318 samples emits/game=442 | total=28782 (3412.8s)
+  game 99/100: 182 samples emits/game=155 | total=28964 (3424.7s)
+  game 100/100: 228 samples emits/game=251 | total=29192 (3440.3s)
+
+stacking 29192 samples...
+  total samples: 29192
+  total emits  : 28762 (avg 0.99 per sample)
+  planet_feats : (29192, 40, 63)
+  global_feats : (29192, 427)
+  emits-per-sample histogram:
+    0 emits: 17429 samples (59.7%)
+    1 emits: 5090 samples (17.4%)
+    2 emits: 2620 samples (9.0%)
+    3 emits: 1504 samples (5.2%)
+    4 emits: 965 samples (3.3%)
+    5 emits: 556 samples (1.9%)
+    6 emits: 363 samples (1.2%)
+    7 emits: 218 samples (0.7%)
+    8 emits: 447 samples (1.5%)
+  pct_bin distribution:
+    bin 0 (0.05): 366 (1.3%)
+    bin 1 (0.1): 646 (2.2%)
+    bin 2 (0.15): 915 (3.2%)
+    bin 3 (0.2): 1251 (4.3%)
+    bin 4 (0.25): 1572 (5.5%)
+    bin 5 (0.3): 2363 (8.2%)
+    bin 6 (0.35): 3884 (13.5%)
+    bin 7 (0.4): 2396 (8.3%)
+    bin 8 (0.45): 1767 (6.1%)
+    bin 9 (0.5): 3221 (11.2%)
+    bin 10 (0.55): 2126 (7.4%)
+    bin 11 (0.6): 2049 (7.1%)
+    bin 12 (0.7): 3392 (11.8%)
+    bin 13 (0.8): 1811 (6.3%)
+    bin 14 (0.9): 939 (3.3%)
+    bin 15 (1.0): 64 (0.2%)
+
+writing data/bc_shards_20260614_002248/shard_4.npz...
+  size: 51.8 MB
+  done. 100 games in 3443.7s

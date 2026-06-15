@@ -86,7 +86,12 @@ class OrbitWarsEnv:
         planet_r = rewards.planet_share_reward(s4, 0)
         fleet_log_r = rewards.fleet_size_log_reward(valid_p0, ships_p0)
         prod_d_r = rewards.prod_share_delta_reward(state, s4, 0)
-        capture_r = rewards.capture_hist_balance_reward(state, s4, 0)
+        if rewards.SHAPING_CAPTURE_ROI > 0.0:
+            capture_r = rewards.capture_roi_hist_reward(
+                state, s4, 0, self.episode_steps
+            )
+        else:
+            capture_r = rewards.capture_hist_balance_reward(state, s4, 0)
         defense_empty_r = rewards.defense_empty_penalty_reward(state, s4, 0)
         release_r = rewards.release_bonus_reward(
             state, actions[0].src_idx, valid_p0, ships_p0
@@ -97,16 +102,21 @@ class OrbitWarsEnv:
         one_ship_r = rewards.one_ship_penalty_reward(valid_p0, ships_p0)
         high_prod_r = rewards.high_prod_capture_reward(state, s4, 0)
         capture_fs_r = rewards.capture_fleet_scale_reward(state, s4, 0)
-        multi_emit_r = rewards.multi_emit_gated_bonus_reward(valid_p0, ships_p0)
+        multi_emit_r = rewards.multi_emit_gated_bonus_reward(
+            valid_p0, ships_p0, state=state, player=0,
+        )
         hold_r = rewards.hold_bonus_reward(valid_p0, state, 0)
         anti_hoard_r = rewards.anti_hoard_penalty_reward(valid_p0, state, 0)
+        shuffle_r = rewards.friendly_shuffle_penalty_reward(
+            valid_p0, actions[0].dst_idx, ships_p0, state, 0
+        )
         non_terminal_r = (
             shaping
             + keep_r + fleet_r
             + prod_r + planet_r + fleet_log_r
             + prod_d_r + capture_r + defense_empty_r + emit_log_r + release_r
             + one_ship_r + high_prod_r + capture_fs_r + multi_emit_r + hold_r
-            + anti_hoard_r
+            + anti_hoard_r + shuffle_r
         )
         reward_p0 = jnp.where(done_now, terminal_r, non_terminal_r)
 

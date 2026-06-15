@@ -1,0 +1,80 @@
+[reward] kaggle-aligned: terminal +1 win/+1 tie>0/-1 loss/-1 double-wipeout; is_terminal at step >= episode_steps-2; SHAPING_SCALE=0.0; v1: KEEP_HOME=0.0 FLEET_SIZE=0.0/norm20.0; v2 (expert-replay calibrated): PROD_SHARE=0.0 PLANET_SHARE=0.0 FLEET_LOG=0.0/ref500.0/floor0.3; v3 (top10-2630ep calibrated): PROD_SHARE_DELTA=0.0 EMIT_LOG=0.0 EMIT_GATED=0.0 RELEASE=0.0/K20.0 CAPTURE=0.02; ANTI_HOARD=0.04/thresh0.55; episode_steps=500 (kaggle=500, mismatch=False); wins_needed=1 (multi-match=off)
+[curriculum] strong_ratio=0.45 frozen_ratio=0.3 strong_ckpt=./ckpt_bc_v20_epw25/ckpt_final.pkl
+[gated-pool] seed_paths=./ckpt_bc_v20_epw25/ckpt_final.pkl, ./ckpt_multi_action_v24_bc_ft/ckpt_003999.pkl snapshot_current=True
+[resume] loaded params from ./ckpt_multi_action_v24_bc_ft/ckpt_003999.pkl (step=3999)
+[bc_anchor] loaded reference policy from ./ckpt_multi_action_v24_bc_ft/ckpt_003999.pkl (kl_ref_coef=0.04)
+[curriculum] loaded strong opponent from ./ckpt_bc_v20_epw25/ckpt_final.pkl
+[gated-pool] loaded seed opponent ./ckpt_bc_v20_epw25/ckpt_final.pkl
+[gated-pool] loaded seed opponent ./ckpt_multi_action_v24_bc_ft/ckpt_003999.pkl
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 75, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 65, in main
+    result = train(train_cfg, log_dir=log_dir, resume_from=resume_from)
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/runner.py", line 629, in train
+    params, opt_state, metrics = train_step(
+                                 ~~~~~~~~~~^
+        params, opt_state, rollout, r_step,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        jnp.float32(_kl_ref_coef_for_update(cfg.ppo, update)),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py", line 623, in train_step
+    (params_out, opt_state_out, accumulated, _), _ = jax.lax.scan(
+                                                     ~~~~~~~~~~~~^
+        epoch_step, (params, opt_state, _zero_metrics_dict(), jnp.bool_(False)), rng_epochs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py", line 608, in epoch_step
+    (params_new, opt_state_new, summed, _), _ = jax.lax.scan(
+                                                ~~~~~~~~~~~~^
+        mb_step,
+        ^^^^^^^^
+        (params_e, opt_state_e, _zero_metrics_dict(), kl_exceeded),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        jnp.arange(cfg.num_minibatches),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py", line 588, in mb_step
+    (loss_val, metrics), grads = grad_fn(
+                                 ~~~~~~~^
+        params_m, model, sub_rollout, sub_advs, sub_rets, kl_ref_coef,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py", line 555, in _loss
+    return ppo_loss(
+        params, model, rollout, advantages, returns, eff_cfg,
+        ref_params=ref_params,
+    )
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py", line 295, in ppo_loss
+    if ref_params is not None and cfg.kl_ref_coef > 0:
+                                  ^^^^^^^^^^^^^^^^^^^
+jax.errors.TracerBoolConversionError: Attempted boolean conversion of traced array with shape bool[].
+The error occurred while tracing the function mb_step at /home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py:583 for scan. This value became a tracer due to JAX operations on these lines:
+
+  operation a:i32[] = mul b 256:i32[]
+    from line /home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py:585:24 (make_train_step.<locals>.train_step.<locals>.epoch_step.<locals>.mb_step)
+
+  operation a:bool[] = lt b 0:i32[]
+    from line /home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py:586:22 (make_train_step.<locals>.train_step.<locals>.epoch_step.<locals>.mb_step)
+
+  operation a:i32[] = add b 2048:i32[]
+    from line /home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py:586:22 (make_train_step.<locals>.train_step.<locals>.epoch_step.<locals>.mb_step)
+
+  operation a:bool[256] = lt b 0:i32[]
+    from line /home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py:473:21 (_gather_minibatch.<locals>.<lambda>)
+
+  operation a:i32[256] = add b 2048:i32[]
+    from line /home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/update.py:473:21 (_gather_minibatch.<locals>.<lambda>)
+
+(Additional originating lines are not shown.)
+See https://docs.jax.dev/en/latest/errors.html#jax.errors.TracerBoolConversionError
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.

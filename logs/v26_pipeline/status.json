@@ -1,0 +1,10 @@
+{
+  "stage": "gate3_ppo_train",
+  "updated_at": "2026-06-13T17:32:22.430100Z",
+  "gates": {
+    "gate1_bc_collect": "pass",
+    "gate2_bc_train": "pass",
+    "gate3_ppo_train": "running"
+  },
+  "exit_code": 0
+}

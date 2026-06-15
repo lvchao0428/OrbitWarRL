@@ -1,0 +1,117 @@
+loading agent: submission_v20_0513.py
+loading opponent: submission_v20_0513.py
+[92m13:15:33 - LiteLLM:WARNING[0m: get_model_cost_map.py:271 - LiteLLM: Failed to fetch remote model cost map from https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json: The read operation timed out. Falling back to local backup.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: Successfully loaded OpenSpiel environments: 23.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_amazons
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_backgammon
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_checkers
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_chess
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_clobber
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_coin_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_connect_four
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_dark_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_gin_rummy
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_go
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_goofspiel
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hearts
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_hex
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_lines_of_action
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_matching_pennies_3p
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_oshi_zumo
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_othello
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_game
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_tic_tac_toe
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_y
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_universal_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_repeated_poker
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    open_spiel_python_repeated_pokerkit
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO: OpenSpiel games skipped: 1.
+[kaggle_environments.envs.open_spiel_env.open_spiel_env] INFO:    snake
+  game 1/50: 202 samples emits/game=128 | total=202 (24.0s)
+  game 2/50: 274 samples emits/game=143 | total=476 (50.0s)
+  game 3/50: 318 samples emits/game=414 | total=794 (93.6s)
+  game 4/50: 250 samples emits/game=286 | total=1044 (127.9s)
+  game 5/50: 274 samples emits/game=208 | total=1318 (147.1s)
+  game 6/50: 178 samples emits/game=158 | total=1496 (159.4s)
+  game 7/50: 386 samples emits/game=254 | total=1882 (212.4s)
+  game 8/50: 292 samples emits/game=465 | total=2174 (248.5s)
+  game 9/50: 650 samples emits/game=815 | total=2824 (374.1s)
+  game 10/50: 292 samples emits/game=285 | total=3116 (419.2s)
+  game 11/50: 388 samples emits/game=125 | total=3504 (454.7s)
+  game 12/50: 244 samples emits/game=242 | total=3748 (485.4s)
+  game 13/50: 206 samples emits/game=101 | total=3954 (502.5s)
+  game 14/50: 332 samples emits/game=248 | total=4286 (559.2s)
+  game 15/50: 584 samples emits/game=878 | total=4870 (615.5s)
+  game 16/50: 282 samples emits/game=266 | total=5152 (661.8s)
+  game 17/50: 320 samples emits/game=462 | total=5472 (718.1s)
+  game 18/50: 240 samples emits/game=323 | total=5712 (752.5s)
+  game 19/50: 168 samples emits/game=45 | total=5880 (764.5s)
+  game 20/50: 300 samples emits/game=272 | total=6180 (823.4s)
+  game 21/50: 366 samples emits/game=103 | total=6546 (859.9s)
+  game 22/50: 292 samples emits/game=346 | total=6838 (893.1s)
+  game 23/50: 234 samples emits/game=254 | total=7072 (918.9s)
+  game 24/50: 296 samples emits/game=365 | total=7368 (956.8s)
+  game 25/50: 94 samples emits/game=34 | total=7462 (960.6s)
+  game 26/50: 306 samples emits/game=435 | total=7768 (990.5s)
+  game 27/50: 258 samples emits/game=308 | total=8026 (1011.9s)
+  game 28/50: 454 samples emits/game=654 | total=8480 (1079.6s)
+  game 29/50: 280 samples emits/game=209 | total=8760 (1096.7s)
+  warn: 44 planets > MAX_PLANETS=40, dropping game tail
+  game 30/50: 100 samples emits/game=53 | total=8860 (1105.8s)
+  game 31/50: 164 samples emits/game=73 | total=9024 (1115.2s)
+  game 32/50: 302 samples emits/game=356 | total=9326 (1134.2s)
+  game 33/50: 294 samples emits/game=357 | total=9620 (1177.5s)
+  game 34/50: 346 samples emits/game=281 | total=9966 (1237.5s)
+  game 35/50: 246 samples emits/game=277 | total=10212 (1265.7s)
+  game 36/50: 294 samples emits/game=199 | total=10506 (1293.7s)
+  game 37/50: 352 samples emits/game=238 | total=10858 (1330.9s)
+  game 38/50: 432 samples emits/game=560 | total=11290 (1366.3s)
+  game 39/50: 208 samples emits/game=185 | total=11498 (1386.0s)
+  game 40/50: 300 samples emits/game=197 | total=11798 (1412.2s)
+  game 41/50: 230 samples emits/game=144 | total=12028 (1434.1s)
+  game 42/50: 262 samples emits/game=311 | total=12290 (1469.8s)
+  game 43/50: 230 samples emits/game=210 | total=12520 (1490.3s)
+  game 44/50: 260 samples emits/game=340 | total=12780 (1513.9s)
+  game 45/50: 254 samples emits/game=351 | total=13034 (1544.1s)
+  game 46/50: 244 samples emits/game=280 | total=13278 (1561.5s)
+  game 47/50: 398 samples emits/game=154 | total=13676 (1591.9s)
+  game 48/50: 428 samples emits/game=460 | total=14104 (1633.3s)
+  game 49/50: 160 samples emits/game=107 | total=14264 (1648.5s)
+  game 50/50: 260 samples emits/game=262 | total=14524 (1685.8s)
+
+stacking 14524 samples...
+  total samples: 14524
+  total emits  : 14221 (avg 0.98 per sample)
+  planet_feats : (14524, 40, 63)
+  global_feats : (14524, 427)
+  emits-per-sample histogram:
+    0 emits: 8577 samples (59.1%)
+    1 emits: 2579 samples (17.8%)
+    2 emits: 1368 samples (9.4%)
+    3 emits: 806 samples (5.5%)
+    4 emits: 436 samples (3.0%)
+    5 emits: 304 samples (2.1%)
+    6 emits: 152 samples (1.0%)
+    7 emits: 104 samples (0.7%)
+    8 emits: 198 samples (1.4%)
+  pct_bin distribution:
+    bin 0 (0.05): 223 (1.6%)
+    bin 1 (0.1): 334 (2.3%)
+    bin 2 (0.15): 420 (3.0%)
+    bin 3 (0.2): 549 (3.9%)
+    bin 4 (0.25): 723 (5.1%)
+    bin 5 (0.3): 1214 (8.5%)
+    bin 6 (0.35): 1889 (13.3%)
+    bin 7 (0.4): 1329 (9.3%)
+    bin 8 (0.45): 901 (6.3%)
+    bin 9 (0.5): 1675 (11.8%)
+    bin 10 (0.55): 950 (6.7%)
+    bin 11 (0.6): 945 (6.6%)
+    bin 12 (0.7): 1629 (11.5%)
+    bin 13 (0.8): 945 (6.6%)
+    bin 14 (0.9): 452 (3.2%)
+    bin 15 (1.0): 43 (0.3%)
+
+writing data/bc_shards_20260614_131527/shard_3.npz...
+  size: 25.8 MB
+  done. 50 games in 1687.5s

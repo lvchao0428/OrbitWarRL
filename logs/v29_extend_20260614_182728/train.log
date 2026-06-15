@@ -1,0 +1,32 @@
+[reward] kaggle-aligned: terminal +1 win/+1 tie>0/-1 loss/-1 double-wipeout; is_terminal at step >= episode_steps-2; SHAPING_SCALE=0.0; v1: KEEP_HOME=0.0 FLEET_SIZE=0.0/norm20.0; v2 (expert-replay calibrated): PROD_SHARE=0.0 PLANET_SHARE=0.0 FLEET_LOG=0.0/ref500.0/floor0.3; v3 (top10-2630ep calibrated): PROD_SHARE_DELTA=0.006 EMIT_LOG=0.0 EMIT_GATED=0.0 RELEASE=0.0/K20.0 CAPTURE=0.0; ANTI_HOARD=0.02/thresh0.55; episode_steps=500 (kaggle=500, mismatch=False); wins_needed=1 (multi-match=off)
+[curriculum] strong_ratio=0.4 frozen_ratio=0.3 strong_ckpt=./ckpt_multi_action_v28_roi/ckpt_003999.pkl
+[buffer-curriculum] buffer_path=./data/top10_winner_states.npz buffer_reset_ratio=0.2 buffer_rollout_ratio=0.0
+[gated-pool] seed_paths=./ckpt_multi_action_v28_roi/ckpt_003999.pkl, ./ckpt_multi_action_v25_extend/ckpt_009599.pkl, ./ckpt_multi_action_v27_frontier/ckpt_003999.pkl snapshot_current=True
+[shape-adapter] padded tensors:
+  dst_head/dst_fc1/kernel: (518, 256) -> (519, 256)
+[resume] shape-adapted params from ./ckpt_multi_action_v28_roi/ckpt_003999.pkl (step=3999)
+[buffer-curriculum] loaded 1298568 states from ./data/top10_winner_states.npz
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 75, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/scripts/train.py", line 65, in main
+    result = train(train_cfg, log_dir=log_dir, resume_from=resume_from)
+  File "/home/charlie/project/OrbitWarRL/orbit_wars_rl/ppo/runner.py", line 511, in train
+    chex.assert_trees_all_equal_shapes(params, anchor["params"])
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/charlie/anaconda3/lib/python3.13/site-packages/chex/_src/asserts_internal.py", line 279, in _chex_assert_fn
+    host_assertion_fn(
+    ~~~~~~~~~~~~~~~~~^
+        *args,
+        ^^^^^^
+    ...<3 lines>...
+        exception_type=exception_type,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **kwargs)
+        ^^^^^^^^^
+  File "/home/charlie/anaconda3/lib/python3.13/site-packages/chex/_src/asserts_internal.py", line 197, in _assert_on_host
+    raise exception_type(error_msg)
+AssertionError: [Chex] Assertion assert_trees_all_equal_shapes failed:  Trees 0 and 1 differ in leaves 'params/dst_head/dst_fc1/kernel': shapes: (519, 256) != (518, 256).

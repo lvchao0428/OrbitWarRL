@@ -110,10 +110,15 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
     k_legacy = emit_in - 2 * d_model - 1
     k_f26 = emit_in - 2 * d_model - 5
     k_f37 = emit_in - 2 * d_model - 7
+    k_v30c = emit_in - 2 * d_model - 13
     k_v21 = emit_in - 2 * d_model - 12
     has_emit_pair = False
     emit_pair_dim = 0
-    if 1 <= k_v21 <= 16:
+    if 1 <= k_v30c <= 16:
+        max_fleets_per_turn = k_v30c
+        has_emit_pair = True
+        emit_pair_dim = 12
+    elif 1 <= k_v21 <= 16:
         max_fleets_per_turn = k_v21
         has_emit_pair = True
         emit_pair_dim = 11
@@ -144,7 +149,15 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
     dst_key = "dst_head/dst_fc1/kernel"
     if dst_key in flat:
         dst_in = int(flat[dst_key].shape[0])
-        if dst_in == 2 * d_model + 6:
+        if dst_in == 2 * d_model + 8:
+            has_dst_pair = True
+            has_f29_dst = True
+            dst_pair_dim = 7
+        elif dst_in == 2 * d_model + 7:
+            has_dst_pair = True
+            has_f29_dst = True
+            dst_pair_dim = 6
+        elif dst_in == 2 * d_model + 6:
             has_dst_pair = True
             has_f29_dst = True
             dst_pair_dim = 5
@@ -157,7 +170,7 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
         else:
             raise ValueError(
                 f"unexpected dst_fc1 input dim={dst_in}; "
-                f"d_model={d_model}, expected 2*d_model+1, +5 (f26-f28), or +6 (f29)"
+                f"d_model={d_model}, expected 2*d_model+1, +5 (f26), +6 (f29), +7 (v29), or +8 (v30c)"
             )
 
     # pct_head/fc1 input layout:
@@ -211,6 +224,12 @@ def infer_arch_from_flat(flat: Dict[str, np.ndarray]) -> dict[str, int]:
         "has_pct_pair": has_pct_pair,
         "pct_pair_dim": pct_pair_dim,
         "num_pct_bins": num_pct_bins,
+        "has_econ_dst": "dst_economics_head/fc1/kernel" in flat,
+        "econ_dst_dim": (
+            int(flat["dst_economics_head/fc1/kernel"].shape[0])
+            if "dst_economics_head/fc1/kernel" in flat
+            else 0
+        ),
     }
 
 
@@ -256,6 +275,12 @@ def assert_expected_keys(flat: Dict[str, np.ndarray], n_layers: int = 2) -> None
     for fc in ("dst_fc1", "dst_score"):
         expected.add(f"dst_head/{fc}/kernel")
         expected.add(f"dst_head/{fc}/bias")
+
+    # v30 DstEconomicsHead (optional)
+    if "dst_economics_head/fc1/kernel" in flat:
+        for fc in ("fc1", "econ_score"):
+            expected.add(f"dst_economics_head/{fc}/kernel")
+            expected.add(f"dst_economics_head/{fc}/bias")
 
     # PctHead + EmitHead: fc1 -> logits
     for h in ("pct_head", "emit_head"):
